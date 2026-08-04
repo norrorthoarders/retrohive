@@ -1,0 +1,39 @@
+[
+  {
+    "slug": "team17",
+    "name": "Team17",
+    "country": "United Kingdom",
+    "website": "https://www.team17.com/"
+  },
+  {
+    "slug": "id-software",
+    "name": "id Software",
+    "country": "United States"
+  },
+  {
+    "slug": "jam-productions",
+    "name": "JAM Productions",
+    "country": "United States"
+  },
+  {
+    "slug": "apogee-software",
+    "name": "Apogee Software",
+    "country": "United States"
+  },
+  {
+    "slug": "sir-tech",
+    "name": "Sir-Tech",
+    "country": "United States"
+  },
+  {
+    "slug": "llamasoft",
+    "name": "Llamasoft",
+    "country": "United Kingdom"
+  },
+  {
+    "slug": "electronic-arts",
+    "name": "Electronic Arts",
+    "country": "United States",
+    "website": "https://www.ea.com/"
+  }
+]

@@ -1,0 +1,116 @@
+[
+  {
+    "slug": "z2",
+    "name": "Zorro II",
+    "platform": "amiga",
+    "sort_order": 20
+  },
+  {
+    "slug": "z3",
+    "name": "Zorro III",
+    "platform": "amiga",
+    "sort_order": 30
+  },
+  {
+    "slug": "vid",
+    "name": "Video slot",
+    "platform": "amiga",
+    "sort_order": 40
+  },
+  {
+    "slug": "isa",
+    "name": "ISA slot",
+    "platform": "amiga",
+    "sort_order": 50
+  },
+  {
+    "slug": "cpu",
+    "name": "CPU slot",
+    "platform": "amiga",
+    "sort_order": 60
+  },
+  {
+    "slug": "side",
+    "name": "Side slot",
+    "platform": "amiga",
+    "sort_order": 80
+  },
+  {
+    "slug": "trap",
+    "name": "Trapdoor slot",
+    "platform": "amiga",
+    "sort_order": 90
+  },
+  {
+    "slug": "cart",
+    "name": "Cartridge slot",
+    "platform": "mega-drive",
+    "sort_order": 10
+  },
+  {
+    "slug": "ctrl",
+    "name": "Controller port",
+    "platform": "mega-drive",
+    "sort_order": 20
+  },
+  {
+    "slug": "exp",
+    "name": "Expansion port",
+    "platform": "mega-drive",
+    "sort_order": 30
+  },
+  {
+    "slug": "av",
+    "name": "AV output",
+    "platform": "mega-drive",
+    "sort_order": 70
+  },
+  {
+    "slug": "psu",
+    "name": "Power input",
+    "platform": "mega-drive",
+    "sort_order": 110
+  },
+  {
+    "slug": "cart",
+    "name": "Cartridge slot",
+    "platform": "game-gear",
+    "sort_order": 10
+  },
+  {
+    "slug": "link",
+    "name": "Link cable port",
+    "platform": "game-gear",
+    "sort_order": 50
+  },
+  {
+    "slug": "psu",
+    "name": "Power input",
+    "platform": "game-gear",
+    "sort_order": 110
+  },
+  {
+    "slug": "isa16",
+    "name": "ISA, 16-bit",
+    "platform": "pc",
+    "sort_order": 20
+  },
+  {
+    "slug": "vlb",
+    "name": "VESA Local Bus",
+    "platform": "pc",
+    "sort_order": 50
+  },
+  {
+    "slug": "ser",
+    "name": "Serial port",
+    "platform": "cd32",
+    "sort_order": 200
+  },
+  {
+    "slug": "misc",
+    "name": "Miscellaneous",
+    "platform": "cd32",
+    "sort_order": 900
+  }
+]

@@ -1,0 +1,105 @@
+[
+  {
+    "slug": "computers",
+    "name": "Computers",
+    "role": "machine",
+    "sort_order": 10,
+    "classes": "computer"
+  },
+  {
+    "slug": "peripherals",
+    "name": "Peripherals",
+    "role": "peripheral",
+    "sort_order": 20
+  },
+  {
+    "slug": "expansions",
+    "name": "Expansions",
+    "role": "peripheral",
+    "sort_order": 30,
+    "classes": "computer"
+  },
+  {
+    "slug": "memory",
+    "name": "Memory",
+    "role": "other",
+    "parent": "expansions",
+    "sort_order": 32,
+    "classes": "computer"
+  },
+  {
+    "slug": "graphics-card",
+    "name": "Graphics card",
+    "role": "other",
+    "parent": "expansions",
+    "sort_order": 33,
+    "classes": "computer"
+  },
+  {
+    "slug": "console",
+    "name": "Consoles",
+    "role": "machine",
+    "sort_order": 11,
+    "classes": "console"
+  },
+  {
+    "slug": "handheld",
+    "name": "Handhelds",
+    "role": "machine",
+    "sort_order": 12,
+    "classes": "handheld"
+  },
+  {
+    "slug": "adapters",
+    "name": "Adapters",
+    "role": "other",
+    "parent": "peripherals",
+    "sort_order": 21,
+    "classes": "computer"
+  },
+  {
+    "slug": "network-adapters",
+    "name": "Network adapters",
+    "role": "other",
+    "parent": "adapters",
+    "sort_order": 22,
+    "classes": "computer"
+  },
+  {
+    "slug": "storage",
+    "name": "Storage",
+    "role": "other",
+    "parent": "peripherals",
+    "sort_order": 23,
+    "classes": "computer"
+  },
+  {
+    "slug": "displays",
+    "name": "Displays",
+    "role": "other",
+    "parent": "peripherals",
+    "sort_order": 25,
+    "classes": "computer"
+  },
+  {
+    "slug": "accelerator",
+    "name": "Accelerator",
+    "role": "other",
+    "parent": "expansions",
+    "sort_order": 31,
+    "classes": "computer"
+  },
+  {
+    "slug": "blank-media",
+    "name": "Blank media",
+    "sort_order": 50,
+    "classes": "computer"
+  },
+  {
+    "slug": "cartridges",
+    "name": "Cartridges",
+    "role": "peripheral",
+    "sort_order": 30,
+    "classes": "console,handheld"
+  }
+]

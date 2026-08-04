@@ -1,0 +1,14 @@
+[
+  {
+    "slug": "movies",
+    "name": "Movies",
+    "role": "movie",
+    "sort_order": 10
+  },
+  {
+    "slug": "tv-shows",
+    "name": "TV Shows",
+    "role": "tv_show",
+    "sort_order": 20
+  }
+]

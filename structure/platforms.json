@@ -1,0 +1,146 @@
+[
+  {
+    "slug": "amiga",
+    "name": "Amiga",
+    "maker": "commodore",
+    "class": "computer",
+    "year": 1985,
+    "colour": "#f38ba8",
+    "sort_order": 10
+  },
+  {
+    "slug": "c64",
+    "name": "C64",
+    "maker": "commodore",
+    "class": "computer",
+    "year": 1982,
+    "colour": "#a6e3a1",
+    "sort_order": 20
+  },
+  {
+    "slug": "mega-drive",
+    "name": "Mega Drive",
+    "maker": "sega",
+    "class": "console",
+    "year": 1988,
+    "colour": "#74c7ec",
+    "sort_order": 90
+  },
+  {
+    "slug": "saturn",
+    "name": "Saturn",
+    "maker": "sega",
+    "class": "console",
+    "year": 1994,
+    "colour": "#b4befe",
+    "sort_order": 450
+  },
+  {
+    "slug": "pc",
+    "name": "PC",
+    "class": "computer",
+    "year": 1981,
+    "colour": "#94e2d5",
+    "sort_order": 15,
+    "maker": "ibm"
+  },
+  {
+    "slug": "cd32",
+    "name": "Amiga CD32",
+    "maker": "commodore",
+    "class": "console",
+    "year": 1993,
+    "colour": "#f38ba8",
+    "sort_order": 130
+  },
+  {
+    "slug": "cdtv",
+    "name": "CDTV",
+    "maker": "commodore",
+    "class": "console",
+    "year": 1991,
+    "colour": "#eba0ac",
+    "sort_order": 140
+  },
+  {
+    "slug": "dreamcast",
+    "name": "Dreamcast",
+    "maker": "sega",
+    "class": "console",
+    "year": 1998,
+    "colour": "#cba6f7",
+    "sort_order": 460
+  },
+  {
+    "slug": "game-gear",
+    "name": "Game Gear",
+    "maker": "sega",
+    "class": "handheld",
+    "year": 1990,
+    "colour": "#f9e2af",
+    "sort_order": 700
+  },
+  {
+    "slug": "vhs",
+    "name": "VHS",
+    "class": "video-format",
+    "year": 1976,
+    "colour": "#f9e2af",
+    "sort_order": 810,
+    "maker": "jvc"
+  },
+  {
+    "slug": "laserdisc",
+    "name": "LaserDisc",
+    "class": "video-format",
+    "year": 1978,
+    "colour": "#fab387",
+    "sort_order": 820,
+    "maker": "philips"
+  },
+  {
+    "slug": "dvd",
+    "name": "DVD",
+    "class": "video-format",
+    "year": 1996,
+    "colour": "#89b4fa",
+    "sort_order": 830,
+    "maker": "toshiba"
+  },
+  {
+    "slug": "blu-ray",
+    "name": "Blu-ray",
+    "class": "video-format",
+    "year": 2006,
+    "colour": "#74c7ec",
+    "sort_order": 840,
+    "maker": "sony"
+  },
+  {
+    "slug": "vinyl",
+    "name": "Vinyl",
+    "class": "audio-format",
+    "year": 1948,
+    "colour": "#f38ba8",
+    "sort_order": 850,
+    "maker": "columbia-records"
+  },
+  {
+    "slug": "cassette",
+    "name": "Cassette",
+    "class": "audio-format",
+    "year": 1963,
+    "colour": "#eba0ac",
+    "sort_order": 860,
+    "maker": "philips"
+  },
+  {
+    "slug": "cd",
+    "name": "CD",
+    "class": "audio-format",
+    "year": 1982,
+    "colour": "#cba6f7",
+    "sort_order": 870,
+    "maker": "philips"
+  }
+]

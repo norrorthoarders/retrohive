@@ -1,0 +1,38 @@
+[
+  {
+    "slug": "wb1",
+    "name": "Workbench 1.x",
+    "platform": "amiga",
+    "sort_order": 10
+  },
+  {
+    "slug": "wb2",
+    "name": "Workbench 2.x",
+    "platform": "amiga",
+    "sort_order": 20
+  },
+  {
+    "slug": "wb3",
+    "name": "Workbench 3.x",
+    "platform": "amiga",
+    "sort_order": 30
+  },
+  {
+    "slug": "os4",
+    "name": "AmigaOS 4",
+    "platform": "amiga",
+    "sort_order": 40
+  },
+  {
+    "slug": "c64-basic",
+    "name": "Commodore BASIC",
+    "platform": "c64",
+    "sort_order": 10
+  },
+  {
+    "slug": "geos64",
+    "name": "GEOS",
+    "platform": "c64",
+    "sort_order": 20
+  }
+]

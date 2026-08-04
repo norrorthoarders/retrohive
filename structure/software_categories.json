@@ -1,0 +1,59 @@
+[
+  {
+    "slug": "games",
+    "name": "Games",
+    "role": "game",
+    "sort_order": 10
+  },
+  {
+    "slug": "applications",
+    "name": "Applications",
+    "role": "application",
+    "sort_order": 20,
+    "classes": "computer"
+  },
+  {
+    "slug": "platformer",
+    "name": "Platformer",
+    "parent": "games",
+    "role": "other",
+    "sort_order": 20
+  },
+  {
+    "slug": "shoot-em-up",
+    "name": "Shoot 'em up",
+    "parent": "games",
+    "role": "other",
+    "sort_order": 30
+  },
+  {
+    "slug": "graphics-cad",
+    "name": "Graphics and CAD",
+    "parent": "applications",
+    "role": "other",
+    "sort_order": 21,
+    "classes": "computer"
+  },
+  {
+    "slug": "paint",
+    "name": "Paint",
+    "parent": "graphics-cad",
+    "role": "other",
+    "sort_order": 22,
+    "classes": "computer"
+  },
+  {
+    "slug": "action",
+    "name": "Action",
+    "parent": "games",
+    "role": "other",
+    "sort_order": 10
+  },
+  {
+    "slug": "strategy",
+    "name": "Strategy",
+    "parent": "games",
+    "role": "other",
+    "sort_order": 110
+  }
+]

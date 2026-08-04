@@ -1,0 +1,30 @@
+# RetroVault - route everything through the front controller.
+# Requires mod_rewrite and "AllowOverride All" on this directory.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Bearer tokens: many FastCGI and CGI setups drop the Authorization header
+    # before PHP sees it. Copy it into a variable the app also checks.
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Serve real files and directories as-is (CSS, JS, uploaded photos).
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Apache 2.4.13+ behind php-fpm: hand the Authorization header to the SAPI.
+<IfModule mod_setenvif.c>
+    SetEnvIfNoCase ^Authorization$ "(.+)" HTTP_AUTHORIZATION=$1
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+</IfModule>
+
+DirectoryIndex index.php
+Options -Indexes

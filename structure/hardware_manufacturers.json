@@ -1,0 +1,94 @@
+[
+  {
+    "slug": "commodore",
+    "name": "Commodore",
+    "country": "US",
+    "sort_order": 8,
+    "founded": 1954,
+    "defunct": 1994,
+    "wikipedia": "https://en.wikipedia.org/wiki/Commodore_International"
+  },
+  {
+    "slug": "mnt-research",
+    "name": "MNT Research",
+    "country": "DE",
+    "sort_order": 19,
+    "founded": 2015,
+    "website": "https://mntre.com",
+    "wikipedia": "https://en.wikipedia.org/wiki/MNT_Reform"
+  },
+  {
+    "slug": "waw-elektronik",
+    "name": "W.A.W. Elektronik",
+    "country": "DE",
+    "sort_order": 35
+  },
+  {
+    "slug": "ibm",
+    "name": "IBM",
+    "country": "US",
+    "sort_order": 15,
+    "founded": 1911,
+    "website": "https://www.ibm.com",
+    "wikipedia": "https://en.wikipedia.org/wiki/IBM"
+  },
+  {
+    "slug": "sega",
+    "name": "Sega",
+    "country": "JP",
+    "sort_order": 24,
+    "founded": 1960,
+    "website": "https://www.sega.com",
+    "wikipedia": "https://en.wikipedia.org/wiki/Sega"
+  },
+  {
+    "slug": "various-vendor",
+    "name": "Various",
+    "sort_order": 34
+  },
+  {
+    "slug": "jvc",
+    "name": "JVC",
+    "country": "JP",
+    "sort_order": 40,
+    "founded": 1927,
+    "website": "https://www.jvc.com",
+    "wikipedia": "https://en.wikipedia.org/wiki/JVC"
+  },
+  {
+    "slug": "philips",
+    "name": "Philips",
+    "country": "NL",
+    "sort_order": 41,
+    "founded": 1891,
+    "website": "https://www.philips.com",
+    "wikipedia": "https://en.wikipedia.org/wiki/Philips"
+  },
+  {
+    "slug": "toshiba",
+    "name": "Toshiba",
+    "country": "JP",
+    "sort_order": 42,
+    "founded": 1875,
+    "website": "https://www.toshiba.com",
+    "wikipedia": "https://en.wikipedia.org/wiki/Toshiba"
+  },
+  {
+    "slug": "sony",
+    "name": "Sony",
+    "country": "JP",
+    "sort_order": 43,
+    "founded": 1946,
+    "website": "https://www.sony.com",
+    "wikipedia": "https://en.wikipedia.org/wiki/Sony"
+  },
+  {
+    "slug": "columbia-records",
+    "name": "Columbia Records",
+    "country": "US",
+    "sort_order": 44,
+    "founded": 1888,
+    "website": "https://www.columbiarecords.com",
+    "wikipedia": "https://en.wikipedia.org/wiki/Columbia_Records"
+  }
+]

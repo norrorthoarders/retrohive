@@ -1,0 +1,56 @@
+<?php
+declare(strict_types=1);
+
+// Copy to src/config.local.php and edit. This file overrides src/config.php.
+// Keep it out of version control - it holds the database password.
+
+return [
+    'app_name'    => 'RetroHive',
+    'app_tagline' => 'Retro software collection',
+    'currency'    => 'SEK',
+    'timezone'    => 'Europe/Stockholm',
+    'debug'       => false,
+
+    // 0 = sign-in required to see anything (default).
+    // 1 = anyone can browse read-only; sign-in only needed to change things.
+    'public_browse' => false,
+
+    'db' => [
+        'host' => '127.0.0.1',
+        'port' => 3306,
+        'name' => 'retrohive',
+        'user' => 'retrohive',
+        'pass' => 'put-a-real-password-here',
+    ],
+
+    // Absolute URL clients should use. Leave empty to detect it from the
+    // request. Set it when a reverse proxy rewrites Host or the scheme,
+    // otherwise the API will hand mobile clients unreachable image URLs.
+    'base_url' => '',
+
+    // Reverse proxies allowed to set X-Forwarded-For / -Proto / -Host.
+    // List the HAProxy addresses, never 0.0.0.0/0.
+    'trusted_proxies' => [
+        // '10.0.0.5',
+        // '10.0.0.0/24',
+    ],
+
+    'api' => [
+        // Browser origins allowed to call the API, as exact origins. Empty means
+        // no cross-origin browser access, which is what a self-hosted instance
+        // with native clients wants: they ignore CORS, and same-origin pages do
+        // not need it. Only fill this in for a browser front end on another host.
+        //   'cors_origins' => ['https://vault.example.se'],
+        'cors_origins' => [],
+
+        // Days before a token from /api/v1/auth/login expires. 0 = never.
+        'token_days' => 0,
+    ],
+
+    'uploads' => [
+        // Keep at or below upload_max_filesize in php.ini.
+        'max_bytes'  => 12 * 1024 * 1024,
+        'thumb_px'   => 480,
+        'display_px' => 1600,
+    ],
+];

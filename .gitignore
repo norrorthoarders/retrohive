@@ -1,0 +1,17 @@
+# Secrets
+.env
+src/config.local.php
+
+# Uploaded photos - back these up, do not commit them
+public/uploads/*
+!public/uploads/.htaccess
+!public/uploads/.gitkeep
+
+# Local backups
+backups/
+
+# Editor and OS noise
+.idea/
+.vscode/
+*.swp
+.DS_Store

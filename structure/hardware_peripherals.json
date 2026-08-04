@@ -1,0 +1,111 @@
+[
+  {
+    "slug": "bigram-2008",
+    "name": "BigRAM 2008",
+    "maker": "waw-elektronik",
+    "platform": "amiga",
+    "type": "memory",
+    "year": 1992,
+    "interface": "z2",
+    "sort_order": 30,
+    "notes": "Zorro II memory card. Autoconfiguring, so it works in any Zorro machine rather than one model - which is why it is here as the example of a card that fits several. The 2008 is a model number, not a year.",
+    "compatible_models": [
+      "amiga-2000",
+      "amiga-3000",
+      "amiga-4000"
+    ],
+    "fields": [
+      {
+        "label": "Memory",
+        "value": "8 MB soldered to the board, sixteen 1M x 4 chips"
+      },
+      {
+        "label": "Waitstates",
+        "value": "none"
+      },
+      {
+        "label": "Configurable",
+        "value": "2, 4 or 6 MB, to avoid clashing with another card"
+      },
+      {
+        "label": "Interface",
+        "value": "Zorro II"
+      },
+      {
+        "label": "Autoconfig ID",
+        "value": "257 / 10"
+      }
+    ]
+  },
+  {
+    "slug": "zz9000",
+    "name": "MNT ZZ9000",
+    "maker": "mnt-research",
+    "platform": "amiga",
+    "type": "graphics-card",
+    "year": 2019,
+    "fits": "Zorro II and Zorro III machines; A500 via the ZZ9500CX adapter",
+    "interface": "z2",
+    "notes": "Graphics, Ethernet and USB on one Zorro card, built on a Xilinx Zynq XC7Z020 — an FPGA and two ARM cores rather than a fixed graphics chip, so what it does is decided by firmware. Successor to the VA2000. Still made and still supported, which makes it an odd thing to find in a retro catalogue and exactly the kind of card a working Amiga has in it.",
+    "sort_order": 70,
+    "compatible_models": [
+      "amiga-2000",
+      "amiga-3000",
+      "amiga-4000"
+    ],
+    "fields": [
+      {
+        "label": "Chip",
+        "value": "Xilinx Zynq XC7Z020: 7-series FPGA plus 2x ARM Cortex-A9 @ 666 MHz"
+      },
+      {
+        "label": "Memory",
+        "value": "1 GB DDR3"
+      },
+      {
+        "label": "Interface",
+        "value": "Zorro II or Zorro III"
+      },
+      {
+        "label": "Resolution",
+        "value": "up to 1920x1080 — 16-bit at FHD, up to 32-bit below it"
+      },
+      {
+        "label": "Colour",
+        "value": "8-bit chunky, 16-bit or 32-bit"
+      },
+      {
+        "label": "Video in",
+        "value": "Amiga native passthrough with AGA scandoubler and flicker-fixer (ZZ9000CX)"
+      },
+      {
+        "label": "Network",
+        "value": "Ethernet, SANA-II driver"
+      },
+      {
+        "label": "USB",
+        "value": "mass storage, mountable as an Amiga drive"
+      },
+      {
+        "label": "Firmware",
+        "value": "BOOT.bin on a FAT32 MicroSD card"
+      },
+      {
+        "label": "Driver",
+        "value": "RTG via Picasso96; needs Kickstart 3.1+ and 68020+"
+      },
+      {
+        "label": "Revisions",
+        "value": "R-1 to R-4; R-1 and R-2 need the trace-cut fix"
+      },
+      {
+        "label": "Add-on",
+        "value": "ZZ9000AX audio card, firmware 1.10 or later"
+      },
+      {
+        "label": "Reference",
+        "value": "https://mntre.com/media/ZZ9000_info_md/2019-08-09-ZZ9000-resources.html"
+      }
+    ]
+  }
+]

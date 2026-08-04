@@ -1,0 +1,98 @@
+{
+  "wikidata": {
+    "tested_with": [],
+    "platform_map": {
+      "amiga": "Q100047",
+      "c64": "Q99775"
+    },
+    "default_for_kinds": []
+  },
+  "amigahw": {
+    "tested_with": [
+      "amiga",
+      "cd32",
+      "cdtv"
+    ],
+    "platform_map": [],
+    "default_for_kinds": [
+      "machine",
+      "peripheral"
+    ]
+  },
+  "igdb": {
+    "tested_with": [
+      "pc",
+      "amiga",
+      "c64",
+      "mega-drive",
+      "saturn"
+    ],
+    "platform_map": {
+      "pc": "6",
+      "amiga": "16",
+      "c64": "15",
+      "mega-drive": "29",
+      "saturn": "32"
+    },
+    "platform_map_note": "IGDB platform ids, trimmed to the platforms this instance ships.",
+    "default_for_kinds": [
+      "game"
+    ]
+  },
+  "bboah": {
+    "platform_map": [],
+    "default_for_kinds": [
+      "machine",
+      "peripheral"
+    ],
+    "tested_with": [
+      "amiga",
+      "cdtv"
+    ]
+  },
+  "commons": {
+    "platform_map": {
+      "amiga": "Amiga",
+      "cd32": "Amiga CD32",
+      "cdtv": "CDTV",
+      "c64": "C64",
+      "pc": "PC",
+      "mega-drive": "Mega Drive"
+    },
+    "default_for_kinds": []
+  },
+  "openretro": {
+    "tested_with": [
+      "amiga",
+      "cd32",
+      "cdtv"
+    ],
+    "platform_map": {
+      "amiga": "amiga",
+      "cd32": "cd32",
+      "cdtv": "cdtv"
+    },
+    "platform_map_note": "OpenRetro's browse pages are scoped by a slug in the path - /browse/t/amiga - so the remote id is that slug rather than a number.",
+    "default_for_kinds": [
+      "game"
+    ]
+  },
+  "thegamesdb": {
+    "platform_map": {
+      "amiga": "4911",
+      "cd32": "4947",
+      "c64": "40"
+    },
+    "platform_map_note": "Trimmed to the platforms this instance ships - the real TheGamesDB catalogue covers far more. tested_with deliberately not overridden here, so it keeps the code's own comprehensive list rather than being trimmed to match."
+  },
+  "wikipedia": {
+    "label": "Wikipedia",
+    "platform_map": [],
+    "default_for_kinds": [
+      "machine",
+      "peripheral",
+      "game",
+      "application"
+    ]
+  }
+}
