@@ -1118,6 +1118,182 @@ function api_titles_delete(int $id): void
     api_no_content();
 }
 
+/**
+ * Where things physically are - the API side of what the web manage screen
+ * already does through locations_save()'s single multiplexed action. Real
+ * REST verbs here instead, matching every other resource in this API; the
+ * business rules themselves are the same functions the web controller
+ * already calls, not reimplemented for a second time.
+ */
+function api_locations_index(): void
+{
+    api_require_auth();
+    $libraryId = api_query_int('library_id');
+    if ($libraryId === null || !can_read_library($libraryId)) {
+        api_error('forbidden', 'That library is not one you may read.', 403);
+    }
+    api_ok(array_map('location_to_api', location_tree($libraryId)));
+}
+
+function api_locations_create(): void
+{
+    api_require_write();
+    $in = api_body();
+    $libraryId = isset($in['library_id']) ? (int) $in['library_id'] : 0;
+    if ($libraryId <= 0 || !can_add_to_library($libraryId)) {
+        api_error('forbidden', 'That library is not yours to arrange.', 403);
+    }
+
+    $name = trim((string) ($in['name'] ?? ''));
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Give the place a name.']);
+    }
+
+    $parentId = isset($in['parent_id']) && (int) $in['parent_id'] > 0 ? (int) $in['parent_id'] : null;
+    if ($parentId !== null) {
+        $parent = one('SELECT id FROM locations WHERE id = ? AND library_id = ?', [$parentId, $libraryId]);
+        if ($parent === null) {
+            api_error('validation_failed', 'Some fields need attention.', 422,
+                       ['parent_id' => 'That parent is in another library.']);
+        }
+    }
+
+    if (location_name_taken($libraryId, $parentId, $name)) {
+        $where = $parentId === null ? 'at the top level' : 'in ' . location_breadcrumb($parentId);
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['name' => 'There is already a "' . $name . '" ' . $where . '.']);
+    }
+
+    $floor = api_location_floor($in['floor_level'] ?? null);
+
+    $id = (int) insert_row('locations', [
+        'library_id'  => $libraryId,
+        'parent_id'   => $parentId,
+        'name'        => mb_substr($name, 0, 120),
+        'floor_level' => $floor,
+        'notes'       => nullify($in['notes'] ?? null),
+    ]);
+    location_rebuild_paths();
+
+    api_ok(location_to_api(one('SELECT * FROM locations WHERE id = ?', [$id])), null, 201);
+}
+
+function api_locations_update(int $id): void
+{
+    api_require_write();
+    $existing = one('SELECT * FROM locations WHERE id = ?', [$id]);
+    if ($existing === null || !can_read_library((int) $existing['library_id'])) {
+        api_error('not_found', 'No such location.', 404);
+    }
+    $libraryId = (int) $existing['library_id'];
+    if (!can_add_to_library($libraryId)) {
+        api_error('forbidden', 'That library is not yours to arrange.', 403);
+    }
+
+    $in = api_body();
+    // Same shape as titles_update(): the model layer here (location_name_taken(),
+    // location_would_loop()) has no partial mode, so an omitted field is read
+    // back from the existing row rather than being treated as "clear this."
+    $name = array_key_exists('name', $in) ? trim((string) $in['name']) : (string) $existing['name'];
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Give the place a name.']);
+    }
+
+    $parentId = $existing['parent_id'] === null ? null : (int) $existing['parent_id'];
+    if (array_key_exists('parent_id', $in)) {
+        $parentId = (int) ($in['parent_id'] ?? 0) > 0 ? (int) $in['parent_id'] : null;
+        if ($parentId !== null) {
+            $parent = one('SELECT id FROM locations WHERE id = ? AND library_id = ?', [$parentId, $libraryId]);
+            if ($parent === null) {
+                api_error('validation_failed', 'Some fields need attention.', 422,
+                           ['parent_id' => 'That parent is in another library.']);
+            }
+        }
+    }
+
+    if (location_would_loop($id, $parentId)) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['parent_id' => 'A place cannot be inside itself, or inside something it contains.']);
+    }
+    if (location_name_taken($libraryId, $parentId, $name, $id)) {
+        $where = $parentId === null ? 'at the top level' : 'in ' . location_breadcrumb($parentId);
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['name' => 'There is already a "' . $name . '" ' . $where . '.']);
+    }
+
+    $floor = array_key_exists('floor_level', $in)
+        ? api_location_floor($in['floor_level'])
+        : ($existing['floor_level'] === null ? null : (int) $existing['floor_level']);
+
+    update_row('locations', $id, [
+        'name'        => mb_substr($name, 0, 120),
+        'parent_id'   => $parentId,
+        'floor_level' => $floor,
+        'notes'       => array_key_exists('notes', $in) ? nullify($in['notes']) : $existing['notes'],
+    ]);
+    location_rebuild_paths();
+
+    api_ok(location_to_api(one('SELECT * FROM locations WHERE id = ?', [$id])));
+}
+
+/**
+ * Refused while anything is filed here, through the subtree - the same
+ * guard locations_save()'s delete branch already enforces, so a room does
+ * not silently take an A500 to null when its cabinet goes with it.
+ */
+function api_locations_delete(int $id): void
+{
+    api_require_write();
+    $existing = one('SELECT * FROM locations WHERE id = ?', [$id]);
+    if ($existing === null || !can_read_library((int) $existing['library_id'])) {
+        api_error('not_found', 'No such location.', 404);
+    }
+    if (!can_add_to_library((int) $existing['library_id'])) {
+        api_error('forbidden', 'That library is not yours to arrange.', 403);
+    }
+
+    $subtree = location_subtree_ids($id);
+    $in      = implode(',', array_fill(0, count($subtree), '?'));
+    $held    = (int) scalar("SELECT COUNT(*) FROM items WHERE location_id IN ($in)", $subtree);
+    if ($held > 0) {
+        api_error('validation_failed', sprintf(
+            '%d %s filed in %s or inside it. Move %s first.',
+            $held, $held === 1 ? 'entry is' : 'entries are', $existing['name'],
+            $held === 1 ? 'it' : 'them'
+        ), 422);
+    }
+
+    delete_row('locations', $id);
+    location_rebuild_paths();
+    api_no_content();
+}
+
+/** Signed and small, same bound the web form enforces - out of range is a slightly odd
+ *  answer rather than a rejected one, so a typo does not block saving the rest of the row. */
+function api_location_floor($value): ?int
+{
+    if ($value === null || trim((string) $value) === '') {
+        return null;
+    }
+    $floor = (int) $value;
+    return ($floor < -9 || $floor > 99) ? null : $floor;
+}
+
+function location_to_api(array $r): array
+{
+    return [
+        'id'          => (int) $r['id'],
+        'library_id'  => (int) $r['library_id'],
+        'parent_id'   => $r['parent_id'] === null ? null : (int) $r['parent_id'],
+        'name'        => $r['name'],
+        'path'        => $r['path'],
+        'depth'       => (int) $r['depth'],
+        'floor_level' => $r['floor_level'] === null ? null : (int) $r['floor_level'],
+        'notes'       => $r['notes'],
+        'created_at'  => api_datetime($r['created_at'] ?? null),
+    ];
+}
+
 function api_categories_index(): void
 {
     api_require_auth();

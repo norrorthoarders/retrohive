@@ -258,6 +258,7 @@ if (str_starts_with($path, '/api/')) {
         ['POST',   '#^/api/v1/admin/users$#',             fn() => api_users_create()],
         ['PATCH',  '#^/api/v1/admin/users/(\d+)$#',        fn($id) => api_users_update((int) $id)],
         ['GET',    '#^/api/v1/admin/logs$#',              fn() => api_logs_index()],
+        ['GET',    '#^/api/v1/admin/status$#',            fn() => api_admin_status()],
         ['GET',    '#^/api/v1/admin/maintenance$#',       fn() => api_maintenance_index()],
         ['POST',   '#^/api/v1/admin/maintenance/([a-z_]+)$#',
                                                           fn($job) => api_maintenance_run((string) $job)],
@@ -292,6 +293,12 @@ if (str_starts_with($path, '/api/')) {
         ['PATCH',  '#^/api/v1/titles/(\d+)$#',            fn($id) => api_titles_update((int) $id)],
         ['PUT',    '#^/api/v1/titles/(\d+)$#',            fn($id) => api_titles_update((int) $id)],
         ['DELETE', '#^/api/v1/titles/(\d+)$#',            fn($id) => api_titles_delete((int) $id)],
+
+        ['GET',    '#^/api/v1/locations$#',               fn() => api_locations_index()],
+        ['POST',   '#^/api/v1/locations$#',               fn() => api_locations_create()],
+        ['PATCH',  '#^/api/v1/locations/(\d+)$#',          fn($id) => api_locations_update((int) $id)],
+        ['PUT',    '#^/api/v1/locations/(\d+)$#',          fn($id) => api_locations_update((int) $id)],
+        ['DELETE', '#^/api/v1/locations/(\d+)$#',          fn($id) => api_locations_delete((int) $id)],
         ['GET',    '#^/api/v1/categories$#',              fn() => api_categories_index()],
         ['GET',    '#^/api/v1/companies$#',               fn() => api_companies_index()],
         ['GET',    '#^/api/v1/companies/(\d+)$#',         fn($id) => api_companies_show((int) $id)],
@@ -337,7 +344,7 @@ if (str_starts_with($path, '/api/')) {
 // Two of them carry a token, so this is a prefix test rather than a list of
 // exact paths. The token decides nothing here: it is checked properly by the
 // route, against the mode, and a wrong one answers 404 like everything else.
-$open = ['/login', '/setup', '/register', '/robots.txt', '/healthz'];
+$open = ['/login', '/setup', '/register', '/robots.txt', '/healthz', '/status', '/status.json'];
 $openPrefixes = ['/join/', '/invite/'];
 $isOpenPath = in_array($path, $open, true);
 foreach ($openPrefixes as $prefix) {
@@ -548,6 +555,11 @@ $routes = [
     // Generated, so it can answer for the settings as they are now rather than
     // as they were when somebody last edited a file.
     ['GET',  '#^/robots\.txt$#',             fn() => robots_serve()],
+
+    // Public and unauthenticated, on purpose - see status_data()'s own
+    // comment for what that does and does not mean it discloses.
+    ['GET',  '#^/status$#',                  fn() => status_serve_html()],
+    ['GET',  '#^/status\.json$#',            fn() => status_serve_json()],
 
 
     ['GET',  '#^/setup$#',                   fn() => auth_setup_form()],

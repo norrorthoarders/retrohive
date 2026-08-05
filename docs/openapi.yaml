@@ -486,6 +486,58 @@ paths:
         "403": { description: Administrator access is required }
         "422": { description: An unknown channel, or a severity outside 0-7 }
 
+  /admin/status:
+    get:
+      tags: [Admin]
+      summary: Service detail for an authenticated administrator
+      description: >
+        What /status and /status.json, at the site root and unauthenticated,
+        deliberately do not say - their own comments explain why disclosing a
+        version number or service detail there would make them a
+        reconnaissance endpoint. An administrator asking the same question
+        from inside a session already knows what this instance is, so this
+        answers with the real version, migration and schema status, and
+        which metadata sources are configured - never their stored
+        credentials, only whether each is on and when it last answered.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      app:
+                        type: object
+                        properties:
+                          version: { type: string }
+                          released: { type: string, format: date }
+                          api_version: { type: string }
+                          php_version: { type: string }
+                      database:
+                        type: object
+                        properties:
+                          migrations_applied: { type: integer }
+                          migrations_pending: { type: array, items: { type: string } }
+                          migrations_total: { type: integer }
+                          schema_ok: { type: boolean }
+                          needs_update: { type: boolean }
+                      metadata_providers:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            type: { type: string }
+                            name: { type: string }
+                            is_enabled: { type: boolean }
+                            last_used_at: { type: string, format: date-time, nullable: true }
+                            last_error: { type: string, nullable: true }
+                      checked_at: { type: string, format: date-time }
+        "403": { description: Administrator access is required }
+
   /admin/maintenance:
     get:
       tags: [Admin]
@@ -1144,6 +1196,107 @@ paths:
         "204": { description: Deleted }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /locations:
+    get:
+      tags: [Locations]
+      summary: A library's location tree
+      description: >-
+        Flat, already in display order - depth-first, floors before names
+        within one parent - the same shape the manage screen builds from,
+        so a client walks parent_id itself rather than asking twice.
+      parameters:
+        - name: library_id
+          in: query
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Location" } }
+        "403": { description: That library is not one you may read }
+    post:
+      tags: [Locations]
+      summary: Add a place
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, name]
+              properties:
+                library_id: { type: integer }
+                name: { type: string }
+                parent_id: { type: integer, nullable: true }
+                floor_level: { type: integer, nullable: true, description: "-9 to 99; anything outside that range is stored as unset rather than refused." }
+                notes: { type: string, nullable: true }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Location" }
+        "422": { description: A duplicate name at the same level, or a parent in another library }
+        "403": { description: That library is not yours to arrange }
+
+  /locations/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Locations]
+      summary: Rename, move, or re-describe a place
+      description: >-
+        A key you omit keeps its current value, the same reasoning as
+        /titles/{id} - the model functions behind this (loop prevention,
+        the same-name-same-parent check) always revalidate the full row.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                parent_id: { type: integer, nullable: true }
+                floor_level: { type: integer, nullable: true }
+                notes: { type: string, nullable: true }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Location" }
+        "422": { description: A loop, a duplicate name, or a parent in another library }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Locations]
+      summary: Same as PATCH
+      responses:
+        "200": { description: Updated }
+        "422": { description: A loop, a duplicate name, or a parent in another library }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Locations]
+      summary: Remove a place
+      description: >-
+        Refused while anything is filed here or in anything beneath it -
+        the foreign key would silently set the affected items' location to
+        null, which is a quiet way to lose the answer to "where is my A500."
+      responses:
+        "204": { description: Deleted }
+        "422": { description: Something is still filed here or in its subtree }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /categories:
     get:
       tags: [Taxonomy]
@@ -1309,6 +1462,25 @@ components:
               id: { type: integer }
               name: { type: string }
               slug: { type: string }
+
+    Location:
+      type: object
+      description: >-
+        A room, a cabinet, a shelf - a tree of any depth, per library.
+        `path` and `depth` are materialised, not computed on read, so a
+        client can select a subtree without recursing itself.
+      properties:
+        id: { type: integer }
+        library_id: { type: integer }
+        parent_id: { type: [integer, "null"] }
+        name: { type: string }
+        path: { type: string }
+        depth: { type: integer }
+        floor_level:
+          type: [integer, "null"]
+          description: Signed, -9 to 99. 0 is the level you walk in on.
+        notes: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
 
     Title:
       type: object

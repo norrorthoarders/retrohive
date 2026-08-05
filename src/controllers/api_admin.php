@@ -942,3 +942,54 @@ function api_users_create(): void
                  WHERE u.id = ?", [$id]);
     api_ok(api_user_row($row), null, 201);
 }
+
+/**
+ * Everything /status and /status.json deliberately do not say.
+ *
+ * Those two exist to answer one public question - is this instance up - and
+ * their own comments explain why disclosing more there would make them a
+ * reconnaissance endpoint. An administrator asking the same question from
+ * inside a session is a different situation: they already know what this
+ * instance is, so a real version number and real service detail answers a
+ * question rather than handing a stranger a fingerprint.
+ *
+ * Composed from what already existed rather than re-derived: update_status()
+ * already computed the version/migration/schema answer and had no caller
+ * anywhere in this codebase before this one.
+ */
+function api_admin_status(): void
+{
+    api_require_admin();
+
+    $update = update_status();
+
+    $providers = array_map(static function (array $p): array {
+        // Never params: that column is where API keys live.
+        return [
+            'type'         => $p['type'],
+            'name'         => $p['name'],
+            'is_enabled'   => (bool) $p['is_enabled'],
+            'last_used_at' => api_datetime($p['last_used_at']),
+            'last_error'   => $p['last_error'],
+        ];
+    }, all('SELECT type, name, is_enabled, last_used_at, last_error
+              FROM metadata_providers ORDER BY priority, name'));
+
+    api_ok([
+        'app' => [
+            'version'     => $update['app_version'],
+            'released'    => $update['released'],
+            'api_version' => API_VERSION,
+            'php_version' => PHP_VERSION,
+        ],
+        'database' => [
+            'migrations_applied' => count($update['applied']),
+            'migrations_pending' => $update['pending'],
+            'migrations_total'   => $update['migrations_total'],
+            'schema_ok'          => $update['structure']['ok'],
+            'needs_update'       => $update['needs_update'],
+        ],
+        'metadata_providers' => $providers,
+        'checked_at' => api_datetime(gmdate('Y-m-d H:i:s')),
+    ]);
+}

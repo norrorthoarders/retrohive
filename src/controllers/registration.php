@@ -232,3 +232,113 @@ function health_serve(): void
     http_response_code(200);
     echo "ok\n";
 }
+
+/**
+ * The data behind /status and /status.json - one place that decides what a
+ * human or a script gets to know, so the two can never quietly disagree.
+ *
+ * Same restraint as health_serve() above, deliberately: no version number,
+ * no table counts, no library or user data. A status page is still a public,
+ * unauthenticated address, and what it is safe to say there is exactly what
+ * /healthz already decided was safe - operational or not, and nothing more
+ * specific than that.
+ */
+function status_data(): array
+{
+    $now = gmdate('Y-m-d\TH:i:s\Z');
+
+    if (!app_is_configured()) {
+        return [
+            'status'     => is_file(installer_path()) ? 'setup' : 'unconfigured',
+            'database'   => null,
+            'checked_at' => $now,
+        ];
+    }
+
+    try {
+        $c   = config('db');
+        $dsn = sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
+                       $c['host'], (int) $c['port'], $c['name']);
+        $probe = new PDO($dsn, $c['user'], $c['pass'], [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 3,
+        ]);
+        $probe->query('SELECT 1 FROM settings LIMIT 1');
+    } catch (Throwable $e) {
+        error_log('[retrohive] status check failed: ' . $e->getMessage());
+        return [
+            'status'     => 'unavailable',
+            'database'   => 'unreachable',
+            'checked_at' => $now,
+        ];
+    }
+
+    return [
+        'status'     => 'operational',
+        'database'   => 'connected',
+        'checked_at' => $now,
+    ];
+}
+
+function status_serve_html(): void
+{
+    $data = status_data();
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-store');
+    http_response_code($data['status'] === 'unavailable' ? 503 : 200);
+
+    // Deliberately not render()/layout.php: the layout calls working_library(),
+    // unread_notification_count() and a raw footer query, all of which need
+    // the exact database connection this page exists to report on. A status
+    // page that cannot load while the database is down is a status page that
+    // fails at the one moment it has a job to do - the same reasoning
+    // health_serve() above already applies, extended to cover a rendered page
+    // rather than a one-line response.
+    $labels = [
+        'operational'   => ['Operational', '#a6e3a1'],
+        'unavailable'   => ['Unavailable', '#f38ba8'],
+        'setup'         => ['Awaiting setup', '#f9e2af'],
+        'unconfigured'  => ['Unconfigured', '#f9e2af'],
+    ];
+    [$label, $color] = $labels[$data['status']] ?? ['Unknown', '#a6adc8'];
+    ?>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RetroHive — Status</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+  body { background:#1e1e2e; color:#cdd6f4; font-family:ui-monospace,monospace;
+         max-width:32rem; margin:4rem auto; padding:0 1.5rem; }
+  h1 { font-size:1.1rem; font-weight:normal; color:#a6adc8; margin:0 0 1.5rem; }
+  .status { font-size:1.4rem; margin-bottom:1.5rem; }
+  .dot { display:inline-block; width:.7em; height:.7em; border-radius:50%;
+         background:<?= $color ?>; margin-right:.5em; }
+  dl { margin:0; }
+  dt { color:#a6adc8; float:left; width:8rem; clear:left; }
+  dd { margin:0 0 .4rem; }
+</style>
+</head>
+<body>
+  <h1>RetroHive</h1>
+  <div class="status"><span class="dot"></span><?= e($label) ?></div>
+  <dl>
+    <?php if ($data['database'] !== null): ?>
+    <dt>Database</dt><dd><?= e((string) $data['database']) ?></dd>
+    <?php endif; ?>
+    <dt>Checked</dt><dd><?= e($data['checked_at']) ?></dd>
+  </dl>
+</body>
+</html>
+    <?php
+}
+
+function status_serve_json(): void
+{
+    $data = status_data();
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    http_response_code($data['status'] === 'unavailable' ? 503 : 200);
+    echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+}

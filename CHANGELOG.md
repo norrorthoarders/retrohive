@@ -1,5 +1,51 @@
 # Changelog
 
+**New: the locations API, built from scratch.** Unlike titles, this had zero endpoints before
+tonight - the web manage screen has always worked directly against the database through a
+single multiplexed `locations_save()` action (one POST, an `action` field deciding create,
+update or delete). The API gets real REST verbs instead - GET, POST, PATCH/PUT, DELETE -
+matching every other resource, while reusing the exact same model-layer functions the web
+controller already calls (`location_would_loop()`, `location_name_taken()`,
+`location_subtree_ids()`) rather than re-implementing the business rules a second time.
+
+Proved every real rule live, not just the happy path: a root and a nested child both create
+correctly with the right materialised path and depth; a duplicate name at the same level is
+refused with the exact message the web form gives; trying to make a location its own ancestor
+is refused; an empty location deletes cleanly; a location with a real item filed in it refuses
+deletion with the exact singular/plural grammar the original `sprintf()` already handled
+("1 entry is filed..." vs "2 entries are filed...").
+
+`docs/openapi.yaml` updated with both new paths and a new `Location` schema. Full suite re-run
+afterward: still 1 of 25, the same pre-existing, unrelated issue as every check tonight.
+
+**New: `GET /api/v1/admin/status`** - the detail `/status`/`/status.json` deliberately withhold,
+now available to an authenticated administrator instead of a stranger. Real version number, PHP
+version, migration and schema status, and which metadata sources are configured - never their
+stored credentials (the `params` column), only whether each is on and when it last answered.
+
+Composed from `update_status()`, a real function that already computed the version/migration/
+schema answer and had no caller anywhere in this codebase before this one - not re-derived.
+
+Verified all three real cases live, not just the happy path: no token refuses with 401, a
+genuine non-admin account refuses with 403 specifically (not just "not logged in"), and a real
+administrator gets the full response. `docs/openapi.yaml` updated to match, and the full suite
+re-run afterward to confirm nothing regressed.
+
+**New: `/status` and `/status.json`** - a public, unauthenticated status page and its JSON
+equivalent, sitting between `/healthz` (machine-only, bare "ok"/"unavailable") and the full
+admin panel (authenticated, everything). Deliberately matches `/healthz`'s own stated security
+reasoning rather than quietly relaxing it: no version number, no table counts, no library or
+user data - operational status, database connectivity, and a timestamp, nothing a public,
+unauthenticated visitor shouldn't see.
+
+Built to survive the exact failure it exists to report: neither route goes through the normal
+`render()`/`layout.php` path, because that layout calls `working_library()`,
+`unread_notification_count()` and a raw footer query - all of which need the same database
+connection this page is meant to report on. A status page that cannot load while the database
+is down fails at the one moment it has a job to do. Proved this live, not just reasoned about
+it - pointed the config at a nonexistent database and confirmed both routes still render
+correctly, reporting "Unavailable" / `503` rather than a fatal error.
+
 **Fixed a real installer bug**: `bin/install.php` and `bin/diagnose-join.php` still required
 `src/templates.php`, which was renamed to `src/structure.php` weeks ago as part of the
 starter-data -> structure rename. Every other caller of that file was updated at the time;
