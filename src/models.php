@@ -135,8 +135,8 @@ function seed_library_hardware(int $libraryId, bool $overwrite = false, ?array $
     if (!empty($parts['platforms'])) {
     // The join maps each template maker to the copy just made for this library.
     q('INSERT INTO platforms
-           (library_id, name, slug, vendor_id, year_introduced, accent_color, machine_class)
-       SELECT ?, t.name, t.slug, mine.id, t.year_introduced, t.accent_color, t.machine_class
+           (library_id, name, slug, vendor_id, year_introduced, accent_color, domains)
+       SELECT ?, t.name, t.slug, mine.id, t.year_introduced, t.accent_color, t.domains
          FROM platforms t
     LEFT JOIN companies   tv   ON tv.id = t.vendor_id
     LEFT JOIN companies   mine ON mine.library_id = ? AND mine.slug = tv.slug
@@ -2850,7 +2850,7 @@ function library_overwrite_from_templates(int $libraryId): void
     q("UPDATE platforms m
          JOIN platforms t ON t.library_id IS NULL AND t.slug = m.slug
           SET m.name = t.name, m.year_introduced = t.year_introduced,
-              m.accent_color = t.accent_color, m.machine_class = t.machine_class
+              m.accent_color = t.accent_color, m.domains = t.domains
         WHERE m.library_id = ?", [$libraryId]);
 
     q("UPDATE hardware_models m
@@ -2917,7 +2917,7 @@ function seed_library_categories(int $libraryId): void
     // operation - but it is one small query per platform against template data, not an
     // insert.
     $platforms = all(
-        'SELECT id, name, slug, machine_class FROM platforms WHERE library_id = ? ORDER BY name',
+        'SELECT id, name, slug, domains FROM platforms WHERE library_id = ? ORDER BY name',
         [$libraryId]
     );
     if ($platforms === []) {
@@ -2942,21 +2942,33 @@ function seed_library_categories(int $libraryId): void
         $derived[(string) $r['pslug']] ??= (string) $r['kind'];   // first wins: the majority
     }
 
-    // Which section(s) a platform's class participates in. A computer, console or
+    // Which section(s) a kind of platform participates in. A computer, console or
     // handheld sits in both Hardware and Software - the same machine is a physical
     // object and something with software written for it. A video or audio format
     // sits in exactly one: a VHS tape is not "hardware" in the sense a motherboard
     // is, and it does not run software. This is what lets step 1 and step 2 below
     // stay generic across every section rather than hardcoding two.
-    $classSections = [
+    //
+    // Not read from a stored column any more - platforms.domains is the real,
+    // direct answer to that now, the same shape companies.makes already used.
+    // What this table still earns its keep for is step 3's finer-grained
+    // matching: 'computer', 'console' and 'handheld' all mean domains
+    // hardware+software, but a template category can still be scoped to just
+    // one of the three (a console has no BASIC ROM category), and that
+    // distinction has no representation in domains at all - domains says
+    // which sections a platform is in, not which kind of hardware it is
+    // within Hardware. Kept as a fixed table because it is genuinely fixed:
+    // a kind's domains are a property of what the kind means, not data that
+    // varies per platform the way a platform's own domains column now can.
+    $kindDomains = [
         'computer'     => ['hardware', 'software'],
         'console'      => ['hardware', 'software'],
         'handheld'     => ['hardware', 'software'],
         'video-format' => ['video'],
         'audio-format' => ['music'],
     ];
-    $byClass = array_fill_keys(array_keys($classSections), []);
-    $fresh   = [];
+    $byKind = array_fill_keys(array_keys($kindDomains), []);
+    $fresh  = [];
     foreach ($platforms as $pf) {
         $pSlug = (string) $pf['slug'];
         $built = one('SELECT id, platform_id FROM categories
@@ -2987,16 +2999,19 @@ function seed_library_categories(int $libraryId): void
         $fresh[] = $pf;
 
         // The template's machine kinds are 'computers', 'console', 'handheld'; the
-        // classes on a category row are the singular words. Models decide where they
-        // exist; the platform's own class answers otherwise. hardware_models has
-        // nothing to say about a video or audio format - there is no "model" of a
-        // DVD - so $derived is simply empty for those and the platform's own
-        // machine_class is what settles it.
-        $class = ['computers' => 'computer', 'console' => 'console',
-                  'handheld' => 'handheld'][$derived[$pSlug] ?? '']
-              ?? (array_key_exists((string) ($pf['machine_class'] ?? ''), $classSections)
-                    ? (string) $pf['machine_class'] : 'computer');
-        $byClass[$class][] = (int) $pf['id'];
+        // kinds on a category row are the singular words. Models decide where they
+        // exist; the platform's own domains answer otherwise - a single 'video' or
+        // 'music' domain means there is only one honest kind it can be, so that
+        // case needs no model evidence at all the way computer/console/handheld
+        // genuinely does.
+        $domainList = explode(',', (string) ($pf['domains'] ?? ''));
+        $kind = ['computers' => 'computer', 'console' => 'console',
+                 'handheld' => 'handheld'][$derived[$pSlug] ?? ''] ?? match (true) {
+            $domainList === ['video'] => 'video-format',
+            $domainList === ['music'] => 'audio-format',
+            default                   => 'computer',
+        };
+        $byKind[$kind][] = (int) $pf['id'];
     }
     if ($fresh === []) {
         return;
@@ -3007,7 +3022,7 @@ function seed_library_categories(int $libraryId): void
         $sectionIdBySlug[(string) $s['slug']] = (int) $s['id'];
     }
     // Which section a platform's own root node belongs to - the first of its
-    // class's sections, which is 'hardware' for anything computer-shaped and the
+    // kind's sections, which is 'hardware' for anything computer-shaped and the
     // (only) section for a format. The root is an organisational grouping rather
     // than content itself; what actually lives in a section is the branch or
     // branches step 2 creates under it.
@@ -3016,14 +3031,14 @@ function seed_library_categories(int $libraryId): void
         'video'    => ['Video', 10],    'music'    => ['Music', 10],
     ];
 
-    // 1. The machines themselves, one statement per class rather than one for
-    //    everything - the root's section now varies by class, so platforms that
+    // 1. The machines themselves, one statement per kind rather than one for
+    //    everything - the root's section now varies by kind, so platforms that
     //    do not share a section cannot share a statement either.
-    foreach ($byClass as $class => $platIdsForClass) {
+    foreach ($byKind as $kind => $platIdsForClass) {
         if ($platIdsForClass === []) {
             continue;
         }
-        $rootSectionId = $sectionIdBySlug[$classSections[$class][0]];
+        $rootSectionId = $sectionIdBySlug[$kindDomains[$kind][0]];
         $cin = implode(',', array_fill(0, count($platIdsForClass), '?'));
         q("INSERT INTO categories (library_id, section_id, role, platform_id, name, slug, sort_order)
            SELECT ?, ?, 'other', p.id, p.name, p.slug, 10
@@ -3031,14 +3046,14 @@ function seed_library_categories(int $libraryId): void
             WHERE p.id IN ($cin)", array_merge([$libraryId, $rootSectionId], $platIdsForClass));
     }
 
-    // 2. One branch per section a platform's class participates in - Hardware and
+    // 2. One branch per section a platform's kind participates in - Hardware and
     //    Software for a computer, just Video for a DVD, just Music for a CD.
-    foreach ($byClass as $class => $platIdsForClass) {
+    foreach ($byKind as $kind => $platIdsForClass) {
         if ($platIdsForClass === []) {
             continue;
         }
         $cin = implode(',', array_fill(0, count($platIdsForClass), '?'));
-        foreach ($classSections[$class] as $sectionSlug) {
+        foreach ($kindDomains[$kind] as $sectionSlug) {
             [$label, $ord] = $branchLabels[$sectionSlug];
             $sid = $sectionIdBySlug[$sectionSlug];
             q("INSERT INTO categories
@@ -3051,19 +3066,19 @@ function seed_library_categories(int $libraryId): void
         }
     }
 
-    // 3. The kinds, one statement per section, depth and class.
+    // 3. The kinds, one statement per section, depth and kind.
     //
     //    Depth matters because a row resolves its parent through the copy made on the
-    //    pass before; class matters because it decides which kinds a machine gets at
-    //    all. Platforms of the same class at the same depth are identical work.
+    //    pass before; kind matters because it decides which kinds a machine gets at
+    //    all. Platforms of the same kind at the same depth are identical work.
     $maxDepth = (int) scalar('SELECT COALESCE(MAX(depth), 0) FROM categories WHERE library_id IS NULL');
 
-    foreach ($byClass as $class => $platIds) {
+    foreach ($byKind as $kind => $platIds) {
         if ($platIds === []) {
             continue;
         }
         $cin = implode(',', array_fill(0, count($platIds), '?'));
-        foreach ($classSections[$class] as $sectionSlug) {
+        foreach ($kindDomains[$kind] as $sectionSlug) {
             $sid = $sectionIdBySlug[$sectionSlug];
             for ($d = 0; $d <= $maxDepth; $d++) {
                 q("INSERT INTO categories
@@ -3090,7 +3105,7 @@ function seed_library_categories(int $libraryId): void
                       AND mine.source_slug = t.slug
                     WHERE t.library_id IS NULL AND t.section_id = ? AND t.depth = ?
                       AND mine.id IS NULL
-                      -- Empty applies_to means every machine; otherwise this class has
+                      -- Empty applies_to means every machine; otherwise this kind has
                       -- to be in the list. FIND_IN_SET, so 'computer,console' matches
                       -- either without matching 'computerish'.
                       AND (t.applies_to = '' OR FIND_IN_SET(?, t.applies_to))
@@ -3098,7 +3113,7 @@ function seed_library_categories(int $libraryId): void
                       -- than being re-homed on the section's node.
                       AND (t.parent_id IS NULL OR mineParent.id IS NOT NULL)",
                   array_merge([$libraryId, $sid], $platIds,
-                              [$libraryId, $sectionSlug, $libraryId, $libraryId, $sid, $d, $class]));
+                              [$libraryId, $sectionSlug, $libraryId, $libraryId, $sid, $d, $kind]));
             }
         }
     }

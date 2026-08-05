@@ -1,5 +1,38 @@
 # Changelog
 
+**In progress: replaced platforms.machine_class with platforms.domains, a direct SET of the
+sections a platform participates in - the same shape companies.makes already used.**
+machine_class only ever existed to look up a fixed class-to-sections table (computer/console/
+handheld -> hardware+software, video-format -> video, audio-format -> music); a platform now
+states that directly rather than through an indirect class name.
+
+Done and verified so far: `db/schema.sql` updated; a real migration
+(`db/migrations/001_platform_domains.sql`) for existing installs - adds domains, backfills it
+from the old machine_class values, drops machine_class, safe to re-run; all 16 template platforms
+in `structure/platforms.json` converted from `class` to `domains`, none dropped or mismapped; a
+new `platform_domains_from()` helper mirroring the proven `company_makes_from()` pattern;
+`seed_library_categories()` substantially rewritten so building a platform's category tree reads
+its own `domains` directly for section/branch placement, while keeping a smaller internal kind
+lookup (computer/console/handheld) for the one thing domains alone genuinely cannot express - a
+template category scoped to just one of those three, which domains has no way to distinguish.
+Full suite re-run after all of this: still 1 of 25, the same pre-existing, unrelated issue as
+every check this session - nothing here has regressed.
+
+**Still open, not yet done**: `templates/taxonomy/tree.php`'s "Any machine" filter still reads
+the old column name and needs to move to the finer kind distinction instead of domains directly,
+since that filter was never about domains - it only ever offered computer/console/handheld, never
+video or audio format, so it needs what step 3's internal kind-derivation already computes, not
+the raw domains value. The migration itself (`php bin/migrate.php up`) has not yet been run and
+proven against a real pre-migration database - only tested by seeding a fresh one, which never
+exercises the ALTER/backfill/DROP path a real upgrade needs. Platforms' own API and client still
+don't expose `domains` as a settable field at all - creating a platform through /platforms still
+cannot mark it as a video or audio format, which was the actual, original ask this whole change
+grew out of.
+
+This package is **build 21**, reflecting real, tested progress - but not a finished feature.
+Deploying now gets you a working, unregressed instance with a correctly modeled `domains` column;
+it does not yet get you the ability to create a new video/audio-format platform through the UI.
+
 **The Kind feature - deferred earlier this session as separate, higher-stakes work - is now
 built.** `PATCH /categories/{id}` accepts an optional `role`; when sent, it switches the branch's
 kind and, for a hardware/software-flavoured one, cascades the matching section across the

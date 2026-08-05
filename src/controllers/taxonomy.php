@@ -457,7 +457,7 @@ function tree_index(): void
                 return [];
             }
             return all(
-                'SELECT p.id, p.name, p.slug, p.machine_class, v.name AS maker
+                'SELECT p.id, p.name, p.slug, p.domains, v.name AS maker
                    FROM platforms p
               LEFT JOIN companies v ON v.id = p.vendor_id
                   WHERE p.library_id = ?

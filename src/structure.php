@@ -86,6 +86,32 @@ function company_makes_merge(string $have, string $add): string
 }
 
 /**
+ * A platform's own domains, from the template row's own "domains" list -
+ * companies.makes's own pattern, not re-derived: read what the row claims,
+ * keep only the real values, fall back to the caller's default if it
+ * claimed nothing usable. Unlike company_makes_from(), all four sections
+ * are real answers here rather than two - a platform genuinely can be a
+ * video-format and nothing else, the same way a company can make only
+ * software.
+ */
+function platform_domains_from(array $row, string $default): string
+{
+    $claimed = $row['domains'] ?? null;
+    if (is_string($claimed)) {
+        $claimed = array_map('trim', explode(',', $claimed));
+    }
+    $out = [];
+    if (is_array($claimed)) {
+        foreach ($claimed as $d) {
+            if (in_array($d, ['hardware', 'software', 'video', 'music'], true)) {
+                $out[] = $d;
+            }
+        }
+    }
+    return $out === [] ? $default : implode(',', array_values(array_unique($out)));
+}
+
+/**
  * The files, in the order they must be applied.
  *
  * Order matters: a platform names a manufacturer, a genre names a category, a
@@ -472,11 +498,8 @@ function structure_apply(string $name, array $rows, bool $force = false): array
                         'name'            => mb_substr((string) ($row['name'] ?? $slug), 0, 120),
                         'slug'            => $slug,
                         'year_introduced' => isset($row['year']) ? (int) $row['year'] : null,
-                        // The fallback used when a platform has no models to ask.
-                        'machine_class'   => in_array((string) ($row['class'] ?? ''),
-                                                      ['computer', 'console', 'handheld',
-                                                       'video-format', 'audio-format'], true)
-                            ? (string) $row['class'] : 'computer',
+                        // The fallback used when a platform names no domains at all.
+                        'domains'         => platform_domains_from($row, 'hardware,software'),
                         'accent_color'    => preg_match('/^#[0-9a-f]{6}$/i', (string) ($row['colour'] ?? ''))
                             ? $row['colour'] : '#a6adc8',
                     ];

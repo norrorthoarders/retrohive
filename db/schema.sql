@@ -160,7 +160,14 @@ CREATE TABLE IF NOT EXISTS platforms (
   -- because they are the thing that actually knows. This is the answer for the sixty
   -- platforms nobody has modelled yet, so their category trees can still be built
   -- correctly rather than all defaulting to 'computer'.
-  machine_class VARCHAR(16) NOT NULL DEFAULT 'computer',
+  --
+  -- Replaced a single machine_class string (computer/console/handheld/video-format/
+  -- audio-format) with a direct set of the sections a platform participates in -
+  -- the same shape companies.makes already used. machine_class was a name for
+  -- which machines exist, not what this column was actually for; it only ever
+  -- existed to look up a fixed class-to-sections table. A platform now just says
+  -- the sections directly, the same way a company already does.
+  domains SET('hardware','software','video','music') NOT NULL DEFAULT 'hardware,software',
   name            VARCHAR(120) NOT NULL,
   slug            VARCHAR(140) NOT NULL,
   -- Who made it, as a row rather than a word typed again. Nullable because a
