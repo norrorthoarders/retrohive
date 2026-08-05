@@ -14,7 +14,7 @@
 declare(strict_types=1);
 define('APP_ROOT', dirname(__DIR__));
 define('BASE_PATH', '');
-foreach (['helpers','proxy','db','auth','throttle','acl','log','templates','notify',
+foreach (['helpers','proxy','db','auth','throttle','acl','log','structure','notify',
           'ldap','metadata','version','migrate','images','models','api'] as $f) {
     require APP_ROOT . '/src/' . $f . '.php';
 }

@@ -1,5 +1,15 @@
 # Changelog
 
+**Fixed a real installer bug**: `bin/install.php` and `bin/diagnose-join.php` still required
+`src/templates.php`, which was renamed to `src/structure.php` weeks ago as part of the
+starter-data -> structure rename. Every other caller of that file was updated at the time;
+these two were missed because the require path is built by string concatenation
+(`'templates' . '.php'`), not written out literally, so a text search for the filename never
+found them. A fresh install now fails immediately after writing `config.local.php` - late
+enough to look like a database problem, which is what made this one hide as long as it did.
+Found via a real, full `bin/install.php --answers ...` run reaching the "Done." line
+end-to-end, not just a syntax check.
+
 **New: Video and Music sections, alongside Hardware and Software.** Physical media
 collections - VHS, LaserDisc, DVD, Blu-ray, Vinyl, Cassette, CD - are now first-class,
 not bolted on. The redesign that made this possible:

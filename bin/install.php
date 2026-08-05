@@ -561,7 +561,7 @@ if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
 
 foreach (['helpers', 'proxy', 'db', 'auth', 'throttle', 'acl', 'log', 'ldap',
           'metadata', 'version', 'migrate', 'images', 'models', 'notify',
-          'registration', 'templates'] as $unit) {
+          'registration', 'structure'] as $unit) {
     require APP_ROOT . '/src/' . $unit . '.php';
 }
 
