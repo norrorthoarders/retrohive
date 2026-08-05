@@ -2574,6 +2574,58 @@ function api_software_models_delete(int $id): void
 }
 
 /**
+ * CSV import - a real client for the engine's own import_parse()/
+ * import_commit(), not a reimplementation. Dry run is the default,
+ * matching the real web form's own two rules: nothing writes until the
+ * whole file is read and understood, and a row with no id creates while
+ * a row naming one updates. `commit=1` actually applies what the dry run
+ * already showed - the same report, not a second parse that could
+ * disagree with the first.
+ */
+function api_import_run(): void
+{
+    api_require_write();
+
+    $libraryId = isset($_POST['library_id']) ? (int) $_POST['library_id'] : 0;
+    if ($libraryId <= 0 || !can_add_to_library($libraryId)) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['library_id' => 'Choose a library you can write to.']);
+    }
+
+    $file = $_FILES['csv'] ?? null;
+    if ($file === null || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        api_error('validation_failed', 'Choose a CSV file to upload.', 422, ['csv' => 'Required.']);
+    }
+    if (!is_uploaded_file($file['tmp_name'])) {
+        api_error('validation_failed', 'That was not an upload.', 422, ['csv' => 'Not a real upload.']);
+    }
+
+    $commit       = ($_POST['commit'] ?? '') === '1';
+    $createTitles = ($_POST['create_titles'] ?? '') === '1';
+
+    $report = import_parse((string) $file['tmp_name'], $libraryId, $createTitles);
+
+    if ($report['fatal'] !== null) {
+        api_error('validation_failed', $report['fatal'], 422);
+    }
+
+    $committed = false;
+    if ($commit && $report['errors'] === []) {
+        import_commit($report);
+        $committed = true;
+    }
+
+    api_ok([
+        'committed'     => $committed,
+        'create_count'  => (int) $report['create_count'],
+        'update_count'  => (int) $report['update_count'],
+        'errors'        => $report['errors'],
+        'warnings'      => $report['warnings'],
+        'row_count'     => count($report['rows']),
+    ]);
+}
+
+/**
  * Credits - who did what on a title. One holder per credit, a person or a
  * company never both, the same rule the database's own CHECK constraint
  * enforces regardless of what this layer does - checked here too, so a bad

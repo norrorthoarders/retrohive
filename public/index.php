@@ -347,6 +347,8 @@ if (str_starts_with($path, '/api/')) {
         ['PUT',    '#^/api/v1/software-models/(\d+)$#',      fn($id) => api_software_models_update((int) $id)],
         ['DELETE', '#^/api/v1/software-models/(\d+)$#',      fn($id) => api_software_models_delete((int) $id)],
 
+        ['POST',   '#^/api/v1/import$#',                    fn() => api_import_run()],
+
         ['GET',    '#^/api/v1/credits$#',                 fn() => api_credits_index()],
         ['POST',   '#^/api/v1/credits$#',                 fn() => api_credits_create()],
         ['DELETE', '#^/api/v1/credits/(\d+)$#',            fn($id) => api_credits_delete((int) $id)],

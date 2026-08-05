@@ -494,7 +494,15 @@ function import_commit(array $report): void
                 record_value_change((int) $row['id'], $row['existing'], $row['data']);
                 update_row('items', (int) $row['id'], $row['data']);
             } else {
-                $user = current_user();
+                // acting_user(), not current_user(): this same function is
+                // about to be called from a token-authenticated API request
+                // as well as the session-based web form, and current_user()
+                // only ever checks the session - every imported item would
+                // have silently recorded no creator at all from an API
+                // caller, the same class of bug is_admin() vs
+                // is_admin_user(acting_user()) already turned out to be
+                // earlier this session.
+                $user = acting_user();
                 $data = $row['data'] + ['currency' => config('currency')];
                 $data['created_by'] = $user === null ? null : (int) $user['id'];
                 $newId = insert_row('items', $data);

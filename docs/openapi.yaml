@@ -1842,6 +1842,36 @@ paths:
         "403": { description: Owner access on this library is required }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /import:
+    post:
+      tags: [Items]
+      summary: Import a CSV of catalogue entries
+      description: >-
+        Dry run by default - nothing is written unless `commit=1`. A row
+        with an `ID` column updates that entry; a row without one creates.
+        Multipart form data, not JSON: the file itself plus `library_id`,
+        optional `commit` and `create_titles`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [library_id, csv]
+              properties:
+                library_id: { type: integer }
+                csv: { type: string, format: binary }
+                commit: { type: string, enum: ["0", "1"], description: Send "1" to actually write. }
+                create_titles: { type: string, enum: ["0", "1"] }
+      responses:
+        "200":
+          description: >-
+            The dry-run or commit report - counts, and any row-level
+            errors or warnings. `committed` says whether anything was
+            actually written this call.
+        "422": { description: No file, no library access, or the file itself is unreadable }
+        "403": { description: Write access on this library is required }
+
   /environments:
     get:
       tags: [Taxonomy]

@@ -1,5 +1,36 @@
 # Changelog
 
+**A real, working CSV import API - a client for the engine's own `import_parse()`/
+`import_commit()`, not a reimplementation.** Dry run by default: nothing is written unless
+`commit=1` is sent, matching the real web form's own two governing rules exactly - the whole file
+is read and understood before anything writes, and a row naming an ID updates while a row without
+one creates.
+
+Found and fixed a real, latent bug while investigating this: `import_commit()` recorded who made
+each imported entry using `current_user()`, which only ever checks the session. Every entry
+imported through a token-authenticated request - this new API, or any future one - would have
+silently recorded no creator at all. The same class of bug `is_admin()` vs `is_admin_user
+(acting_user())` already turned out to be earlier this session, caught this time before it ever
+shipped rather than after. Fixed by switching to `acting_user()`, which checks the token first
+and falls back to the session - correct for both callers, not just the new one.
+
+Proved live, in stages: a dry run against a real two-row file, confirmed the report correctly
+predicted two creates while the database genuinely stayed at zero rows - not just that the
+response looked right. Then the same file with `commit=1`, confirmed both rows landed for real,
+with `created_by` correctly set to the real authenticated user - proving the fix, not just
+trusting it. Then a second import naming one existing ID and one blank, confirmed the named row
+updated in place while the blank one created a genuinely new entry - the create-vs-update rule,
+checked against real data rather than read off the code.
+
+`docs/openapi.yaml` updated. Full suite re-run: still 1 of 25, unchanged on both the API and web
+suites - the fix touches a function the session-based web form also calls, and that path still
+works too.
+
+**Client-side screens not built this round** - API only, the same split used for credits,
+hardware models, and software models earlier tonight.
+
+This package is **build 33**.
+
 **The software-models API - full CRUD, owner-gated to match hardware models rather than the real
 screen's own site-wide admin bar.** A boxed-release template: what a title made from it starts
 already filled in with, not an ongoing reference to it. Deliberately narrower than the real form
