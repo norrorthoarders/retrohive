@@ -733,6 +733,10 @@ function company_to_api(array $r): array
         'id'            => (int) $r['id'],
         'name'          => $r['name'],
         'slug'          => $r['slug'],
+        'library_id'    => isset($r['library_id']) && $r['library_id'] !== null ? (int) $r['library_id'] : null,
+        // Comma-stored, exposed as an array - the same shape a form posts
+        // back, so a client never has to know it is a SET column underneath.
+        'makes'         => ($r['makes'] ?? '') === '' ? [] : explode(',', (string) $r['makes']),
         'country'       => $r['country'],
         'founded_year'  => $r['founded_year'] === null ? null : (int) $r['founded_year'],
         'defunct_year'  => $r['defunct_year'] === null ? null : (int) $r['defunct_year'],

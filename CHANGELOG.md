@@ -1,5 +1,178 @@
 # Changelog
 
+**New: the categories API - create, rename, move, delete - the last piece of the taxonomy
+family this session set out to complete.** Curator-or-better on the branch's own library,
+matched exactly to `require_tree_access()`. Deliberately narrower than the real tree editor on
+purpose: no drag-and-drop reordering, no copy-subtree, and rename does not carry the real
+screen's role/section-switch cascade - that rewrites `section_id` across an entire subtree and is
+real, separate, higher-stakes work worth its own round, not folded into this one by habit.
+
+Move reuses the real screen's own loop-prevention and subtree section-cascade rather than
+re-deriving either. Delete carries all three of the real screen's guards, none skipped: a root,
+or the library's last software-filing branch, refuses outright
+(`category_protected_reason()`); a branch still holding entries refuses; a branch still
+classifying hardware models refuses, since that foreign key is `ON DELETE SET NULL` and would
+otherwise silently orphan them with nothing in the interface showing it happened.
+
+**This one had real trouble getting here, and it is worth an honest account of what actually
+happened, not just the clean result.**
+
+A str_replace edit while inserting the new functions accidentally deleted the
+`function api_companies_index(): void` line itself, leaving a bare `{` at file scope where a
+function signature should have been. PHP treats a lone brace block like that as code that runs
+immediately when the file loads, not as a function body - so every request, regardless of route,
+hit an auth check meant to run only inside that one function. Every single thing this server
+does stopped working, `/status.json` included. Found by direct, methodical elimination rather
+than guessing: ruled out the database, ruled out routing, isolated the failure to file *loading*
+rather than request *handling* by `require`-ing the file directly with no HTTP request at all,
+narrowed it to the one file, then read the raw lines around the last new function until the
+missing signature was visible. Fixed, and confirmed fixed the same way - not just that the
+server answered again, but that every function added across this whole session still exists as
+a real, callable, correctly-scoped function, checked by name, one at a time.
+
+**A second, genuine, pre-existing bug found while testing the fix, not caused by it**: this
+session's admin bypass in the new curator checks used `is_admin()`, which reads `current_user()`
+- purely session-based, with no bearer-token awareness at all. A token-authenticated admin
+request was silently treated as a non-admin one. It went unnoticed through companies, tags, and
+platforms because in every test that mattered there, the *other* half of the `OR` condition
+(`can_structure_library()`/`can_own_library()`, both genuinely token-aware) already granted
+access on its own for a real, valid library - the gap only became visible testing a template row
+with no library at all, the one case where nothing but the broken admin check could have
+mattered. Fixed everywhere it appeared - five sites across companies, tags, platforms, and
+categories - replaced with `is_admin_user(acting_user())`, the same token-aware pattern
+`can_edit_platform()` already uses and its own comment already warns about this exact trap.
+
+**A third, smaller issue, caught by the full suite rather than missed**: three rounds of removing
+companies, tags, then platforms from a shared generic route's alternation, one at a time, left it
+as `/(libraries)` - a regex that still looks like an alternation but no longer has more than one
+option in it. `tests/copy.php`'s "every route is documented" check only knows how to expand a
+real `|`-separated alternation, and correctly flagged this as neither that nor a plain path.
+Investigating properly turned up something more interesting than a cosmetic fix: the real,
+dedicated `POST /api/v1/libraries` route was already registered earlier and always won; the
+generic path was not just unreachable, the function itself has always explicitly refused
+`'libraries'` as a type. Removed the route entirely rather than repair something with no valid
+reachable case.
+
+`docs/openapi.yaml` updated with all five new operations and a new `Category` schema. Full suite
+re-run after every one of these three fixes, not just the last: 1 of 25, the same pre-existing,
+unrelated issue as every check this session.
+
+This package is **build 14**.
+
+**New: the platforms API - the last piece of the taxonomy family, and the one deliberately left
+for last.** Owner-or-better on the library, not merely curator - matched exactly to
+`can_edit_platform()`, not approximated. A platform is the root a whole branch of the filing tree
+hangs from, and the real web screen already treats it as a step above ordinary curation.
+
+**Replaced a hardcoded, depth-limited category-cleanup query with a real, general one already
+sitting in the codebase.** `platforms_manage_save()`'s delete branch checks and removes a
+platform's category branch down exactly two levels, via nested subqueries - a category tree can
+go deeper than that. Reused `category_subtree_ids()` instead, a proper, path-based, any-depth
+function already used elsewhere in this codebase, rather than carrying a depth limit into the API
+that the original itself only carries by not having been rewritten yet.
+
+Worth being precise about what this actually protects against, since an early read of the risk
+overstated it: items always carry both `platform_id` and `category_id` together, so the platform-
+wide item count checked first already blocks deletion in the overwhelming majority of real cases,
+regardless of category depth. The deeper, per-branch check - what this session's fix actually
+changed - is defense against the two counts drifting apart on already-inconsistent data, the same
+gap the original code's own comment acknowledges ("the two could drift") rather than something
+this session found freshly broken. A real improvement, correctly scoped as one.
+
+Also carries `platform_ensure_root()` on create (the branch a new machine needs to file anything
+under) and the same category-branch cleanup on delete, both reused from the real controller rather
+than re-derived.
+
+Proved live: owner succeeds, curator-only is correctly refused (a stricter bar than companies'
+own curator-level check, matched deliberately rather than reused by habit), update works, a
+duplicate name in the same library is refused, an occupied platform's delete is refused with the
+real item count, and an empty platform's delete removes its category branch along with it -
+checked directly against the database, not assumed from a status code.
+
+`docs/openapi.yaml`'s existing `/platforms` `POST` documentation was stale from an older, more
+generic implementation - documented `manufacturer` and `sort_order`, neither of which the real
+save logic has ever accepted, and never mentioned the required `library_id` at all. Rewritten to
+match what this session's implementation actually does, alongside the new PATCH/PUT/DELETE.
+
+Full suite re-run afterward: still 1 of 25, the same pre-existing, unrelated issue as every check
+this session.
+
+**Client-side editing for platforms is not built this round** - the same API-first split every
+other taxonomy type in this family has followed.
+
+This package is **build 12**.
+
+**New: `tags` API - create, update, delete.** Found something important before writing any new
+code: a pre-existing, generic `api_taxonomy_create()` already handled tag *creation* (and
+platforms, categories, companies too) - but its own comment claiming "companies, tags need only
+write access" directly contradicts what the real web screen's `taxonomy_save()` actually
+enforces, which is `require_manage()` - curator-or-better - unconditionally, before any
+type-specific branch even runs. That mismatch was already live for companies until this
+session's earlier fix; it was still live for tags until now.
+
+No `library_id` exists on tags at all - genuinely instance-wide, unlike companies. Checked here
+as "curates at least one library" (`accessible_library_ids($user, ACCESS_CURATOR)` non-empty),
+the closest real equivalent to what the web side checks against whichever library happens to be
+the session's current one.
+
+**A real nuance surfaced while testing, worth being honest about rather than quietly smoothing
+over**: every account gets its own personal library automatically on creation, owned outright -
+so "curates at least one library" is satisfied by nearly any real account, including a brand
+new one, through that personal library alone. This is not a bug this session introduced; the
+real web screen has the same basic looseness, since `require_manage()` checks whatever library
+happens to be current in the session, which for many accounts will *be* their own personal one.
+Tags are low-stakes - free-form labels - so this was left as the closest honest equivalent to the
+real, already-imperfect original, not force-fit into a stricter rule that would make the API
+disagree with what the web screen actually does today.
+
+Registered ahead of the older generic route, the same shadowing pattern `api_companies_create()`
+already established - `companies` and `tags` removed from that route's type alternation
+entirely now that both have their own, correctly-permissioned handlers, so a future reader is not
+misled into thinking the generic path still serves them.
+
+Proved live: a contributor with only contributor-level access on a real shared library still
+succeeds via their own personal library (the nuance above, not a bug); rename and delete both
+work; delete is correctly refused - with the exact right entry count and grammar - while a real
+item still carries the tag.
+
+`docs/openapi.yaml` updated. Full suite re-run afterward: still 1 of 25, unchanged.
+
+**Client-side tags editing is not built this round** - matching how `companies`' API landed as
+its own complete piece before client editing followed a separate session.
+
+This package is **build 10**.
+
+**New: the companies API, built from scratch - full CRUD, not just the read side that already
+existed.** Turned out companies have no dedicated management screen in the real app at all - they
+route through a generic taxonomy handler shared with platforms and tags
+(`taxonomy_index()`/`taxonomy_save()`, dispatched via a catch-all `/manage/([a-z]+)` route), which
+this API reimplements the companies branch of rather than guessing at a shape.
+
+**A genuinely different permission tier from titles and locations**: companies are gated by
+`require_manage()` on the real web screen - curator-or-better on the library, not just "can write
+something somewhere." Found the real per-library check already sitting in the codebase
+(`can_structure_library($libraryId)`, what `can_manage_library()` itself delegates to) and reused
+it rather than inventing a parallel one. Proved the distinction live: a genuine contributor-only
+account is refused with the exact right message; a curator or admin succeeds.
+
+`makes` (the hardware/software SET column) and `library_id` were both missing from
+`company_to_api()`'s response entirely - added, since an editable company needs to show its own
+current value back.
+
+Delete carries the same live-vs-trash distinction the web screen's delete already has: refused
+while a live entry still points at this, with a different message when only a deleted entry does
+(deleted rows keep their foreign keys) - proved with a real item attached, not just the empty-row
+case.
+
+Deliberately narrower than the web screen on purpose: no logo upload yet, the same restraint
+titles' own form already applied to features the API has nowhere to receive.
+
+`docs/openapi.yaml` updated with all four new operations. Full suite re-run afterward: still 1 of
+25, the same pre-existing, unrelated issue as every check this session.
+
+**Client-side editing for companies is the natural next piece** - this round covers the API only,
+matching how titles' API landed before its own client editing did.
+
 **`debug` and `debug_status` are now real answer-file options**, not just something you edit into
 `config.local.php` by hand after the fact. `bin/install.php --example` now shows both, with the
 same documentation this changelog already carries; `bin/install.php --answers your.rsp` writes

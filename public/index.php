@@ -287,6 +287,10 @@ if (str_starts_with($path, '/api/')) {
         ['GET',    '#^/api/v1/libraries$#',               fn() => api_libraries_index()],
         ['POST',   '#^/api/v1/libraries$#',               fn() => api_libraries_create()],
         ['GET',    '#^/api/v1/platforms$#',               fn() => api_platforms_index()],
+        ['POST',   '#^/api/v1/platforms$#',               fn() => api_platforms_create()],
+        ['PATCH',  '#^/api/v1/platforms/(\d+)$#',          fn($id) => api_platforms_update((int) $id)],
+        ['PUT',    '#^/api/v1/platforms/(\d+)$#',          fn($id) => api_platforms_update((int) $id)],
+        ['DELETE', '#^/api/v1/platforms/(\d+)$#',          fn($id) => api_platforms_delete((int) $id)],
         ['GET',    '#^/api/v1/titles$#',                  fn() => api_titles_index()],
         ['POST',   '#^/api/v1/titles$#',                  fn() => api_titles_create()],
         ['GET',    '#^/api/v1/titles/(\d+)$#',            fn($id) => api_titles_show((int) $id)],
@@ -300,11 +304,33 @@ if (str_starts_with($path, '/api/')) {
         ['PUT',    '#^/api/v1/locations/(\d+)$#',          fn($id) => api_locations_update((int) $id)],
         ['DELETE', '#^/api/v1/locations/(\d+)$#',          fn($id) => api_locations_delete((int) $id)],
         ['GET',    '#^/api/v1/categories$#',              fn() => api_categories_index()],
+        ['POST',   '#^/api/v1/categories$#',              fn() => api_categories_create()],
+        ['PATCH',  '#^/api/v1/categories/(\d+)$#',         fn($id) => api_categories_update((int) $id)],
+        ['PUT',    '#^/api/v1/categories/(\d+)$#',         fn($id) => api_categories_update((int) $id)],
+        ['POST',   '#^/api/v1/categories/(\d+)/move$#',    fn($id) => api_categories_move((int) $id)],
+        ['DELETE', '#^/api/v1/categories/(\d+)$#',         fn($id) => api_categories_delete((int) $id)],
         ['GET',    '#^/api/v1/companies$#',               fn() => api_companies_index()],
+        ['POST',   '#^/api/v1/companies$#',               fn() => api_companies_create()],
         ['GET',    '#^/api/v1/companies/(\d+)$#',         fn($id) => api_companies_show((int) $id)],
+        ['PATCH',  '#^/api/v1/companies/(\d+)$#',         fn($id) => api_companies_update((int) $id)],
+        ['PUT',    '#^/api/v1/companies/(\d+)$#',         fn($id) => api_companies_update((int) $id)],
+        ['DELETE', '#^/api/v1/companies/(\d+)$#',         fn($id) => api_companies_delete((int) $id)],
         ['GET',    '#^/api/v1/tags$#',                    fn() => api_tags_index()],
-        ['POST',   '#^/api/v1/(platforms|libraries|categories|companies|tags)$#',
-                                                          fn($t) => api_taxonomy_create((string) $t)],
+        ['POST',   '#^/api/v1/tags$#',                    fn() => api_tags_create()],
+        ['PATCH',  '#^/api/v1/tags/(\d+)$#',               fn($id) => api_tags_update((int) $id)],
+        ['PUT',    '#^/api/v1/tags/(\d+)$#',               fn($id) => api_tags_update((int) $id)],
+        ['DELETE', '#^/api/v1/tags/(\d+)$#',               fn($id) => api_tags_delete((int) $id)],
+        // Every other type api_taxonomy_create() used to handle -
+        // platforms, categories, companies, tags - now has its own
+        // dedicated, correctly-permissioned route registered ahead of
+        // this one. 'libraries' was never valid here either - the
+        // function itself has always refused that type outright
+        // ("Create libraries through the web interface; they carry
+        // membership.") - and the real POST /api/v1/libraries route
+        // above already handles it correctly. Nothing reaches this
+        // generic endpoint validly any more; kept only as the function
+        // definition itself, not as a route, in case a future taxonomy
+        // type is ever added the same generic way.
 
         ['GET',    '#^/api/v1/stats$#',                   fn() => api_stats()],
         ['GET',    '#^/api/v1/notifications$#',           fn() => api_notifications_index()],

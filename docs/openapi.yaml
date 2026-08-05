@@ -1032,20 +1032,29 @@ paths:
                   data: { type: array, items: { $ref: "#/components/schemas/Platform" } }
     post:
       tags: [Taxonomy]
-      summary: Create a platform
+      summary: Add a platform
+      description: >-
+        Owner-or-better on the library, not merely curator - a platform is
+        the root a whole branch of the filing tree hangs from, and the web
+        screen already treats adding or changing one as a step above
+        ordinary curation (can_edit_platform(), not can_structure_library()).
+        Creating one also creates its branch in the category tree.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name]
+              required: [library_id, name]
               properties:
+                library_id: { type: integer }
                 name: { type: string }
-                manufacturer: { type: string }
-                year_introduced: { type: integer }
-                color: { type: string, example: "#cba6f7" }
-                sort_order: { type: integer }
+                vendor_id:
+                  type: integer
+                  nullable: true
+                  description: A company from the same library, or omitted.
+                year_introduced: { type: integer, nullable: true }
+                accent_color: { type: string, example: "#cba6f7" }
       responses:
         "201":
           description: Created
@@ -1055,6 +1064,49 @@ paths:
                 type: object
                 properties:
                   data: { $ref: "#/components/schemas/Platform" }
+        "422": { description: A missing or duplicate name, a year out of range, or a maker from another library }
+        "403": { description: Ownership of this library is required }
+
+  /platforms/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Taxonomy]
+      summary: Update a platform
+      description: A key you omit keeps its current value, the same contract as /titles/{id}.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                vendor_id: { type: integer, nullable: true }
+                year_introduced: { type: integer, nullable: true }
+                accent_color: { type: string }
+      responses:
+        "200": { description: Updated }
+        "422": { description: A missing or duplicate name, a year out of range, or a maker from another library }
+        "403": { description: Ownership of this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses:
+        "200": { description: Updated }
+        "403": { description: Ownership of this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a platform
+      description: >-
+        Refused while any entry is filed under this machine. Once genuinely
+        empty, the branch it grew in the category tree is removed with it.
+      responses:
+        "204": { description: Deleted }
+        "422": { description: An entry is still filed under this machine }
+        "403": { description: Ownership of this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /titles:
     get:
@@ -1302,6 +1354,107 @@ paths:
       tags: [Taxonomy]
       summary: Software types
       responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a branch to the filing tree
+      description: >-
+        Curator-or-better on the branch's own library, matched to
+        require_tree_access() exactly. A root is a machine's own branch,
+        made by /platforms when the machine itself is created - refused
+        here rather than silently accepted with no machine behind it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parent_id, name]
+              properties:
+                parent_id: { type: integer }
+                name: { type: string }
+                platform_id:
+                  type: integer
+                  nullable: true
+                  description: Only for a kind that belongs to one specific machine. Omitted, it applies everywhere.
+                sort_order: { type: integer }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Category" }
+        "422": { description: A missing name, or a missing/unknown parent }
+        "403": { description: Curator access on this library is required }
+
+  /categories/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Taxonomy]
+      summary: Rename a branch
+      description: >-
+        Name only - not the role/section-switch the web form's rename also
+        performs, which rewrites section_id across the whole subtree and is
+        real, separate, higher-stakes work.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { name: { type: string }, sort_order: { type: integer } }
+      responses:
+        "200": { description: Updated }
+        "422": { description: A missing name }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses:
+        "200": { description: Updated }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a branch
+      description: >-
+        Three real guards, in order: a root, or the library's last
+        software-filing branch, refuses outright; a branch still holding
+        entries refuses; a branch hardware models are still classified
+        under refuses, since that foreign key would otherwise silently
+        orphan them.
+      responses:
+        "204": { description: Deleted }
+        "422": { description: Protected, still holds entries, or still classifies hardware models }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /categories/{id}/move:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Taxonomy]
+      summary: Reparent a branch
+      description: >-
+        A node cannot move inside itself or its own descendants. The whole
+        subtree's section follows the new parent's, since there is no
+        sense in which the children stayed on the old side of the shop
+        while their parent moved to the new one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parent_id]
+              properties: { parent_id: { type: integer } }
+      responses:
+        "200": { description: Moved }
+        "422": { description: A loop, or a parent in another library }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /companies:
     get:
@@ -1310,6 +1463,35 @@ paths:
       parameters:
         - { name: q, in: query, schema: { type: string } }
       responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a company
+      description: >-
+        Curator-or-better on the library it belongs to, not just anyone who
+        can write - the same require_manage() gate the web screen already
+        applies, since a company is shared reference data every entry in a
+        library points at, not one person's own addition.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, name]
+              properties:
+                library_id: { type: integer }
+                name: { type: string }
+                makes: { type: array, items: { type: string, enum: [hardware, software] } }
+                country: { type: string, nullable: true }
+                founded_year: { type: integer, nullable: true }
+                defunct_year: { type: integer, nullable: true }
+                website: { type: string, nullable: true }
+                wikipedia_url: { type: string, nullable: true }
+                notes: { type: string, nullable: true }
+      responses:
+        "201": { description: Created }
+        "422": { description: A missing name, or a URL that is not a full https:// address }
+        "403": { description: Curator access on this library is required }
 
   /companies/{id}:
     get:
@@ -1319,12 +1501,113 @@ paths:
       responses:
         "200": { description: OK }
         "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Taxonomy]
+      summary: Update a company
+      description: A key you omit keeps its current value, the same contract as /titles/{id}.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                makes: { type: array, items: { type: string, enum: [hardware, software] } }
+                country: { type: string, nullable: true }
+                founded_year: { type: integer, nullable: true }
+                defunct_year: { type: integer, nullable: true }
+                website: { type: string, nullable: true }
+                wikipedia_url: { type: string, nullable: true }
+                notes: { type: string, nullable: true }
+      responses:
+        "200": { description: Updated }
+        "422": { description: A missing name, or a URL that is not a full https:// address }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: Updated }
+        "422": { description: A missing name, or a URL that is not a full https:// address }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a company
+      description: >-
+        Refused while a live catalogue entry still names this as developer
+        or publisher; the message says whether that entry is active or only
+        in the trash, since a deleted row keeps its foreign keys.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Deleted }
+        "422": { description: A live or trashed entry still points at this }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /tags:
     get:
       tags: [Taxonomy]
       summary: Tags
       responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a tag
+      description: >-
+        No library_id - tags are instance-wide. Requires curating at least
+        one library, the closest real equivalent of what the web screen's
+        require_manage() checks against whichever library happens to be
+        the session's current one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties: { name: { type: string } }
+      responses:
+        "201": { description: Created }
+        "422": { description: A missing name }
+        "403": { description: Curator access on at least one library is required }
+
+  /tags/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Taxonomy]
+      summary: Rename a tag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { name: { type: string } }
+      responses:
+        "200": { description: Updated }
+        "422": { description: A missing name }
+        "403": { description: Curator access on at least one library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses:
+        "200": { description: Updated }
+        "403": { description: Curator access on at least one library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a tag
+      description: Refused while any item still carries it.
+      responses:
+        "204": { description: Deleted }
+        "422": { description: A catalogue entry still carries this tag }
+        "403": { description: Curator access on at least one library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /stats:
     get:
@@ -1462,6 +1745,30 @@ components:
               id: { type: integer }
               name: { type: string }
               slug: { type: string }
+
+    Category:
+      type: object
+      description: >-
+        A branch in the filing tree - a root is a machine, everything
+        beneath it is a kind of thing that machine can hold. `path` is a
+        breadcrumb built fresh on every read, not stored; `domain` and
+        `role` say which side of the shop a branch is on and whether it is
+        a machine/peripheral kind specifically.
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        parent_id: { type: [integer, "null"] }
+        domain: { type: [string, "null"], enum: [hardware, software, video, music, null] }
+        role: { type: [string, "null"] }
+        depth: { type: integer }
+        platform_id:
+          type: [integer, "null"]
+          description: Set only for a kind that belongs to one specific machine.
+        library_id: { type: [integer, "null"] }
+        path: { type: string, example: "Amiga › Software › Games › Action" }
+        description: { type: [string, "null"] }
+        sort_order: { type: integer }
 
     Location:
       type: object

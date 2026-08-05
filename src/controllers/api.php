@@ -993,6 +993,177 @@ function api_platforms_index(): void
     api_ok(array_map('platform_to_api', $rows));
 }
 
+/**
+ * Create, update, delete - owner-or-better on the library, not curator,
+ * matching can_edit_platform() exactly rather than approximating it.
+ * A platform is the root a whole branch of the filing tree hangs from;
+ * the web screen already treats that as a step above ordinary curation.
+ *
+ * Deleting one cascades into the category tree it grew - reusing
+ * category_subtree_ids(), a real, general, path-based function already in
+ * this codebase, rather than the hardcoded two-level nested subquery
+ * platforms_manage_save() uses. That version only ever checks and deletes
+ * two levels down; a category tree can go deeper than that, and copying it
+ * verbatim would have carried a real bug into the API - items sitting at
+ * the third level or below would neither block the delete nor be cleaned
+ * up with it, left pointing at a now-orphaned branch under nothing.
+ */
+function api_platforms_create(): void
+{
+    api_require_write();
+    $in = api_body();
+
+    $name = trim((string) ($in['name'] ?? ''));
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Give the platform a name.']);
+    }
+
+    $libraryId = isset($in['library_id']) ? (int) $in['library_id'] : 0;
+    if ($libraryId <= 0) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['library_id' => 'Choose which library this machine belongs to.']);
+    }
+    if (!can_own_library($libraryId)) {
+        api_error('forbidden', 'That library is not yours.', 403);
+    }
+
+    $clash = one('SELECT id FROM platforms WHERE library_id = ? AND slug = ?', [$libraryId, slugify($name)]);
+    if ($clash !== null) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['name' => 'That library already has a machine by that name.']);
+    }
+
+    $data = api_platform_payload($in, $libraryId);
+    $data['name']       = mb_substr($name, 0, 120);
+    $data['library_id'] = $libraryId;
+    $data['slug']       = unique_slug('platforms', slugify($name));
+
+    $id = insert_row('platforms', $data);
+    // And its branch in the catalogue editor, or the machine exists with
+    // nowhere to file anything under it.
+    platform_ensure_root((int) $id, $libraryId, $name);
+    log_server('platform.created', 'Platform "' . $name . '" added', LOG_INFO,
+               ['subject_type' => 'platform', 'subject_id' => $id]);
+
+    api_ok(platform_to_api(one('SELECT p.*, v.name AS manufacturer FROM platforms p
+                                 LEFT JOIN companies v ON v.id = p.vendor_id WHERE p.id = ?', [$id])), null, 201);
+}
+
+function api_platforms_update(int $id): void
+{
+    api_require_write();
+    $existing = one('SELECT * FROM platforms WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No platform with that id.', 404);
+    }
+    if (!can_edit_platform($existing)) {
+        api_error('forbidden', 'That machine is not yours to change.', 403);
+    }
+
+    $in = api_body();
+    $libraryId = (int) $existing['library_id'];
+    $name = array_key_exists('name', $in) ? trim((string) $in['name']) : (string) $existing['name'];
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Give the platform a name.']);
+    }
+
+    $clash = one('SELECT id FROM platforms WHERE library_id = ? AND slug = ? AND id <> ?',
+                 [$libraryId, slugify($name), $id]);
+    if ($clash !== null) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['name' => 'That library already has a machine by that name.']);
+    }
+
+    $data = api_platform_payload($in, $libraryId, $existing);
+    $data['name'] = mb_substr($name, 0, 120);
+    $data['slug'] = unique_slug('platforms', slugify($name), $id);
+
+    update_row('platforms', $id, $data);
+    log_server('platform.updated', 'Platform "' . $name . '" changed', LOG_INFO,
+               ['subject_type' => 'platform', 'subject_id' => $id]);
+
+    api_ok(platform_to_api(one('SELECT p.*, v.name AS manufacturer FROM platforms p
+                                 LEFT JOIN companies v ON v.id = p.vendor_id WHERE p.id = ?', [$id])));
+}
+
+/** Shared by create and update - $existing null on create, nothing to fall back to yet. */
+function api_platform_payload(array $in, int $libraryId, ?array $existing = null): array
+{
+    $field = fn(string $k) => array_key_exists($k, $in) ? $in[$k] : ($existing[$k] ?? null);
+
+    $data = [];
+
+    $vendorId = $field('vendor_id');
+    $vendorId = $vendorId !== null && (int) $vendorId > 0 ? (int) $vendorId : null;
+    if ($vendorId !== null) {
+        $vendor = one('SELECT id, library_id FROM companies WHERE id = ?', [$vendorId]);
+        if ($vendor === null || (int) $vendor['library_id'] !== $libraryId) {
+            api_error('validation_failed', 'Some fields need attention.', 422,
+                       ['vendor_id' => 'Choose a maker from this library.']);
+        }
+    }
+    $data['vendor_id'] = $vendorId;
+
+    $year = $field('year_introduced');
+    $year = ($year === null || $year === '') ? null : (int) $year;
+    if ($year !== null && ($year < 1940 || $year > (int) date('Y') + 1)) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['year_introduced' => 'A year between 1940 and next year.']);
+    }
+    $data['year_introduced'] = $year;
+
+    $color = (string) ($field('accent_color') ?? '');
+    $data['accent_color'] = preg_match('/^#[0-9a-f]{6}$/i', $color) ? $color : '#a6adc8';
+
+    return $data;
+}
+
+/**
+ * Refused while any entry is filed under this machine. Once genuinely
+ * empty, the branch it grew in the category tree is removed with it -
+ * every root that branch has, each walked with category_subtree_ids()
+ * rather than a fixed depth, and only removed if that specific subtree is
+ * itself empty (a second, narrower check than the platform-wide one
+ * above, since the two count different things and could in principle
+ * drift apart).
+ */
+function api_platforms_delete(int $id): void
+{
+    api_require_write();
+    $existing = one('SELECT * FROM platforms WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No platform with that id.', 404);
+    }
+    if (!can_edit_platform($existing)) {
+        api_error('forbidden', 'That machine is not yours to change.', 403);
+    }
+
+    $used = (int) scalar('SELECT COUNT(*) FROM items WHERE platform_id = ?', [$id]);
+    if ($used > 0) {
+        api_error('validation_failed', sprintf(
+            '%d %s filed under %s. Move them first.',
+            $used, $used === 1 ? 'entry is' : 'entries are', $existing['name']
+        ), 422);
+    }
+
+    $roots = all('SELECT id FROM categories WHERE platform_id = ? AND parent_id IS NULL', [$id]);
+    foreach ($roots as $root) {
+        $subtree = category_subtree_ids((int) $root['id']);
+        if ($subtree === []) {
+            continue;
+        }
+        $in   = implode(',', array_fill(0, count($subtree), '?'));
+        $held = (int) scalar("SELECT COUNT(*) FROM items WHERE category_id IN ($in)", $subtree);
+        if ($held === 0) {
+            q("DELETE FROM categories WHERE id IN ($in)", $subtree);
+        }
+    }
+
+    delete_row('platforms', $id);
+    log_server('platform.deleted', 'Platform "' . $existing['name'] . '" removed', LOG_NOTICE);
+    api_no_content();
+}
+
 /** The libraries this account may read, which is what access is decided on. */
 function api_libraries_index(): void
 {
@@ -1334,6 +1505,197 @@ function api_categories_index(): void
     api_ok(array_map('category_to_api', $rows));
 }
 
+/**
+ * Create, rename, move, delete - curator-or-better on the library a
+ * category belongs to, matched to require_tree_access() exactly rather
+ * than approximated. The older, generic api_taxonomy_create() claims
+ * categories need an administrator - that comment says
+ * "/manage/tree is require_admin", which is not what require_tree_access()
+ * actually checks and has not been since it was written; the same class
+ * of drift already found and fixed for companies and tags. Shadowed here
+ * the same way, registered ahead of that route.
+ *
+ * Deliberately narrower than the real screen: no reordering (sibling
+ * position is a display nicety, not data), no copy-subtree, and rename
+ * does not carry the role/section-switch cascade the web form's rename
+ * also does - that is real, separate, higher-stakes work (it rewrites
+ * section_id across an entire subtree) worth its own dedicated round
+ * rather than folded into this one by habit.
+ */
+function api_require_curates_library(int $libraryId): array
+{
+    [$user, $token] = api_require_write();
+    if (!is_admin_user(acting_user()) && !can_structure_library($libraryId)) {
+        api_error('forbidden', 'You can arrange the tree of a library you curate. This is not one of them.', 403);
+    }
+    return [$user, $token];
+}
+
+function api_categories_create(): void
+{
+    $in = api_body();
+
+    $parentId = isset($in['parent_id']) ? (int) $in['parent_id'] : 0;
+    if ($parentId <= 0) {
+        // A root is a machine's own branch, made by platform_ensure_root()
+        // when the platform itself is created - the same refusal the web
+        // form gives, for the same reason: a root added here would say
+        // "platform" with no machine behind it.
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['parent_id' => 'A top-level branch is a machine. Create it through /platforms.']);
+    }
+    $parent = one('SELECT * FROM categories WHERE id = ?', [$parentId]);
+    if ($parent === null) {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['parent_id' => 'No such branch.']);
+    }
+    $libraryId = (int) $parent['library_id'];
+    api_require_curates_library($libraryId);
+
+    $name = trim((string) ($in['name'] ?? ''));
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Give the new node a name.']);
+    }
+
+    $platformId = isset($in['platform_id']) ? (int) $in['platform_id'] : 0;
+
+    $id = insert_row('categories', [
+        'library_id'  => $libraryId,
+        'section_id'  => (int) $parent['section_id'],
+        'parent_id'   => $parentId,
+        'platform_id' => $platformId > 0 ? $platformId : null,
+        'name'        => mb_substr($name, 0, 120),
+        'slug'        => unique_slug('categories', slugify($parent['slug'] . '-' . $name)),
+        'sort_order'  => isset($in['sort_order']) ? (int) $in['sort_order'] : 100,
+    ]);
+    category_rebuild_paths();
+
+    api_ok(category_to_api(one(
+        'SELECT c.*, s.slug AS domain FROM categories c JOIN sections s ON s.id = c.section_id WHERE c.id = ?',
+        [$id]
+    )), null, 201);
+}
+
+/**
+ * Name only - not the role/section-switch cascade the web form's rename
+ * also performs. See this file's own top-of-section comment for why that
+ * is deliberately left for later, not merely forgotten.
+ */
+function api_categories_update(int $id): void
+{
+    $existing = one('SELECT c.*, s.slug AS domain FROM categories c JOIN sections s ON s.id = c.section_id WHERE c.id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No such category.', 404);
+    }
+    api_require_curates_library((int) $existing['library_id']);
+
+    $in = api_body();
+    $name = array_key_exists('name', $in) ? trim((string) $in['name']) : (string) $existing['name'];
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Give the node a name.']);
+    }
+
+    update_row('categories', $id, [
+        'name'       => mb_substr($name, 0, 120),
+        'sort_order' => array_key_exists('sort_order', $in) ? (int) $in['sort_order'] : (int) $existing['sort_order'],
+    ]);
+
+    api_ok(category_to_api(one(
+        'SELECT c.*, s.slug AS domain FROM categories c JOIN sections s ON s.id = c.section_id WHERE c.id = ?',
+        [$id]
+    )));
+}
+
+/**
+ * Reparent a branch. Loop-prevention and the subtree's section_id both
+ * reused exactly as the web form's move already does - a node cannot move
+ * inside itself or its own descendants, and the whole branch's section
+ * follows its new parent's, since there is no sense in which the children
+ * stayed on the old side of the shop while their parent moved to the new
+ * one.
+ */
+function api_categories_move(int $id): void
+{
+    $node = one('SELECT c.*, s.slug AS domain FROM categories c JOIN sections s ON s.id = c.section_id WHERE c.id = ?', [$id]);
+    if ($node === null) {
+        api_error('not_found', 'No such category.', 404);
+    }
+    api_require_curates_library((int) $node['library_id']);
+
+    $in = api_body();
+    $newParentId = isset($in['parent_id']) ? (int) $in['parent_id'] : 0;
+    if ($newParentId <= 0) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['parent_id' => 'A branch always has a parent - move it under another node, not to the top level.']);
+    }
+    if (in_array($newParentId, category_subtree_ids($id), true)) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['parent_id' => 'A node cannot be moved inside itself.']);
+    }
+    $parent = one('SELECT * FROM categories WHERE id = ?', [$newParentId]);
+    if ($parent === null || (int) $parent['library_id'] !== (int) $node['library_id']) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['parent_id' => 'That branch is in another library.']);
+    }
+
+    $newSectionId = (int) $parent['section_id'];
+    update_row('categories', $id, ['parent_id' => $newParentId, 'section_id' => $newSectionId]);
+    foreach (category_subtree_ids($id) as $descendant) {
+        if ($descendant !== $id) {
+            update_row('categories', $descendant, ['section_id' => $newSectionId]);
+        }
+    }
+    category_rebuild_paths();
+
+    api_ok(category_to_api(one(
+        'SELECT c.*, s.slug AS domain FROM categories c JOIN sections s ON s.id = c.section_id WHERE c.id = ?',
+        [$id]
+    )));
+}
+
+/**
+ * Three real guards, all reused rather than re-derived: a root or the
+ * library's last software-filing branch refuses outright
+ * (category_protected_reason()); a branch still holding entries refuses;
+ * a branch hardware models are still classified under refuses, since that
+ * foreign key is ON DELETE SET NULL and would otherwise silently orphan
+ * them with nothing in the interface showing it happened.
+ */
+function api_categories_delete(int $id): void
+{
+    $existing = one('SELECT * FROM categories WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No such category.', 404);
+    }
+    api_require_curates_library((int) $existing['library_id']);
+
+    $protected = category_protected_reason($id);
+    if ($protected !== null) {
+        api_error('validation_failed', $protected, 422);
+    }
+
+    $subtree = category_subtree_ids($id);
+    $ph = implode(',', array_fill(0, count($subtree), '?'));
+
+    $held = (int) scalar("SELECT COUNT(*) FROM items WHERE category_id IN ($ph)", $subtree);
+    if ($held > 0) {
+        api_error('validation_failed', sprintf(
+            'That branch still holds %d %s. Move them first - deleting a branch should never be a way to lose things by accident.',
+            $held, $held === 1 ? 'entry' : 'entries'
+        ), 422);
+    }
+
+    $models = (int) scalar("SELECT COUNT(*) FROM hardware_models WHERE category_id IN ($ph)", $subtree);
+    if ($models > 0) {
+        api_error('validation_failed', sprintf(
+            'That branch is still the kind of %d hardware %s. Refile them first - deleting it would leave them as neither a machine nor a part.',
+            $models, $models === 1 ? 'model' : 'models'
+        ), 422);
+    }
+
+    delete_row('categories', $id);
+    category_rebuild_paths();
+    api_no_content();
+}
 
 function api_companies_index(): void
 {
@@ -1368,6 +1730,151 @@ function api_companies_show(int $id): void
     api_ok($out);
 }
 
+/**
+ * Create, update, delete - the API side of the generic taxonomy manage
+ * screen's companies branch. Curator-or-better on the library a company
+ * belongs to, not just "can write something somewhere" - companies are
+ * shared reference data every entry in a library points at, the same
+ * reasoning that already gates the web screen with require_manage()
+ * rather than require_edit().
+ *
+ * Deliberately narrower than that screen on purpose: no logo upload here,
+ * the same restraint titles' own create/edit already applied to
+ * software-model templates and box contents - a real feature the original
+ * has that this API has nowhere to receive yet.
+ */
+function api_companies_create(): void
+{
+    [$user, $token] = api_require_write();
+    $in = api_body();
+
+    $libraryId = isset($in['library_id']) ? (int) $in['library_id'] : 0;
+    if ($libraryId <= 0 || (!is_admin_user(acting_user()) && !can_structure_library($libraryId))) {
+        api_error('forbidden', 'You can arrange a library you curate. This is not one of them.', 403);
+    }
+
+    $name = trim((string) ($in['name'] ?? ''));
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Name is required.']);
+    }
+
+    $data = api_company_payload($in);
+    $data['name']       = mb_substr($name, 0, 255);
+    $data['library_id'] = $libraryId;
+    $data['slug']       = unique_slug('companies', slugify($name));
+
+    $id = insert_row('companies', $data);
+    api_ok(company_to_api(one('SELECT * FROM companies WHERE id = ?', [$id])), null, 201);
+}
+
+function api_companies_update(int $id): void
+{
+    api_require_write();
+    $existing = one('SELECT * FROM companies WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No company with that id.', 404);
+    }
+    $libraryId = (int) $existing['library_id'];
+    if (!is_admin_user(acting_user()) && !can_structure_library($libraryId)) {
+        api_error('forbidden', 'You can arrange a library you curate. This is not one of them.', 403);
+    }
+
+    $in = api_body();
+    $name = array_key_exists('name', $in) ? trim((string) $in['name']) : (string) $existing['name'];
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Name is required.']);
+    }
+
+    $data = api_company_payload($in, $existing);
+    $data['name'] = mb_substr($name, 0, 255);
+    $data['slug'] = unique_slug('companies', slugify($name), $id);
+
+    update_row('companies', $id, $data);
+    api_ok(company_to_api(one('SELECT * FROM companies WHERE id = ?', [$id])));
+}
+
+/**
+ * Shared by create and update. $existing is null on create, in which case
+ * an omitted field is simply not set rather than read back from a row that
+ * does not exist yet - the same "omitted keeps its current value" contract
+ * titles_update() already uses, just with nothing to fall back to the
+ * first time.
+ */
+function api_company_payload(array $in, ?array $existing = null): array
+{
+    $data = [];
+
+    $field = fn(string $k) => array_key_exists($k, $in) ? $in[$k] : ($existing[$k] ?? null);
+
+    foreach (['country', 'website', 'wikipedia_url', 'notes'] as $k) {
+        $v = $field($k);
+        $data[$k] = $v === null || trim((string) $v) === '' ? null : trim((string) $v);
+    }
+    foreach (['founded_year', 'defunct_year'] as $k) {
+        $v = $field($k);
+        $data[$k] = ($v === null || $v === '') ? null : (int) $v;
+    }
+    foreach (['website', 'wikipedia_url'] as $k) {
+        if ($data[$k] !== null && !filter_var($data[$k], FILTER_VALIDATE_URL)) {
+            api_error('validation_failed', 'Some fields need attention.', 422,
+                       [$k => 'Must be a full URL starting with https://.']);
+        }
+    }
+
+    // A set of ticks, stored as the SET column it is - present as an array
+    // of zero, one or two values: ['hardware'], ['software'], both, or
+    // neither. Only reset when the key was actually sent, matching the
+    // omitted-keeps-current-value contract every other field here follows.
+    if (array_key_exists('makes', $in)) {
+        $picked = is_array($in['makes']) ? $in['makes'] : [];
+        $picked = array_values(array_intersect(['hardware', 'software'], $picked));
+        $data['makes'] = implode(',', $picked);
+    }
+
+    return $data;
+}
+
+/**
+ * Refused while a live entry still points at this - the same distinction
+ * the web screen's delete already makes between "in active use" and "only
+ * pointed at from the trash", so the message says which is true rather
+ * than a generic "still in use".
+ */
+function api_companies_delete(int $id): void
+{
+    api_require_write();
+    $existing = one('SELECT * FROM companies WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No company with that id.', 404);
+    }
+    if (!is_admin_user(acting_user()) && !can_structure_library((int) $existing['library_id'])) {
+        api_error('forbidden', 'You can arrange a library you curate. This is not one of them.', 403);
+    }
+
+    $live = (int) scalar('SELECT COUNT(*) FROM items
+                           WHERE (developer_id = ? OR publisher_id = ?) AND deleted_at IS NULL', [$id, $id]);
+    $binned = (int) scalar('SELECT COUNT(*) FROM items
+                             WHERE (developer_id = ? OR publisher_id = ?) AND deleted_at IS NOT NULL', [$id, $id]);
+
+    if ($live > 0 || $binned > 0) {
+        $message = match (true) {
+            $live > 0 && $binned > 0 => sprintf(
+                '%d entr%s still %s this, and %d more in the trash. Reassign the first, '
+                . 'then empty the trash.', $live, $live === 1 ? 'y' : 'ies',
+                $live === 1 ? 'uses' : 'use', $binned),
+            $binned > 0 => sprintf(
+                '%d deleted entr%s still points at this. It is in the trash, which keeps '
+                . 'what it referred to - empty the trash and this can go.',
+                $binned, $binned === 1 ? 'y' : 'ies'),
+            default => 'Still in use by catalogue entries, so it was kept. Reassign those entries first.',
+        };
+        api_error('validation_failed', $message, 422);
+    }
+
+    delete_row('companies', $id);
+    api_no_content();
+}
+
 function api_tags_index(): void
 {
     api_require_auth();
@@ -1375,6 +1882,86 @@ function api_tags_index(): void
         fn($t) => ['id' => (int) $t['id'], 'name' => $t['name'], 'slug' => $t['slug']],
         all_tags()
     ));
+}
+
+/**
+ * Create, update, delete - tags have no library_id at all, unlike
+ * companies, so there is no specific library to check ownership against.
+ * The real web screen's require_manage() runs unconditionally before its
+ * type branches even start, so every type it covers - tags included -
+ * genuinely needs curator-or-better on some library, not merely the
+ * ability to write something somewhere. Checked here as "curates at least
+ * one library", the closest real equivalent to a check that on the web
+ * side is anchored to whichever library happens to be the working one.
+ *
+ * Replaces this type's case in the older, generic api_taxonomy_create() -
+ * that function's own comment claims tags only need write access, which
+ * does not match what taxonomy_save() actually enforces. Registered ahead
+ * of the generic route, the same way api_companies_create() already
+ * shadows that function's companies case for the identical reason.
+ */
+function api_require_curates_any(): array
+{
+    [$user, $token] = api_require_write();
+    if (!is_admin_user(acting_user()) && accessible_library_ids($user, ACCESS_CURATOR) === []) {
+        api_error('forbidden', 'You can arrange a library you curate. This is not one of them.', 403);
+    }
+    return [$user, $token];
+}
+
+function api_tags_create(): void
+{
+    api_require_curates_any();
+    $in = api_body();
+    $name = trim((string) ($in['name'] ?? ''));
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Name is required.']);
+    }
+    $id = insert_row('tags', ['name' => mb_substr($name, 0, 80), 'slug' => unique_slug('tags', slugify($name))]);
+    $row = one('SELECT * FROM tags WHERE id = ?', [$id]);
+    api_ok(['id' => (int) $row['id'], 'name' => $row['name'], 'slug' => $row['slug']], null, 201);
+}
+
+function api_tags_update(int $id): void
+{
+    api_require_curates_any();
+    $existing = one('SELECT * FROM tags WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No tag with that id.', 404);
+    }
+    $in = api_body();
+    $name = array_key_exists('name', $in) ? trim((string) $in['name']) : (string) $existing['name'];
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Name is required.']);
+    }
+    update_row('tags', $id, ['name' => mb_substr($name, 0, 80), 'slug' => unique_slug('tags', slugify($name), $id)]);
+    $row = one('SELECT * FROM tags WHERE id = ?', [$id]);
+    api_ok(['id' => (int) $row['id'], 'name' => $row['name'], 'slug' => $row['slug']]);
+}
+
+/**
+ * Refused while any item still carries this tag - the same rule the web
+ * screen's generic delete already applies to every taxonomy type via a
+ * caught foreign-key violation; checked directly here rather than caught,
+ * since item_tags has no soft-delete/trash distinction the way items
+ * themselves do, so there is only the one real answer to give.
+ */
+function api_tags_delete(int $id): void
+{
+    api_require_curates_any();
+    $existing = one('SELECT * FROM tags WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No tag with that id.', 404);
+    }
+    $used = (int) scalar('SELECT COUNT(*) FROM item_tags WHERE tag_id = ?', [$id]);
+    if ($used > 0) {
+        api_error('validation_failed', sprintf(
+            'Still on %d catalogue entr%s, so it was kept. Remove it from those first.',
+            $used, $used === 1 ? 'y' : 'ies'
+        ), 422);
+    }
+    delete_row('tags', $id);
+    api_no_content();
 }
 
 /** Create a lookup row. Handy for a client that lets you add a library on the fly. */
