@@ -1,5 +1,21 @@
 # Changelog
 
+**The items browse filter now genuinely accepts `domain=video` and `domain=music`, not just
+hardware and software.** Same pattern as the credit_roles domains, the categories Kind field, and
+companies' own makes checkboxes earlier this session: the schema and the underlying data have
+supported all four domains for a while, but this particular filter still only checked against two
+of them - checked directly rather than assumed still current, since several other spots turned
+out to have exactly this drift already.
+
+Proved live with a real video item, not just an empty, error-free result: created a real movie
+under DVD, confirmed `?domain=video` actually returns it, and confirmed `?domain=software`
+correctly does not - proving genuine exclusion, not merely that the filter accepts the value
+without complaint.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 29**.
+
 **Found and fixed a real, pre-existing order-dependency bug in `api_item_input()`, discovered
 while building this client's own items editor.** The developer/publisher-by-name resolution block
 read `$data['library_id']` to know which library to search or create a company in - but

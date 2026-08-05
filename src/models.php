@@ -647,11 +647,11 @@ function build_item_filters(array $qs): array
         $where[] = $role === 'game' ? $gameSql : 'NOT ' . $gameSql;
         $active['kind'] = $role;
     }
-    // Software and hardware are browsed separately. They are genuinely
-    // different things to catalogue - one wants cover art and a genre, the
-    // other an interface and a revision - and a shared list leaves half the
-    // columns blank on every row.
-    if (!empty($qs['domain']) && in_array($qs['domain'], ['software', 'hardware'], true)) {
+    // Software, hardware, video and music are all browsed separately. Each
+    // is genuinely a different thing to catalogue - a game wants a genre, a
+    // machine wants an interface and a revision, a film wants a director -
+    // and a shared list leaves most of the columns blank on every row.
+    if (!empty($qs['domain']) && in_array($qs['domain'], ['software', 'hardware', 'video', 'music'], true)) {
         $where[]  = 'domain = ?';
         $params[] = (string) $qs['domain'];
         $active['domain'] = (string) $qs['domain'];
