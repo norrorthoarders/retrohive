@@ -175,7 +175,7 @@ function taxonomy_save(string $type): void
         if ($ftype === 'makes') {
             $picked = $_POST[$field] ?? [];
             $picked = is_array($picked)
-                ? array_values(array_intersect(['hardware', 'software'], $picked))
+                ? array_values(array_intersect(['hardware', 'software', 'video', 'music'], $picked))
                 : [];
             $data[$field] = implode(',', $picked);
             continue;
@@ -456,7 +456,7 @@ function tree_index(): void
             if ($lib === null) {
                 return [];
             }
-            return all(
+            $rows = all(
                 'SELECT p.id, p.name, p.slug, p.domains, v.name AS maker
                    FROM platforms p
               LEFT JOIN companies v ON v.id = p.vendor_id
@@ -466,6 +466,45 @@ function tree_index(): void
                   ORDER BY p.name',
                 [(int) $lib['id']]
             );
+
+            // Which of the three the "Any machine" filter offers each platform
+            // actually is - computer, console or handheld all share the same
+            // domains (hardware and software both), so domains alone cannot
+            // answer this the way it now answers everything else about a
+            // platform. Read from this library's own hardware_models, the
+            // real, current answer, rather than the template-row majority
+            // seed_library_categories() uses to build a fresh library in the
+            // first place - by the time somebody is filtering an existing
+            // tree, this library's own models are the more honest source.
+            $kindByPlatform = [];
+            foreach (all(
+                "SELECT m.platform_id, c.source_slug AS kind, COUNT(*) AS n
+                   FROM hardware_models m
+                   JOIN categories c ON c.id = m.category_id AND c.role = 'machine'
+                  WHERE m.library_id = ?
+               GROUP BY m.platform_id, c.source_slug
+               ORDER BY m.platform_id, n DESC",
+                [(int) $lib['id']]
+            ) as $r) {
+                $pid = (int) $r['platform_id'];
+                // A real, per-library category's own slug is platform-
+                // prefixed for uniqueness ("amiga-computers"), which is
+                // correct for the tree but useless for matching the fixed
+                // three kinds this filter offers. source_slug is what the
+                // template row it was copied from was actually called -
+                // unprefixed, and the same mapping
+                // seed_library_categories() already established from
+                // template rows, applied here to a library's real ones.
+                $kindByPlatform[$pid] ??= ['computers' => 'computer', 'console' => 'console',
+                                           'handheld' => 'handheld'][(string) $r['kind']] ?? '';
+            }
+
+            foreach ($rows as &$row) {
+                $row['kind'] = $kindByPlatform[(int) $row['id']] ?? '';
+            }
+            unset($row);
+
+            return $rows;
         })(),
         // The platforms this library actually holds something for, so the tree can be
         // shown the way people think about it: Amiga, then its hardware and software,

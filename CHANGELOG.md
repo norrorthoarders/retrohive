@@ -1,5 +1,99 @@
 # Changelog
 
+**Found and fixed a real, pre-existing order-dependency bug in `api_item_input()`, discovered
+while building this client's own items editor.** The developer/publisher-by-name resolution block
+read `$data['library_id']` to know which library to search or create a company in - but
+`library_id` itself was not copied from the request into `$data` until nearly ninety lines later
+in the same function. A create sending both `library_id` and a bare developer name - the ordinary,
+documented way to use either field - failed every time with "Send library_id too, or a
+developer_id," even though library_id was right there in the same request.
+
+Fixed by moving the library_id block ahead of the block that depends on it, rather than
+duplicating the logic - the original block removed rather than left as dead, confusing code.
+
+Given how central this function is - it backs every item create and update in the whole
+application - re-verified with this session's own post-incident discipline before any live
+testing: loaded every function in the file directly, confirmed all six related functions still
+exist as real, correctly-scoped, callable functions, the same check that would have caught an
+earlier mistake this session in seconds.
+
+Proved live with the exact request that used to fail: library_id and a bare developer name
+together, on a real create - now resolves the company by name and succeeds, confirmed by the
+real company row appearing in the response rather than the previous 422.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 28**.
+
+**Companies' `makes` now genuinely supports video and music, resolving a question left open
+several sessions ago.** The schema always allowed it (`SET('hardware','software','video',
+'music')`), but three separate places quietly hardcoded the two-value list and would have
+silently stripped a video or music tick even if a checkbox for it existed: the real web form's
+own field only offered two checkboxes; its save handler intersected against only two values
+regardless of what was ticked; and the structure-sync helpers (`company_makes_from()`,
+`company_makes_merge()`) that populate companies from template data did the same. All four
+fixed together, since fixing only some would have meant a checkbox that silently did nothing.
+
+Checked comprehensively rather than assuming these four were the only ones - found and correctly
+left alone two genuinely unrelated hits sharing the same two-value pattern: a metadata agent's
+own domain scope (which content Wikipedia's infobox is useful for, a different question
+entirely), and platforms' computer/console/handheld-to-domain mapping, which is correctly
+hardware+software only and not part of this at all.
+
+Proved live end to end: the real web form now offers Video and Music checkboxes; a company
+created through it with both ticked saved with `makes = 'video,music'`, confirmed directly
+against the database, not assumed from the form submitting successfully.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 27**.
+
+**Fixed the real tree editor's "Any machine" filter, genuinely broken since the machine_class ->
+domains rework several sessions ago and left unresolved at the time.** The controller side had
+already been correctly updated; the template still read `$pf['machine_class']`, a column that no
+longer exists, silently evaluating to an empty string rather than throwing - so the filter looked
+intact but matched nothing at all.
+
+The real fix needed more than a rename. Domains alone cannot answer "is this a computer, a
+console, or a handheld" - all three share the identical domains (hardware and software both) -
+so the finer distinction has to come from somewhere else. Reused the exact derivation
+`seed_library_categories()` already established, applied to a library's own real hardware_models
+this time rather than the template rows used to seed a fresh library in the first place.
+
+Found a second, real gotcha proving this live rather than assuming the fix from the code alone:
+a category's own slug is platform-prefixed for uniqueness ("amiga-computers"), which does not
+match the plain three values the filter offers. `source_slug` - what the template row it was
+copied from was actually called - is the column that does, and is what the fix actually reads.
+
+Proved live against the real web screen, not assumed from a query in isolation: fetched
+`/manage/tree`, confirmed real `data-class="computer"` / `"console"` / `"handheld"` values appear
+for genuine machine platforms, and confirmed platforms with no machine role at all (DVD, VHS, CD)
+correctly carry no kind rather than a wrong one.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 26**.
+
+**The environments API - create, read, update, delete.** Investigated properly before building
+anything, given the last two "smaller pieces" both turned out much bigger than expected -
+"Environments" genuinely is the small, contained piece it looked like: no standalone table of its
+own, just `operating_systems` (what a release runs under - Workbench, DOS, a console's BIOS),
+per platform, with the same shape as companies/tags/credit_roles this session already proved out.
+Confirmed the real web screen's own permission gate is curator-level (`require_manage()`), not
+the stricter owner-level hardware models turned out to need - checked directly rather than assumed
+from the function name alone.
+
+Proved live: created a real environment under a real platform, updated it, deleted it, and
+separately confirmed the delete guard - refused correctly, with the real entry count, while a
+genuine item still names it.
+
+`docs/openapi.yaml` updated. Full suite re-run: still 1 of 25, unchanged.
+
+**Client-side editing not built this round yet** - API only, matching this session's established
+split.
+
+This package is **build 25**.
+
 **Found and fixed a real bug while building reordering: `all_categories()` ordered results
 alphabetically by name, completely ignoring `sort_order`.** The column existed, PATCH already
 accepted it, nothing was silently broken at the data layer - but nothing anywhere actually read

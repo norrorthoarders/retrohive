@@ -1716,6 +1716,57 @@ paths:
         "403": { description: Curator access on this library is required }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /environments:
+    get:
+      tags: [Taxonomy]
+      summary: What a release runs under - Workbench, DOS, a console's BIOS
+      parameters:
+        - { name: library_id, in: query, schema: { type: integer } }
+        - { name: platform_id, in: query, schema: { type: integer } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add an environment
+      description: Curator-or-better on the library, the same bar companies and credit roles both set.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, platform_id, name]
+              properties:
+                library_id: { type: integer }
+                platform_id: { type: integer }
+                name: { type: string }
+      responses:
+        "201": { description: Created }
+        "422": { description: A missing name, or a platform from another library }
+        "403": { description: Curator access on this library is required }
+
+  /environments/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Taxonomy]
+      summary: Update an environment
+      responses:
+        "200": { description: Updated }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses: { "200": { description: Updated } }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove an environment
+      description: Refused while any entry still names it.
+      responses:
+        "204": { description: Deleted }
+        "422": { description: Still named by an entry }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /tags:
     get:
       tags: [Taxonomy]

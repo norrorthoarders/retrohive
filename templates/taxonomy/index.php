@@ -174,9 +174,19 @@ $editorPanel = function (?array $row, string $idp, string $margin)
                        <?= in_array('software', $makesNow, true) ? 'checked' : '' ?>>
                 Software — games, applications
               </label>
+              <label class="checkline">
+                <input type="checkbox" name="makes[]" value="video"
+                       <?= in_array('video', $makesNow, true) ? 'checked' : '' ?>>
+                Video — movies, TV shows
+              </label>
+              <label class="checkline">
+                <input type="checkbox" name="makes[]" value="music"
+                       <?= in_array('music', $makesNow, true) ? 'checked' : '' ?>>
+                Music — albums, artists
+              </label>
               <span class="hint">
-                Decides which pickers offer this company. A firm that did both, like
-                Commodore or Atari, wants both ticked.
+                Decides which pickers offer this company. A firm that did more than one, like
+                Sony across hardware and music, wants each ticked.
               </span>
             <?php elseif ($ftype === 'color'): ?>
               <input id="<?= e($idp) ?>-f-<?= e($field) ?>" name="<?= e($field) ?>" type="color" value="<?= e($fieldValue($field, '#cba6f7')) ?>">

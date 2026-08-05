@@ -158,7 +158,7 @@ $inheritedNames = array_column($inherited, 'name', 'id');
         $pf  = $pfById[(int) ($n['platform_id'] ?? 0)] ?? null;
         ?>
         <li class="treerow" id="node-<?= $id ?>" data-node="<?= $id ?>" data-parent="<?= $parent ?>"
-            data-class="<?= e((string) ($pf['machine_class'] ?? '')) ?>"
+            data-class="<?= e((string) ($pf['kind'] ?? '')) ?>"
             data-maker="<?= e((string) ($pf['maker'] ?? '')) ?>"
             data-name="<?= e(mb_strtolower((string) $n['name'])) ?>"
             data-depth="<?= (int) $n['depth'] ?>"

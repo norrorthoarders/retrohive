@@ -69,7 +69,7 @@ function company_makes_from(array $row, string $default): string
     }
     if (is_array($claimed)) {
         foreach ($claimed as $m) {
-            if (in_array($m, ['hardware', 'software'], true)) {
+            if (in_array($m, ['hardware', 'software', 'video', 'music'], true)) {
                 $out[] = $m;
             }
         }
@@ -81,7 +81,7 @@ function company_makes_from(array $row, string $default): string
 function company_makes_merge(string $have, string $add): string
 {
     $all = array_filter(array_merge(explode(',', $have), explode(',', $add)));
-    $all = array_values(array_unique(array_intersect(['hardware', 'software'], $all)));
+    $all = array_values(array_unique(array_intersect(['hardware', 'software', 'video', 'music'], $all)));
     return implode(',', $all);
 }
 

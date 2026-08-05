@@ -779,6 +779,23 @@ function credit_role_to_api(array $r): array
     ];
 }
 
+/** What a release runs under - Workbench 1.x, DOS, a specific console's BIOS. Per platform, since the answer only ever makes sense against one machine. */
+function environment_to_api(array $r): array
+{
+    return [
+        'id'         => (int) $r['id'],
+        'name'       => $r['name'],
+        'slug'       => $r['slug'],
+        'library_id' => isset($r['library_id']) && $r['library_id'] !== null ? (int) $r['library_id'] : null,
+        'platform_id' => (int) $r['platform_id'],
+        'platform'   => isset($r['platform_name']) ? [
+            'id'   => (int) $r['platform_id'],
+            'name' => $r['platform_name'],
+            'slug' => $r['platform_slug'] ?? null,
+        ] : null,
+    ];
+}
+
 /**
  * One credit - a title, a role, and exactly one of a person or a company,
  * matching the CHECK constraint the database itself enforces. `holder`

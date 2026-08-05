@@ -327,6 +327,12 @@ if (str_starts_with($path, '/api/')) {
         ['PUT',    '#^/api/v1/credit-roles/(\d+)$#',        fn($id) => api_credit_roles_update((int) $id)],
         ['DELETE', '#^/api/v1/credit-roles/(\d+)$#',        fn($id) => api_credit_roles_delete((int) $id)],
 
+        ['GET',    '#^/api/v1/environments$#',            fn() => api_environments_index()],
+        ['POST',   '#^/api/v1/environments$#',            fn() => api_environments_create()],
+        ['PATCH',  '#^/api/v1/environments/(\d+)$#',        fn($id) => api_environments_update((int) $id)],
+        ['PUT',    '#^/api/v1/environments/(\d+)$#',        fn($id) => api_environments_update((int) $id)],
+        ['DELETE', '#^/api/v1/environments/(\d+)$#',        fn($id) => api_environments_delete((int) $id)],
+
         ['GET',    '#^/api/v1/credits$#',                 fn() => api_credits_index()],
         ['POST',   '#^/api/v1/credits$#',                 fn() => api_credits_create()],
         ['DELETE', '#^/api/v1/credits/(\d+)$#',            fn($id) => api_credits_delete((int) $id)],

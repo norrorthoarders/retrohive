@@ -351,6 +351,19 @@ function api_item_input(array $in, bool $partial, ?array $existing = null): arra
         $data['condition_box'] = $box['condition_box'];
     }
 
+    // The library owns the entry and decides who may see it. Moved ahead of
+    // the developer/publisher block below, which reads $data['library_id']
+    // to resolve a company by name - this used to run first, so a create
+    // sending both library_id and a bare developer name always failed with
+    // "send library_id too" even though it was right there in the same
+    // request, just not copied into $data yet by the time that block asked.
+    if ($has('library_id')) {
+        $data['library_id'] = (int) $in['library_id'];
+        if (one('SELECT id FROM libraries WHERE id = ?', [$data['library_id']]) === null) {
+            $errors['library_id'] = 'No library with that id.';
+        }
+    }
+
     // A maker or publisher by name, made if this library has not got one.
     //
     // `developer_id` remains the way to point at a company that exists; these
@@ -426,13 +439,6 @@ function api_item_input(array $in, bool $partial, ?array $existing = null): arra
         }
     }
 
-    // The library owns the entry and decides who may see it.
-    if ($has('library_id')) {
-        $data['library_id'] = (int) $in['library_id'];
-        if (one('SELECT id FROM libraries WHERE id = ?', [$data['library_id']]) === null) {
-            $errors['library_id'] = 'No library with that id.';
-        }
-    }
     if ($has('platform_id')) {
         $data['platform_id'] = (int) $in['platform_id'];
         if (one('SELECT id FROM platforms WHERE id = ?', [$data['platform_id']]) === null) {
@@ -1861,12 +1867,12 @@ function api_company_payload(array $in, ?array $existing = null): array
     }
 
     // A set of ticks, stored as the SET column it is - present as an array
-    // of zero, one or two values: ['hardware'], ['software'], both, or
-    // neither. Only reset when the key was actually sent, matching the
-    // omitted-keeps-current-value contract every other field here follows.
+    // of zero to four values. Only reset when the key was actually sent,
+    // matching the omitted-keeps-current-value contract every other field
+    // here follows.
     if (array_key_exists('makes', $in)) {
         $picked = is_array($in['makes']) ? $in['makes'] : [];
-        $picked = array_values(array_intersect(['hardware', 'software'], $picked));
+        $picked = array_values(array_intersect(['hardware', 'software', 'video', 'music'], $picked));
         $data['makes'] = implode(',', $picked);
     }
 
@@ -2126,6 +2132,121 @@ function api_credit_roles_delete(int $id): void
     }
 
     delete_row('credit_roles', $id);
+    api_no_content();
+}
+
+/**
+ * Environments - what a release runs under, per platform. Curator-or-
+ * better, matched to require_manage() exactly - the same bar companies,
+ * tags and credit roles all set, not the stricter owner-level hardware
+ * models needs.
+ */
+function api_environments_index(): void
+{
+    api_require_auth();
+    $libraryId = isset($_GET['library_id']) ? (int) $_GET['library_id'] : 0;
+    if ($libraryId <= 0) {
+        $lib = working_library();
+        $libraryId = $lib === null ? 0 : (int) $lib['id'];
+    }
+    $platformId = isset($_GET['platform_id']) ? (int) $_GET['platform_id'] : 0;
+
+    $sql = 'SELECT o.*, p.name AS platform_name, p.slug AS platform_slug
+              FROM operating_systems o
+              JOIN platforms p ON p.id = o.platform_id
+             WHERE o.library_id = ?';
+    $params = [$libraryId];
+    if ($platformId > 0) {
+        $sql .= ' AND o.platform_id = ?';
+        $params[] = $platformId;
+    }
+    $sql .= ' ORDER BY p.name, o.name';
+
+    api_ok(array_map('environment_to_api', all($sql, $params)));
+}
+
+function api_environments_create(): void
+{
+    $in = api_body();
+    $libraryId = isset($in['library_id']) ? (int) $in['library_id'] : 0;
+    if ($libraryId <= 0) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['library_id' => 'Choose which library this environment belongs to.']);
+    }
+    api_require_curates_library($libraryId);
+
+    $name = trim((string) ($in['name'] ?? ''));
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Name is required.']);
+    }
+    $platformId = isset($in['platform_id']) ? (int) $in['platform_id'] : 0;
+    $platform = one('SELECT id FROM platforms WHERE id = ? AND library_id = ?', [$platformId, $libraryId]);
+    if ($platform === null) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['platform_id' => 'Choose a machine from this library.']);
+    }
+
+    $id = insert_row('operating_systems', [
+        'library_id'  => $libraryId,
+        'platform_id' => $platformId,
+        'name'        => mb_substr($name, 0, 120),
+        'slug'        => unique_slug('operating_systems', slugify($name)),
+    ]);
+    $row = one('SELECT o.*, p.name AS platform_name, p.slug AS platform_slug
+                  FROM operating_systems o JOIN platforms p ON p.id = o.platform_id WHERE o.id = ?', [$id]);
+    api_ok(environment_to_api($row), null, 201);
+}
+
+function api_environments_update(int $id): void
+{
+    $existing = one('SELECT * FROM operating_systems WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No environment with that id.', 404);
+    }
+    api_require_curates_library((int) $existing['library_id']);
+
+    $in = api_body();
+    $name = array_key_exists('name', $in) ? trim((string) $in['name']) : (string) $existing['name'];
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Name is required.']);
+    }
+
+    $data = ['name' => mb_substr($name, 0, 120), 'slug' => unique_slug('operating_systems', slugify($name), $id)];
+    if (array_key_exists('platform_id', $in)) {
+        $platformId = (int) $in['platform_id'];
+        $platform = one('SELECT id FROM platforms WHERE id = ? AND library_id = ?',
+                        [$platformId, (int) $existing['library_id']]);
+        if ($platform === null) {
+            api_error('validation_failed', 'Some fields need attention.', 422,
+                       ['platform_id' => 'Choose a machine from this library.']);
+        }
+        $data['platform_id'] = $platformId;
+    }
+
+    update_row('operating_systems', $id, $data);
+    $row = one('SELECT o.*, p.name AS platform_name, p.slug AS platform_slug
+                  FROM operating_systems o JOIN platforms p ON p.id = o.platform_id WHERE o.id = ?', [$id]);
+    api_ok(environment_to_api($row));
+}
+
+/** Refused while any entry still names it - a title pointed at a deleted environment would silently become "not applicable", a different claim from the one somebody made. */
+function api_environments_delete(int $id): void
+{
+    $existing = one('SELECT * FROM operating_systems WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No environment with that id.', 404);
+    }
+    api_require_curates_library((int) $existing['library_id']);
+
+    $used = (int) scalar('SELECT COUNT(*) FROM item_environments WHERE os_id = ?', [$id]);
+    if ($used > 0) {
+        api_error('validation_failed', sprintf(
+            '%d entr%s still names it. Change those first.',
+            $used, $used === 1 ? 'y' : 'ies'
+        ), 422);
+    }
+
+    delete_row('operating_systems', $id);
     api_no_content();
 }
 
