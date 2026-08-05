@@ -1,5 +1,41 @@
 # Changelog
 
+**In progress: the foundation for people and credits - director, artist, author, and any other
+role, as real relations rather than free text.** Three new tables: `people` (a real entity,
+separate from companies - a director is not an organization and forcing one into `companies`'
+own hardware/software/video/music `makes` set and founding-year field was a category error worth
+avoiding); `credit_roles` (a short, curated, per-library-editable list rather than a fixed enum
+or open text - fixed would mean a migration every time a real role turned up unpredicted, open
+text would mean nothing to filter a picker by); `credits` (title + role + exactly one of person
+or company, enforced by a real CHECK constraint, not just application-level discipline).
+
+Reused `domains SET('hardware','software','video','music')` on `credit_roles` - the same shape
+this session already proved out for platforms and companies, not a fourth version of the same
+idea. A role can genuinely span more than one domain - Producer means roughly the same thing on
+a film and an album - without needing to be two separate rows to say so.
+
+**Done and thoroughly verified**: schema for all three tables; a real migration
+(`db/migrations/002_people_and_credits.sql`) built and proven against a genuine pre-migration
+database state, not just a fresh install - applied cleanly, then re-run a second time to confirm
+it is safe to repeat; the CHECK constraint tested with real inserts, not just checked to exist -
+confirmed it genuinely refuses a credit with both a person and a company set, refuses one with
+neither, and accepts one with exactly one. A starter set of eight credit roles
+(`structure/credit_roles.json`: Director, Writer, Producer, Composer, Artist, Programmer,
+Graphics, Design) wired into `structure_sync()` the same way platforms and companies already are,
+and into `seed_library_hardware()`'s existing copy-into-library mechanism - proved live, not
+assumed: synced the templates, seeded a real library, confirmed all eight copied across with
+their domains intact. Full suite re-run after all of this: still 1 of 25, the same pre-existing,
+unrelated issue as every check this session - nothing here has regressed.
+
+**Still open, not yet built**: the API layer for people, credit_roles, and credits (no
+create/read/update/delete for any of the three yet); the client-side editors for people and
+credit_roles, matching the pattern companies and tags already have; and the actual point of the
+whole feature - a credits section on the titles form, with a role picker filtered to the title's
+own domain, so adding a movie offers Director and not Composer. The schema and seed data are
+real and tested; there is no way to use any of it yet.
+
+This package is **build 22**, reflecting real, tested foundation - not a usable feature yet.
+
 **In progress: replaced platforms.machine_class with platforms.domains, a direct SET of the
 sections a platform participates in - the same shape companies.makes already used.**
 machine_class only ever existed to look up a fixed class-to-sections table (computer/console/

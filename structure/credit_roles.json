@@ -1,0 +1,10 @@
+[
+  { "slug": "director",   "name": "Director",   "domains": ["video"],                    "sort_order": 10 },
+  { "slug": "writer",     "name": "Writer",     "domains": ["video", "software"],        "sort_order": 20 },
+  { "slug": "producer",   "name": "Producer",   "domains": ["video", "music"],            "sort_order": 30 },
+  { "slug": "composer",   "name": "Composer",   "domains": ["video", "music", "software"], "sort_order": 40 },
+  { "slug": "artist",     "name": "Artist",     "domains": ["music"],                    "sort_order": 50 },
+  { "slug": "programmer", "name": "Programmer", "domains": ["software", "hardware"],     "sort_order": 60 },
+  { "slug": "graphics",   "name": "Graphics",   "domains": ["software", "hardware"],     "sort_order": 70 },
+  { "slug": "design",     "name": "Design",     "domains": ["software", "hardware"],     "sort_order": 80 }
+]

@@ -148,6 +148,7 @@ function structure_files(): array
         'environments'         => 'Environments',
         'video_categories'     => 'Video types',
         'music_categories'     => 'Music types',
+        'credit_roles'         => 'Credit roles',
     ];
 }
 
@@ -524,6 +525,35 @@ function structure_apply(string $name, array $rows, bool $force = false): array
                         $updated++;
                     } else {
                         insert_row('platforms', $fields);
+                        $added++;
+                    }
+                    break;
+
+                case 'credit_roles':
+                    $have = one('SELECT * FROM credit_roles WHERE library_id IS NULL AND slug = ?', [$slug]);
+                    $fillOnly = $have !== null && !$force;
+                    $fields = [
+                        'library_id' => null,
+                        'name'       => mb_substr((string) ($row['name'] ?? $slug), 0, 80),
+                        'slug'       => $slug,
+                        // Reused rather than re-derived: the same helper platforms
+                        // already uses, since this row's own "domains" field is the
+                        // identical shape - a JSON array of the same four values.
+                        'domains'    => platform_domains_from($row, 'software'),
+                        'sort_order' => isset($row['sort_order']) ? (int) $row['sort_order'] : 100,
+                    ];
+                    if ($have !== null) {
+                        if ($fillOnly) {
+                            // A role's name and domains are what it means, not a
+                            // customisation somebody would leave half-set - unlike
+                            // platforms' vendor or year, there is no gap here worth
+                            // filling only part of. Left alone unless forced.
+                            break;
+                        }
+                        update_row('credit_roles', (int) $have['id'], $fields);
+                        $updated++;
+                    } else {
+                        insert_row('credit_roles', $fields);
                         $added++;
                     }
                     break;

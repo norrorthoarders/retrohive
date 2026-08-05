@@ -89,7 +89,7 @@ function library_vendors(?int $libraryId = null): array
  */
 function seed_parts_all(): array
 {
-    return ['makers' => true, 'platforms' => true, 'categories' => true,
+    return ['makers' => true, 'credit_roles' => true, 'platforms' => true, 'categories' => true,
             'hardware_models' => true, 'software_models' => true,
             'environments' => true, 'locations' => true];
 }
@@ -127,6 +127,17 @@ function seed_library_hardware(int $libraryId, bool $overwrite = false, ?array $
               t.website, t.wikipedia_url, t.notes
          FROM companies t
     LEFT JOIN companies mine ON mine.library_id = ? AND mine.slug = t.slug
+        WHERE t.library_id IS NULL AND mine.id IS NULL',
+      [$libraryId, $libraryId]);
+
+    }
+
+    if (!empty($parts['credit_roles'])) {
+    q('INSERT INTO credit_roles
+           (library_id, name, slug, domains, sort_order)
+       SELECT ?, t.name, t.slug, t.domains, t.sort_order
+         FROM credit_roles t
+    LEFT JOIN credit_roles mine ON mine.library_id = ? AND mine.slug = t.slug
         WHERE t.library_id IS NULL AND mine.id IS NULL',
       [$libraryId, $libraryId]);
 

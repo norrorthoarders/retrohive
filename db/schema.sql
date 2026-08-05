@@ -421,6 +421,95 @@ CREATE TABLE IF NOT EXISTS companies (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
+-- People, and the credits that name them
+--
+-- Companies covers who published or developed something - a business
+-- relationship every title already had a real answer for. It has no honest
+-- answer for who directed a film or performed an album; those are people, not
+-- companies, and forcing "Steven Spielberg" into a table with a hardware/
+-- software/video/music `makes` set and a founding year was a category error
+-- worth a table of its own rather than working around.
+--
+-- Two tables rather than one credit-holder column: a director is almost
+-- always a person, but "scored by" a studio's in-house team, or a game's
+-- soundtrack credited to a label, is a real company credit too. `credits`
+-- points at whichever one actually did the work.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS people (
+  id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  -- Per library, the same reasoning companies already settled on: a
+  -- director's name, birth year and Wikipedia link do not change depending
+  -- on whose shelf they are catalogued from, but two libraries disagreeing
+  -- about them is nobody's problem to reconcile if each keeps its own row.
+  library_id    INT UNSIGNED DEFAULT NULL,
+  name          VARCHAR(160) NOT NULL,
+  slug          VARCHAR(180) NOT NULL,
+  born_year     SMALLINT UNSIGNED DEFAULT NULL,
+  died_year     SMALLINT UNSIGNED DEFAULT NULL,
+  website       VARCHAR(500) DEFAULT NULL,
+  wikipedia_url VARCHAR(500) DEFAULT NULL,
+  notes         TEXT         DEFAULT NULL,
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  library_key   INT UNSIGNED AS (COALESCE(library_id, 0)) STORED,
+  UNIQUE KEY uq_people_slug (library_key, slug),
+  KEY idx_people_library (library_id, name),
+  KEY idx_people_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- What a credit can be. A short, curated, editable list rather than a fixed
+-- enum or open free text: fixed would mean a migration every time a real
+-- role turns up that this list did not predict, and free text would mean
+-- nothing to filter the picker by when adding a movie should not be offered
+-- "Composer". `domains` is the same set platforms and companies already
+-- carry, reused rather than re-invented, so a role can genuinely belong to
+-- more than one - Producer means roughly the same thing on a film and an
+-- album, and does not need to be two separate rows to say so.
+CREATE TABLE IF NOT EXISTS credit_roles (
+  id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  library_id    INT UNSIGNED DEFAULT NULL,
+  name          VARCHAR(80)  NOT NULL,
+  slug          VARCHAR(100) NOT NULL,
+  domains       SET('hardware','software','video','music') NOT NULL DEFAULT 'software',
+  sort_order    SMALLINT UNSIGNED NOT NULL DEFAULT 100,
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  library_key   INT UNSIGNED AS (COALESCE(library_id, 0)) STORED,
+  UNIQUE KEY uq_credit_roles_slug (library_key, slug),
+  KEY idx_credit_roles_library (library_id, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One title, one role, one credited person or company - never both, never
+-- neither. Enforced by a CHECK as well as at the API layer: a database
+-- constraint is the one guarantee that holds even for a row written by
+-- something that is not this application.
+--
+-- library_id duplicated here rather than reached only through title_id, the
+-- same choice categories and hardware_models already made - a straight,
+-- indexed filter by library rather than a join through titles for every
+-- permission check or listing.
+CREATE TABLE IF NOT EXISTS credits (
+  id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  library_id    INT UNSIGNED NOT NULL,
+  title_id      INT UNSIGNED NOT NULL,
+  role_id       INT UNSIGNED NOT NULL,
+  person_id     INT UNSIGNED DEFAULT NULL,
+  company_id    INT UNSIGNED DEFAULT NULL,
+  sort_order    SMALLINT UNSIGNED NOT NULL DEFAULT 100,
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_credits_title (title_id, sort_order),
+  KEY idx_credits_role (role_id),
+  KEY idx_credits_person (person_id),
+  KEY idx_credits_company (company_id),
+  KEY idx_credits_library (library_id),
+  CONSTRAINT chk_credits_one_holder CHECK (
+    (person_id IS NOT NULL AND company_id IS NULL) OR
+    (person_id IS NULL AND company_id IS NOT NULL)
+  )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
 -- Companies used to be two tables
 --
 -- `vendors` held whoever made the hardware and `companies` whoever made the software,
@@ -1271,6 +1360,33 @@ ALTER TABLE companies
   -- No ON UPDATE CASCADE: library_key is generated from this column.
   ADD CONSTRAINT fk_companies_library FOREIGN KEY (library_id)
     REFERENCES libraries (id) ON DELETE CASCADE;
+
+ALTER TABLE people
+  -- No ON UPDATE CASCADE: library_key is generated from this column, the
+  -- same reason companies' own library FK has none.
+  ADD CONSTRAINT fk_people_library FOREIGN KEY (library_id)
+    REFERENCES libraries (id) ON DELETE CASCADE;
+
+ALTER TABLE credit_roles
+  ADD CONSTRAINT fk_credit_roles_library FOREIGN KEY (library_id)
+    REFERENCES libraries (id) ON DELETE CASCADE;
+
+ALTER TABLE credits
+  ADD CONSTRAINT fk_credits_library FOREIGN KEY (library_id)
+    REFERENCES libraries (id) ON DELETE CASCADE,
+  -- A title's credits are part of the title - deleting one takes them with
+  -- it rather than leaving a credit pointed at nothing.
+  ADD CONSTRAINT fk_credits_title FOREIGN KEY (title_id)
+    REFERENCES titles (id) ON DELETE CASCADE,
+  -- RESTRICT, not CASCADE or SET NULL: a role in use is the same "cannot
+  -- silently orphan real data" reasoning categories' own delete guards
+  -- already enforce for hardware models. Reassign the credits first.
+  ADD CONSTRAINT fk_credits_role FOREIGN KEY (role_id)
+    REFERENCES credit_roles (id) ON DELETE RESTRICT,
+  ADD CONSTRAINT fk_credits_person FOREIGN KEY (person_id)
+    REFERENCES people (id) ON DELETE RESTRICT,
+  ADD CONSTRAINT fk_credits_company FOREIGN KEY (company_id)
+    REFERENCES companies (id) ON DELETE RESTRICT;
 
 ALTER TABLE categories
   -- No ON UPDATE CASCADE: library_key is generated from this column, and MariaDB
