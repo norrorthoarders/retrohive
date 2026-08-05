@@ -1393,21 +1393,34 @@ paths:
     parameters: [{ $ref: "#/components/parameters/Id" }]
     patch:
       tags: [Taxonomy]
-      summary: Rename a branch
+      summary: Rename a branch, or change its kind
       description: >-
-        Name only - not the role/section-switch the web form's rename also
-        performs, which rewrites section_id across the whole subtree and is
-        real, separate, higher-stakes work.
+        Name-only by default. Include `role` to also switch the branch's
+        kind and, for a hardware/software-flavoured kind, cascade the
+        matching section across its entire subtree - the same
+        role/section-switch the web form's rename performs, matched to its
+        exact hardware/software-only scope. A root has no kind, whatever
+        the request says. `other` says nothing about which side of the
+        shop a branch is on, so the section is left as it was.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              properties: { name: { type: string }, sort_order: { type: integer } }
+              properties:
+                name: { type: string }
+                sort_order: { type: integer }
+                role:
+                  type: string
+                  enum: [other, machine, peripheral, game, application]
+                  description: >-
+                    machine/peripheral cascade to the hardware section,
+                    game/application to software, other leaves it as is.
+                    Refused on a root.
       responses:
         "200": { description: Updated }
-        "422": { description: A missing name }
+        "422": { description: A missing name, an unreal kind, or a kind on a root }
         "403": { description: Curator access on this library is required }
         "404": { $ref: "#/components/responses/NotFound" }
     put:

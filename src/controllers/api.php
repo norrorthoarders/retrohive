@@ -1515,12 +1515,15 @@ function api_categories_index(): void
  * of drift already found and fixed for companies and tags. Shadowed here
  * the same way, registered ahead of that route.
  *
- * Deliberately narrower than the real screen: no reordering (sibling
- * position is a display nicety, not data), no copy-subtree, and rename
- * does not carry the role/section-switch cascade the web form's rename
- * also does - that is real, separate, higher-stakes work (it rewrites
- * section_id across an entire subtree) worth its own dedicated round
- * rather than folded into this one by habit.
+ * Deliberately narrower than the real screen in what remains: no
+ * reordering (sibling position is a display nicety, not data), no
+ * copy-subtree. Rename's role/section-switch cascade - once deferred here
+ * as separate, higher-stakes work - is now built, matched to the real
+ * screen's own hardware/software-only scope: the schema's role enum and
+ * the sections table both go further (movie, tv_show, music), but the
+ * real web app has never offered any of that through its own tree editor
+ * either, in create or rename, so this does not add a capability the
+ * original never had.
  */
 function api_require_curates_library(int $libraryId): array
 {
@@ -1576,9 +1579,14 @@ function api_categories_create(): void
 }
 
 /**
- * Name only - not the role/section-switch cascade the web form's rename
- * also performs. See this file's own top-of-section comment for why that
- * is deliberately left for later, not merely forgotten.
+ * Name, and now the role/section-switch cascade the web form's rename
+ * also performs - deferred earlier this session as real, separate,
+ * higher-stakes work, now built to match. A root has no kind, whatever
+ * the request says, the same refusal the web form gives; the mapping
+ * from role to section is the exact match() the web form uses, not a
+ * reimplementation of it, and 'other' leaves the section untouched -
+ * "nothing directly" says nothing about which side of the shop a branch
+ * is on.
  */
 function api_categories_update(int $id): void
 {
@@ -1594,10 +1602,41 @@ function api_categories_update(int $id): void
         api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Give the node a name.']);
     }
 
-    update_row('categories', $id, [
+    $fields = [
         'name'       => mb_substr($name, 0, 120),
         'sort_order' => array_key_exists('sort_order', $in) ? (int) $in['sort_order'] : (int) $existing['sort_order'],
-    ]);
+    ];
+
+    if (array_key_exists('role', $in) && $existing['parent_id'] !== null) {
+        $wantRole = (string) $in['role'];
+        if (!in_array($wantRole, ['other', 'machine', 'peripheral', 'game', 'application'], true)) {
+            api_error('validation_failed', 'Some fields need attention.', 422,
+                       ['role' => 'Not a real kind.']);
+        }
+        $fields['role'] = $wantRole;
+        $sideSlug = match ($wantRole) {
+            'machine', 'peripheral' => 'hardware',
+            'game', 'application'   => 'software',
+            default                 => null,
+        };
+        $newSectionId = $sideSlug !== null
+            ? (int) scalar('SELECT id FROM sections WHERE slug = ?', [$sideSlug])
+            : (int) $existing['section_id'];
+        $fields['section_id'] = $newSectionId;
+
+        if ($newSectionId !== (int) $existing['section_id']) {
+            foreach (category_subtree_ids($id) as $descendant) {
+                if ($descendant !== $id) {
+                    update_row('categories', $descendant, ['section_id' => $newSectionId]);
+                }
+            }
+        }
+    } elseif (array_key_exists('role', $in) && $existing['parent_id'] === null) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['role' => 'A root has no kind - it is the machine itself.']);
+    }
+
+    update_row('categories', $id, $fields);
 
     api_ok(category_to_api(one(
         'SELECT c.*, s.slug AS domain FROM categories c JOIN sections s ON s.id = c.section_id WHERE c.id = ?',

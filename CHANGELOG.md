@@ -1,5 +1,32 @@
 # Changelog
 
+**The Kind feature - deferred earlier this session as separate, higher-stakes work - is now
+built.** `PATCH /categories/{id}` accepts an optional `role`; when sent, it switches the branch's
+kind and, for a hardware/software-flavoured one, cascades the matching section across the
+branch's entire subtree - the real web form's own role/section-switch, not a re-derivation of it.
+A root refuses outright, matching what the real form does. `other` leaves the section as it is,
+the same "nothing directly says nothing about which side of the shop" reasoning the original
+carries.
+
+Scoped by direct request to match the real app exactly: five kinds - other, machine, peripheral,
+game, application - the same five the web form's rename has ever offered, not the fuller set the
+schema and the sections table separately allow. Checking this before building anything turned up
+something worth knowing on its own: video and music sections hold real, substantial seeded data
+- 18 and 10 categories respectively in a fresh library - but nothing anywhere in the real web
+app's own interface, in any screen, has ever offered a way to create or reassign a branch into
+either one. That gap was already there; this round matches it rather than closing it, since
+closing it was explicitly not what was asked for.
+
+Proved live with a genuine multi-level subtree, not a single row: switched Peripherals - with
+three real children and one grandchild beneath it - from hardware to a software-flavoured kind,
+and confirmed via direct query that all five rows in that subtree moved together. Confirmed `other`
+correctly leaves an existing hardware row's section untouched. Confirmed a root and an invalid
+kind value are both refused with the real, specific messages.
+
+`docs/openapi.yaml` updated to document `role` on the categories PATCH.
+
+This package is **build 18**.
+
 **New: the categories API - create, rename, move, delete - the last piece of the taxonomy
 family this session set out to complete.** Curator-or-better on the branch's own library,
 matched exactly to `require_tree_access()`. Deliberately narrower than the real tree editor on
