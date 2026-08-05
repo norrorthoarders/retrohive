@@ -1716,6 +1716,132 @@ paths:
         "403": { description: Curator access on this library is required }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /hardware-models:
+    get:
+      tags: [Taxonomy]
+      summary: Machines and the parts that go in them
+      parameters:
+        - { name: library_id, in: query, schema: { type: integer } }
+        - { name: role, in: query, schema: { type: string, enum: [machine, peripheral] } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a hardware model
+      description: >-
+        Owner-level on the library, stricter than the curator bar most of
+        this taxonomy family uses - matched to the real web screen's own
+        gate.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, category_id, name]
+              properties:
+                library_id: { type: integer }
+                category_id: { type: integer, description: Must have role machine or peripheral. }
+                platform_id: { type: integer, nullable: true }
+                vendor_id: { type: integer, nullable: true }
+                name: { type: string }
+                year_from: { type: integer, nullable: true }
+                fits_note: { type: string, nullable: true }
+                interface: { type: string, nullable: true }
+                notes: { type: string, nullable: true }
+      responses:
+        "201": { description: Created }
+        "422": { description: A missing name, or a category/platform/vendor outside this library or the wrong role }
+        "403": { description: Owner access on this library is required }
+
+  /hardware-models/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Taxonomy]
+      summary: One hardware model
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Taxonomy]
+      summary: Update a hardware model
+      responses:
+        "200": { description: Updated }
+        "403": { description: Owner access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses: { "200": { description: Updated } }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a hardware model
+      description: Refused while any catalogue entry still points at it.
+      responses:
+        "204": { description: Deleted }
+        "422": { description: Still used by a catalogue entry }
+        "403": { description: Owner access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /software-models:
+    get:
+      tags: [Taxonomy]
+      summary: Boxed-release templates - what a title made from one starts already filled in with
+      parameters:
+        - { name: library_id, in: query, schema: { type: integer } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a software model
+      description: Owner-level on the library, matching hardware models.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, name]
+              properties:
+                library_id: { type: integer }
+                platform_id: { type: integer, nullable: true }
+                category_id: { type: integer, nullable: true }
+                name: { type: string }
+                notes: { type: string, nullable: true }
+      responses:
+        "201": { description: Created }
+        "422": { description: A missing name, or a platform/category outside this library }
+        "403": { description: Owner access on this library is required }
+
+  /software-models/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Taxonomy]
+      summary: One software model
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Taxonomy]
+      summary: Update a software model
+      responses:
+        "200": { description: Updated }
+        "403": { description: Owner access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses: { "200": { description: Updated } }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a software model
+      description: >-
+        No usage guard, deliberately - a model is where an answer came
+        from, not where it lives, so a title made from one keeps
+        everything it was filled in with.
+      responses:
+        "204": { description: Deleted }
+        "403": { description: Owner access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /environments:
     get:
       tags: [Taxonomy]

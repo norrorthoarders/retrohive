@@ -333,6 +333,20 @@ if (str_starts_with($path, '/api/')) {
         ['PUT',    '#^/api/v1/environments/(\d+)$#',        fn($id) => api_environments_update((int) $id)],
         ['DELETE', '#^/api/v1/environments/(\d+)$#',        fn($id) => api_environments_delete((int) $id)],
 
+        ['GET',    '#^/api/v1/hardware-models$#',          fn() => api_hardware_models_index()],
+        ['POST',   '#^/api/v1/hardware-models$#',          fn() => api_hardware_models_create()],
+        ['GET',    '#^/api/v1/hardware-models/(\d+)$#',      fn($id) => api_hardware_models_show((int) $id)],
+        ['PATCH',  '#^/api/v1/hardware-models/(\d+)$#',      fn($id) => api_hardware_models_update((int) $id)],
+        ['PUT',    '#^/api/v1/hardware-models/(\d+)$#',      fn($id) => api_hardware_models_update((int) $id)],
+        ['DELETE', '#^/api/v1/hardware-models/(\d+)$#',      fn($id) => api_hardware_models_delete((int) $id)],
+
+        ['GET',    '#^/api/v1/software-models$#',          fn() => api_software_models_index()],
+        ['POST',   '#^/api/v1/software-models$#',          fn() => api_software_models_create()],
+        ['GET',    '#^/api/v1/software-models/(\d+)$#',      fn($id) => api_software_models_show((int) $id)],
+        ['PATCH',  '#^/api/v1/software-models/(\d+)$#',      fn($id) => api_software_models_update((int) $id)],
+        ['PUT',    '#^/api/v1/software-models/(\d+)$#',      fn($id) => api_software_models_update((int) $id)],
+        ['DELETE', '#^/api/v1/software-models/(\d+)$#',      fn($id) => api_software_models_delete((int) $id)],
+
         ['GET',    '#^/api/v1/credits$#',                 fn() => api_credits_index()],
         ['POST',   '#^/api/v1/credits$#',                 fn() => api_credits_create()],
         ['DELETE', '#^/api/v1/credits/(\d+)$#',            fn($id) => api_credits_delete((int) $id)],

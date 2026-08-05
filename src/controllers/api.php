@@ -1540,6 +1540,16 @@ function api_require_curates_library(int $libraryId): array
     return [$user, $token];
 }
 
+/** Hardware models need owner-level access, the same bar the real web screen's own require_manage() plus can_own_library() checks set - stricter than the curator level everything else in this taxonomy family uses. */
+function api_require_owns_library(int $libraryId): array
+{
+    [$user, $token] = api_require_write();
+    if (!is_admin_user(acting_user()) && !can_own_library($libraryId)) {
+        api_error('forbidden', 'You can define hardware for a library you own. This is not one of them.', 403);
+    }
+    return [$user, $token];
+}
+
 function api_categories_create(): void
 {
     $in = api_body();
@@ -2247,6 +2257,319 @@ function api_environments_delete(int $id): void
     }
 
     delete_row('operating_systems', $id);
+    api_no_content();
+}
+
+/**
+ * Hardware models - machines and the parts that go in them. Owner-level,
+ * matched to the real web screen's own require_manage() plus explicit
+ * can_own_library() checks throughout its body - stricter than the
+ * curator level everything else in this taxonomy family uses.
+ */
+function api_hardware_models_index(): void
+{
+    api_require_auth();
+    $libraryId = isset($_GET['library_id']) ? (int) $_GET['library_id'] : 0;
+    if ($libraryId <= 0) {
+        $lib = working_library();
+        $libraryId = $lib === null ? 0 : (int) $lib['id'];
+    }
+    $role = isset($_GET['role']) && in_array($_GET['role'], ['machine', 'peripheral'], true) ? $_GET['role'] : null;
+
+    $sql = "SELECT m.*, c.name AS category_name, c.slug AS category_slug, c.role AS category_role,
+                   p.name AS platform_name, p.slug AS platform_slug,
+                   v.name AS vendor_name
+              FROM hardware_models m
+              JOIN categories c ON c.id = m.category_id
+         LEFT JOIN platforms p  ON p.id = m.platform_id
+         LEFT JOIN companies v  ON v.id = m.vendor_id
+             WHERE m.library_id = ?";
+    $params = [$libraryId];
+    if ($role !== null) {
+        $sql .= ' AND c.role = ?';
+        $params[] = $role;
+    }
+    $sql .= ' ORDER BY p.name, m.sort_order, m.name';
+
+    api_ok(array_map('hardware_model_to_api', all($sql, $params)));
+}
+
+/** The enriched row a single hardware model reads as - shared by show, create, and update, each of which sends it with its own correct status code. */
+function hardware_model_fetch(int $id): ?array
+{
+    return one(
+        "SELECT m.*, c.name AS category_name, c.slug AS category_slug, c.role AS category_role,
+                p.name AS platform_name, p.slug AS platform_slug,
+                v.name AS vendor_name
+           FROM hardware_models m
+           JOIN categories c ON c.id = m.category_id
+      LEFT JOIN platforms p  ON p.id = m.platform_id
+      LEFT JOIN companies v  ON v.id = m.vendor_id
+          WHERE m.id = ?",
+        [$id]
+    );
+}
+
+function api_hardware_models_show(int $id): void
+{
+    api_require_auth();
+    $row = hardware_model_fetch($id);
+    if ($row === null || !can_read_library((int) $row['library_id'])) {
+        api_error('not_found', 'No hardware model with that id.', 404);
+    }
+    api_ok(hardware_model_to_api($row));
+}
+
+/** Shared by create and update. Validates category role (machine or peripheral, never a bare structural node) and that platform/vendor, when given, belong to the same library. */
+function api_hardware_model_payload(array $in, int $libraryId, ?array $existing = null): array
+{
+    $field = fn(string $k) => array_key_exists($k, $in) ? $in[$k] : ($existing[$k] ?? null);
+    $errors = [];
+
+    $categoryId = (int) ($field('category_id') ?? 0);
+    $category = one('SELECT id, role FROM categories WHERE id = ? AND library_id = ?', [$categoryId, $libraryId]);
+    if ($category === null || !in_array($category['role'], ['machine', 'peripheral'], true)) {
+        $errors['category_id'] = 'Choose a machine or peripheral kind from this library.';
+    }
+
+    $platformId = $field('platform_id');
+    $platformId = ($platformId === null || (int) $platformId <= 0) ? null : (int) $platformId;
+    if ($platformId !== null && one('SELECT id FROM platforms WHERE id = ? AND library_id = ?', [$platformId, $libraryId]) === null) {
+        $errors['platform_id'] = 'No such platform in this library.';
+    }
+
+    $vendorId = $field('vendor_id');
+    $vendorId = ($vendorId === null || (int) $vendorId <= 0) ? null : (int) $vendorId;
+    if ($vendorId !== null && one('SELECT id FROM companies WHERE id = ? AND library_id = ?', [$vendorId, $libraryId]) === null) {
+        $errors['vendor_id'] = 'No such company in this library.';
+    }
+
+    if ($errors !== []) {
+        api_error('validation_failed', 'Some fields need attention.', 422, $errors);
+    }
+
+    $yearFrom = $field('year_from');
+    return [
+        'category_id' => $categoryId,
+        'platform_id' => $platformId,
+        'vendor_id'   => $vendorId,
+        'year_from'   => ($yearFrom === null || $yearFrom === '') ? null : (int) $yearFrom,
+        'fits_note'   => nullify($field('fits_note')),
+        'interface'   => nullify($field('interface')),
+        'notes'       => nullify($field('notes')),
+        'sort_order'  => isset($in['sort_order']) ? (int) $in['sort_order'] : (int) ($existing['sort_order'] ?? 0),
+    ];
+}
+
+function api_hardware_models_create(): void
+{
+    $in = api_body();
+    $libraryId = isset($in['library_id']) ? (int) $in['library_id'] : 0;
+    if ($libraryId <= 0) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['library_id' => 'Choose which library this model belongs to.']);
+    }
+    api_require_owns_library($libraryId);
+
+    $name = trim((string) ($in['name'] ?? ''));
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Name is required.']);
+    }
+
+    $data = api_hardware_model_payload($in, $libraryId);
+    $data['library_id'] = $libraryId;
+    $data['name']       = mb_substr($name, 0, 160);
+    $data['slug']       = unique_slug('hardware_models', slugify($name));
+
+    $id = insert_row('hardware_models', $data);
+    api_ok(hardware_model_to_api(hardware_model_fetch((int) $id)), null, 201);
+}
+
+function api_hardware_models_update(int $id): void
+{
+    $existing = one('SELECT * FROM hardware_models WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No hardware model with that id.', 404);
+    }
+    $libraryId = (int) $existing['library_id'];
+    api_require_owns_library($libraryId);
+
+    $in = api_body();
+    $name = array_key_exists('name', $in) ? trim((string) $in['name']) : (string) $existing['name'];
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Name is required.']);
+    }
+
+    $data = api_hardware_model_payload($in, $libraryId, $existing);
+    $data['name'] = mb_substr($name, 0, 160);
+    $data['slug'] = unique_slug('hardware_models', slugify($name), $id);
+
+    update_row('hardware_models', $id, $data);
+    api_ok(hardware_model_to_api(hardware_model_fetch($id)));
+}
+
+/** Refused while any owned entry still points at it - the same "never silently lose data" guard every delete in this taxonomy family carries. */
+function api_hardware_models_delete(int $id): void
+{
+    $existing = one('SELECT * FROM hardware_models WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No hardware model with that id.', 404);
+    }
+    api_require_owns_library((int) $existing['library_id']);
+
+    $used = (int) scalar('SELECT COUNT(*) FROM items WHERE model_id = ? AND deleted_at IS NULL', [$id]);
+    if ($used > 0) {
+        api_error('validation_failed', sprintf(
+            'Still used by %d catalogue entr%s, so it was kept. Reassign those first.',
+            $used, $used === 1 ? 'y' : 'ies'
+        ), 422);
+    }
+
+    delete_row('hardware_models', $id);
+    api_no_content();
+}
+
+/**
+ * Software models - what titles made from it start out already filled
+ * in with, not an ongoing reference. Owner-level, matching the direction
+ * hardware models just took rather than the real screen's own site-wide
+ * admin gate - a deliberate choice for this client, not an oversight.
+ */
+function api_software_models_index(): void
+{
+    api_require_auth();
+    $libraryId = isset($_GET['library_id']) ? (int) $_GET['library_id'] : 0;
+    if ($libraryId <= 0) {
+        $lib = working_library();
+        $libraryId = $lib === null ? 0 : (int) $lib['id'];
+    }
+    $rows = all(
+        "SELECT m.*, c.name AS category_name, c.slug AS category_slug,
+                p.name AS platform_name, p.slug AS platform_slug
+           FROM software_models m
+      LEFT JOIN categories c ON c.id = m.category_id
+      LEFT JOIN platforms p  ON p.id = m.platform_id
+          WHERE m.library_id = ?
+       ORDER BY p.name, m.sort_order, m.name",
+        [$libraryId]
+    );
+    api_ok(array_map('software_model_to_api', $rows));
+}
+
+function software_model_fetch(int $id): ?array
+{
+    return one(
+        "SELECT m.*, c.name AS category_name, c.slug AS category_slug,
+                p.name AS platform_name, p.slug AS platform_slug
+           FROM software_models m
+      LEFT JOIN categories c ON c.id = m.category_id
+      LEFT JOIN platforms p  ON p.id = m.platform_id
+          WHERE m.id = ?",
+        [$id]
+    );
+}
+
+function api_software_models_show(int $id): void
+{
+    api_require_auth();
+    $row = software_model_fetch($id);
+    if ($row === null || !can_read_library((int) $row['library_id'])) {
+        api_error('not_found', 'No software model with that id.', 404);
+    }
+    api_ok(software_model_to_api($row));
+}
+
+/** Shared by create and update. Platform and category, when given, must belong to the same library - the real screen's own quiet assumption, checked here rather than trusted. */
+function api_software_model_payload(array $in, int $libraryId, ?array $existing = null): array
+{
+    $field = fn(string $k) => array_key_exists($k, $in) ? $in[$k] : ($existing[$k] ?? null);
+    $errors = [];
+
+    $platformId = $field('platform_id');
+    $platformId = ($platformId === null || (int) $platformId <= 0) ? null : (int) $platformId;
+    if ($platformId !== null && one('SELECT id FROM platforms WHERE id = ? AND library_id = ?', [$platformId, $libraryId]) === null) {
+        $errors['platform_id'] = 'No such platform in this library.';
+    }
+
+    $categoryId = $field('category_id');
+    $categoryId = ($categoryId === null || (int) $categoryId <= 0) ? null : (int) $categoryId;
+    if ($categoryId !== null && one('SELECT id FROM categories WHERE id = ? AND library_id = ?', [$categoryId, $libraryId]) === null) {
+        $errors['category_id'] = 'No such category in this library.';
+    }
+
+    if ($errors !== []) {
+        api_error('validation_failed', 'Some fields need attention.', 422, $errors);
+    }
+
+    return [
+        'platform_id' => $platformId,
+        'category_id' => $categoryId,
+        'notes'       => nullify($field('notes')),
+    ];
+}
+
+function api_software_models_create(): void
+{
+    $in = api_body();
+    $libraryId = isset($in['library_id']) ? (int) $in['library_id'] : 0;
+    if ($libraryId <= 0) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['library_id' => 'Choose which library this model belongs to.']);
+    }
+    api_require_owns_library($libraryId);
+
+    $name = trim((string) ($in['name'] ?? ''));
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Name is required.']);
+    }
+
+    $data = api_software_model_payload($in, $libraryId);
+    $data['library_id'] = $libraryId;
+    $data['name']       = mb_substr($name, 0, 160);
+    $data['slug']       = unique_slug('software_models', slugify($name));
+
+    $id = insert_row('software_models', $data);
+    api_ok(software_model_to_api(software_model_fetch((int) $id)), null, 201);
+}
+
+function api_software_models_update(int $id): void
+{
+    $existing = one('SELECT * FROM software_models WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No software model with that id.', 404);
+    }
+    $libraryId = (int) $existing['library_id'];
+    api_require_owns_library($libraryId);
+
+    $in = api_body();
+    $name = array_key_exists('name', $in) ? trim((string) $in['name']) : (string) $existing['name'];
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Name is required.']);
+    }
+
+    $data = api_software_model_payload($in, $libraryId, $existing);
+    $data['name'] = mb_substr($name, 0, 160);
+    $data['slug'] = unique_slug('software_models', slugify($name), $id);
+
+    update_row('software_models', $id, $data);
+    api_ok(software_model_to_api(software_model_fetch($id)));
+}
+
+/**
+ * No usage guard, deliberately, matching the real screen's own choice: a
+ * model is where an answer came from, not where it lives, so a title made
+ * from one keeps everything it was filled in with and does not go blank
+ * or get refused just because the template behind it was later removed.
+ */
+function api_software_models_delete(int $id): void
+{
+    $existing = one('SELECT * FROM software_models WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No software model with that id.', 404);
+    }
+    api_require_owns_library((int) $existing['library_id']);
+
+    delete_row('software_models', $id);
     api_no_content();
 }
 

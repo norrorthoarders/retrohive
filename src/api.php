@@ -797,6 +797,79 @@ function environment_to_api(array $r): array
 }
 
 /**
+ * A machine or a part - one table, since the category it is filed under
+ * already says which. Deliberately narrower than the real form: no
+ * interface_vocab_id (a controlled vocabulary, real, separate work),
+ * no model_compatibility (which parts fit which machines, a genuine
+ * many-to-many, also separate work) - `interface` and `fits_note` stay
+ * free text here, the same fallback the real schema itself keeps for
+ * exactly the cases those two features do not yet cover.
+ */
+function hardware_model_to_api(array $r): array
+{
+    return [
+        'id'          => (int) $r['id'],
+        'name'        => $r['name'],
+        'slug'        => $r['slug'],
+        'library_id'  => isset($r['library_id']) && $r['library_id'] !== null ? (int) $r['library_id'] : null,
+        'category_id' => (int) $r['category_id'],
+        'category'    => isset($r['category_name']) ? [
+            'id'   => (int) $r['category_id'],
+            'name' => $r['category_name'],
+            'slug' => $r['category_slug'] ?? null,
+            'role' => $r['category_role'] ?? null,
+        ] : null,
+        'platform_id' => $r['platform_id'] === null ? null : (int) $r['platform_id'],
+        'platform'    => isset($r['platform_name']) && $r['platform_name'] !== null ? [
+            'id'   => (int) $r['platform_id'],
+            'name' => $r['platform_name'],
+            'slug' => $r['platform_slug'] ?? null,
+        ] : null,
+        'vendor_id'   => $r['vendor_id'] === null ? null : (int) $r['vendor_id'],
+        'vendor'      => isset($r['vendor_name']) && $r['vendor_name'] !== null ? [
+            'id'   => (int) $r['vendor_id'],
+            'name' => $r['vendor_name'],
+        ] : null,
+        'year_from'   => $r['year_from'] === null ? null : (int) $r['year_from'],
+        'fits_note'   => $r['fits_note'],
+        'interface'   => $r['interface'],
+        'notes'       => $r['notes'],
+        'sort_order'  => (int) ($r['sort_order'] ?? 0),
+    ];
+}
+
+/**
+ * A boxed release template - what titles made from it start out already
+ * filled in with. Narrower than the real form on purpose: no custom spec
+ * fields, no box-contents checklist, no per-medium list - each a genuine,
+ * separate child table (software_model_fields, software_model_contents,
+ * software_model_media) left for later, the same restraint applied to
+ * hardware models' own compatibility and vocabulary features.
+ */
+function software_model_to_api(array $r): array
+{
+    return [
+        'id'          => (int) $r['id'],
+        'name'        => $r['name'],
+        'slug'        => $r['slug'],
+        'library_id'  => isset($r['library_id']) && $r['library_id'] !== null ? (int) $r['library_id'] : null,
+        'category_id' => $r['category_id'] === null ? null : (int) $r['category_id'],
+        'category'    => isset($r['category_name']) && $r['category_name'] !== null ? [
+            'id'   => (int) $r['category_id'],
+            'name' => $r['category_name'],
+            'slug' => $r['category_slug'] ?? null,
+        ] : null,
+        'platform_id' => $r['platform_id'] === null ? null : (int) $r['platform_id'],
+        'platform'    => isset($r['platform_name']) && $r['platform_name'] !== null ? [
+            'id'   => (int) $r['platform_id'],
+            'name' => $r['platform_name'],
+            'slug' => $r['platform_slug'] ?? null,
+        ] : null,
+        'notes'       => $r['notes'],
+    ];
+}
+
+/**
  * One credit - a title, a role, and exactly one of a person or a company,
  * matching the CHECK constraint the database itself enforces. `holder`
  * carries whichever one it actually is, tagged so a client never has to

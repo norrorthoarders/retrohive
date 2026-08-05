@@ -1,5 +1,85 @@
 # Changelog
 
+**The software-models API - full CRUD, owner-gated to match hardware models rather than the real
+screen's own site-wide admin bar.** A boxed-release template: what a title made from it starts
+already filled in with, not an ongoing reference to it. Deliberately narrower than the real form
+on purpose: no custom spec fields, no box-contents checklist, no per-medium list - each a genuine,
+separate child table (`software_model_fields`, `software_model_contents`, `software_model_media`)
+left for later, the same restraint hardware models' own compatibility and vocabulary features
+already got.
+
+**Deliberately no delete guard**, matching a real, considered choice the original screen already
+made rather than an oversight this round introduced: a model is where an answer came from, not
+where it lives, so removing one does not touch what a title made from it already has. Checked
+this directly against the real save handler's own comment before matching it, rather than
+defaulting to the guard every other delete in this session carries.
+
+Applied this session's own lessons before any live testing: create returns its own `api_ok(...,
+201)` directly rather than delegating to show() the way hardware models' create originally did
+and had to be fixed - the same mistake, not repeated. Loaded every function directly and
+confirmed each one genuinely exists and is callable before trusting any of them with a request.
+
+Proved live: created a real model with a real category and platform, confirmed it returns 201,
+confirmed delete succeeds immediately even while nothing points at it yet - the deliberate
+absence of a guard, not a missing one.
+
+`docs/openapi.yaml` updated. Full suite re-run: still 1 of 25, unchanged.
+
+**Client-side editing not built this round** - API only, the same split used for hardware models,
+credits, and items.
+
+This package is **build 32**.
+
+**Fixed a real bug in the hardware-models API, found while building this client's own editor:
+create returned HTTP 200 instead of 201.** `api_hardware_models_create()` reused
+`api_hardware_models_show()` for its enriched response - a reasonable-looking shortcut that
+quietly dropped the 201 status along with it, since show() has no reason to ever send one. The
+row was created correctly every time; only the status code lied about it, which is exactly what
+a client's own "did this actually work" check relies on.
+
+Refactored rather than patched around: extracted the shared row-fetch into
+`hardware_model_fetch()`, with show, create, and update each sending their own `api_ok()` call
+and correct status code, instead of one delegating to another. Re-verified with this session's
+own post-incident discipline before any live retest - loaded every related function directly,
+confirmed all five exist and are callable.
+
+Proved live with the exact request that used to lie: a real create, now genuinely returning 201.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 31**.
+
+**The hardware-models API - full CRUD, deliberately narrower than the real form, and
+owner-gated to match.** One table for machines and the parts that go in them, the category
+already filed under deciding which - the same choice the real schema itself already made.
+Deliberately does not cover `interface_vocab_id` (a real, separate controlled-vocabulary
+feature) or `model_compatibility` (a genuine many-to-many, also separate work) - `interface` and
+`fits_note` stay free text, the same fallback the schema itself keeps for whatever those two
+features do not yet cover.
+
+Gated at owner level, not the curator bar the rest of this session's taxonomy work has used -
+checked directly against the real web screen's own permission logic rather than assumed, since
+this one turned out to be genuinely stricter. A new `api_require_owns_library()` mirrors the
+existing curator-level helper exactly, just against `can_own_library()` instead.
+
+Caught a real bug before it ever reached a live request: `php -l` cannot see an undefined
+function call, and a copy-paste left three fields calling `nullify_str()`, which does not exist -
+only `nullify()` does. Found by this session's own post-incident discipline: loading every
+function directly and checking each one is real before trusting any of them with a request,
+which is exactly the check that caught this one in seconds rather than a live 500 first.
+
+Proved live: created a real machine model, confirmed a category with the wrong role is correctly
+refused with a clear message, confirmed a role=machine filter returns only machines including the
+one just created, confirmed the delete guard correctly refuses while a real item points at it,
+and confirmed update genuinely persists a change.
+
+`docs/openapi.yaml` updated. Full suite re-run: still 1 of 25, unchanged.
+
+**Client-side editing not built this round** - API only, the same split this session used for
+credits and items.
+
+This package is **build 30**.
+
 **The items browse filter now genuinely accepts `domain=video` and `domain=music`, not just
 hardware and software.** Same pattern as the credit_roles domains, the categories Kind field, and
 companies' own makes checkboxes earlier this session: the schema and the underlying data have
