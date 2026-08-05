@@ -10,6 +10,11 @@ return [
     'currency'    => 'SEK',
     'timezone'    => 'Europe/Stockholm',
     'debug'       => false,
+    // Separate switch, off by default even when 'debug' above is on - see
+    // src/config.php's own comment on this key for why. Turn this on to make
+    // /status/debug answer with a build number and deploy timestamp; leave
+    // it off and that address 404s as if it did not exist.
+    'debug_status' => false,
 
     // 0 = sign-in required to see anything (default).
     // 1 = anyone can browse read-only; sign-in only needed to change things.

@@ -28,6 +28,14 @@ $config = [
     'currency'    => env_str('APP_CURRENCY', 'SEK'),
     'timezone'    => env_str('APP_TIMEZONE', 'Europe/Stockholm'),
     'debug'       => env_str('APP_DEBUG', '0') === '1',
+    // Separate from 'debug' above on purpose: that one is about whether a PHP
+    // error shows its stack trace, this one is about whether /status/debug
+    // answers at all. Somebody debugging a local install and somebody who
+    // just wants to confirm which build landed on a server are two different
+    // people with two different reasons to flip a switch, and conflating
+    // them would mean turning on error display also handed out build numbers
+    // to the internet, or the reverse.
+    'debug_status' => env_str('APP_DEBUG_STATUS', '0') === '1',
 
     // 0 = sign-in required to see anything (default).
     // 1 = anyone can browse, sign-in only needed to change things.

@@ -318,6 +318,9 @@ function config_values(): array
         'timezone'        => (string) recall('timezone', 'Europe/Stockholm'),
         'base_url'        => (string) recall('base_url', ''),
         'trusted_proxies' => (string) recall('trusted_proxies', ''),
+        // Not offered as a wizard step - always off through this path.
+        'debug'           => false,
+        'debug_status'    => false,
         'db_host'         => (string) recall('db_host', '127.0.0.1'),
         'db_port'         => (string) recall('db_port', '3306'),
         'db_name'         => (string) recall('db_name', 'retrohive'),
@@ -338,6 +341,10 @@ function config_from_session(): string
         'timezone'        => (string) recall('timezone', 'Europe/Stockholm'),
         'base_url'        => (string) recall('base_url', ''),
         'trusted_proxies' => (string) recall('trusted_proxies', ''),
+        // Not offered as a wizard step - the answer-file installer has it,
+        // this path deliberately still defaults both off.
+        'debug'           => false,
+        'debug_status'    => false,
         // remote | local | none
         'structure'       => (string) recall('structure', 'remote'),
         // Separate from the templates choice: reference data and examples are two

@@ -663,6 +663,7 @@ function config_exists(): bool
 function config_php(array $v): string
 {
     $q = fn($s) => var_export((string) $s, true);
+    $bool = fn($b) => $b ? 'true' : 'false';
     $proxies = array_values(array_filter(array_map('trim', explode(',', (string) ($v['trusted_proxies'] ?? '')))));
     $proxyList = $proxies === []
         ? '[]'
@@ -680,7 +681,11 @@ return [
     'app_tagline' => {$q($v['app_tagline'])},
     'currency'    => {$q($v['currency'])},
     'timezone'    => {$q($v['timezone'])},
-    'debug'       => false,
+    'debug'       => {$bool($v['debug'] ?? false)},
+    // Separate switch, off by default even when 'debug' above is on: that
+    // one is about whether a PHP error shows its stack trace, this one is
+    // about whether /status/debug answers at all rather than 404ing.
+    'debug_status' => {$bool($v['debug_status'] ?? false)},
 
     // 0/false = sign-in required to see anything.
     'public_browse' => false,
@@ -720,7 +725,7 @@ function answers_defaults(): array
                        'display_name' => ''],
         'instance' => ['name' => 'RetroHive', 'tagline' => '', 'url' => '',
                        'currency' => 'SEK', 'timezone' => 'Europe/Stockholm',
-                       'trusted_proxies' => ''],
+                       'trusted_proxies' => '', 'debug' => false, 'debug_status' => false],
         // Only the command line installer reads these, and only when it runs as
         // root: the wizard already runs as the web server, so what it writes is
         // owned by the right account without anybody having to say so.
@@ -809,6 +814,14 @@ function answers_export(array $v): string
     $lines[] = 'timezone = ' . $q($v['instance']['timezone'] ?? 'Europe/Stockholm');
     $lines[] = '; Behind a reverse proxy, whose forwarded headers to believe.';
     $lines[] = 'trusted_proxies = ' . $q($v['instance']['trusted_proxies'] ?? '');
+    $lines[] = '; Raw PHP errors instead of a clean crash page. For a local install being';
+    $lines[] = '; actively worked on, not a server anyone else can reach.';
+    $lines[] = 'debug = ' . $bool($v['instance']['debug'] ?? false);
+    $lines[] = '; A separate switch: turns on /status/debug, which answers with a build';
+    $lines[] = '; number and a deploy timestamp - see README.md. Off by default even when';
+    $lines[] = '; debug above is on, and off means that address 404s outright rather than';
+    $lines[] = '; refuses, so a stranger cannot tell "not built" from "turned off".';
+    $lines[] = 'debug_status = ' . $bool($v['instance']['debug_status'] ?? false);
     $lines[] = '';
     $lines[] = '[server]';
     $lines[] = '; Who the web server runs as. Used by bin/install.php when it is run';

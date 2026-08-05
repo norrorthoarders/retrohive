@@ -344,7 +344,7 @@ if (str_starts_with($path, '/api/')) {
 // Two of them carry a token, so this is a prefix test rather than a list of
 // exact paths. The token decides nothing here: it is checked properly by the
 // route, against the mode, and a wrong one answers 404 like everything else.
-$open = ['/login', '/setup', '/register', '/robots.txt', '/healthz', '/status', '/status.json'];
+$open = ['/login', '/setup', '/register', '/robots.txt', '/healthz', '/status', '/status.json', '/status/debug'];
 $openPrefixes = ['/join/', '/invite/'];
 $isOpenPath = in_array($path, $open, true);
 foreach ($openPrefixes as $prefix) {
@@ -560,6 +560,7 @@ $routes = [
     // comment for what that does and does not mean it discloses.
     ['GET',  '#^/status$#',                  fn() => status_serve_html()],
     ['GET',  '#^/status\.json$#',            fn() => status_serve_json()],
+    ['GET',  '#^/status/debug$#',            fn() => status_serve_debug()],
 
 
     ['GET',  '#^/setup$#',                   fn() => auth_setup_form()],

@@ -1,5 +1,51 @@
 # Changelog
 
+**`debug` and `debug_status` are now real answer-file options**, not just something you edit into
+`config.local.php` by hand after the fact. `bin/install.php --example` now shows both, with the
+same documentation this changelog already carries; `bin/install.php --answers your.rsp` writes
+whichever values you set straight into the real config, verified live end to end - a real `.rsp`
+with `debug_status = 1`, through a real install, landing correctly in the written config, `/status/
+debug` answering with real data immediately afterward, no manual edit in between.
+
+**`/status/debug` now shows real, useful detail once switched on** - not just build and version,
+but migration status, schema status, the three PHP settings that actually explain a failed photo
+upload (`memory_limit`, `upload_max_filesize`, `post_max_size`), and which metadata sources are
+configured (never their credentials - the same restraint `admin/status` already applies).
+
+The database-independence this endpoint was built around from the start still holds with the
+larger response: proved live that with the database genuinely unreachable, the new fields
+(migrations, schema, metadata providers) are cleanly omitted rather than crashing the whole
+response, while build, version, and PHP settings - none of which need a database - still answer
+correctly, and the endpoint still reports `503`/"unavailable" honestly rather than pretending
+everything is fine.
+
+This package is **build 2**.
+
+**New: `/status/debug`, a third tier past `/status` and `admin/status`.** Off by default, gated
+by its own switch - `debug_status` in `config.local.php`, separate from the existing `debug` flag
+on purpose, since "show me a PHP stack trace" and "tell me the build number" are different
+questions a person might want answered independently of each other. When it is off, the address
+does not just refuse - it 404s, the same shape as a path nothing has ever mapped, so a stranger
+probing this instance cannot tell the difference between "not built" and "turned off."
+
+Answers what the other two tiers withhold on purpose - not more health data, a different
+question: which build is this, and when did it land here. Build number comes from a plain file,
+`BUILD`, at the project root - incremented by hand once per package, since there is no CI here to
+do it automatically yet. `deployed_at` is free: `config.local.php` gets rewritten by `install.php`
+on every deploy this project does today, a full reinstall rather than a patch, so that file's own
+mtime is an honest answer with nothing new to maintain.
+
+Proved all four real combinations live, not just the toggle-on happy path: switch off with a
+healthy database (404), switch on with a healthy database (real data), switch on with the
+database genuinely unreachable (still answers, correctly reports "unavailable"), and - the
+combination worth catching before it shipped, not after - switch off *and* the database
+unreachable at the same time, confirming the off-switch's 404 does not accidentally depend on
+`not_found()`'s normal rendering path, which needs the same database connection this switch has
+nothing to do with.
+
+This package is **build 1** - the first to actually carry this mechanism. Every `retrohive.tar.gz`
+after this one increments `BUILD` by one before packaging.
+
 **New: the locations API, built from scratch.** Unlike titles, this had zero endpoints before
 tonight - the web manage screen has always worked directly against the database through a
 single multiplexed `locations_save()` action (one POST, an `action` field deciding create,

@@ -202,3 +202,15 @@ mariadb -u root -e "SELECT User, Host FROM mysql.user WHERE User = 'retrohive';"
 ```
 
 `docs/openapi.yaml` is the API contract clients are written against.
+
+## Checking a deployment
+
+```
+curl https://your-instance/status
+```
+
+Up or down, database connectivity, nothing more - safe to leave permanently public. For which
+build actually landed and when, set `debug_status => true` in `config.local.php` and the same
+information appears at `/status/debug`, plus a build number and deploy timestamp. Off by default,
+and off means 404, not refused - a stranger probing the instance cannot tell the difference
+between "no such address" and "turned off."

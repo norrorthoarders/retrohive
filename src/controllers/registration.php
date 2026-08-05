@@ -342,3 +342,91 @@ function status_serve_json(): void
     http_response_code($data['status'] === 'unavailable' ? 503 : 200);
     echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 }
+
+/**
+ * A third tier, past /status and admin/status - deliberately not on by
+ * default, and off in a way that does not admit it exists: the wrong
+ * answer here is not "access denied", it is 404, the same shape as a path
+ * nothing has ever mapped. This is a switch somebody flips on purpose while
+ * actively testing a deployment, not a permission a person is granted -
+ * confusing the two would mean an administrator's own credentials getting
+ * this by default, on every instance, forever.
+ *
+ * Answers what /status and admin/status both withhold on purpose - not more
+ * of the same withholding, a different question: not "is the software
+ * healthy" but "which build is this, and when did it land here." The build
+ * number lives in a plain file at the project root, incremented by hand
+ * once per package - there is no CI here to do it automatically, and a
+ * number that is wrong is worse than a mechanism that admits it is manual.
+ */
+function status_serve_debug(): void
+{
+    if (!(bool) config('debug_status')) {
+        // Not not_found(): that renders through the normal layout, which
+        // needs the same database connection this switch has nothing to do
+        // with. A database outage should not be able to turn "this switch
+        // is off" into a fatal error instead of a plain 404.
+        http_response_code(404);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo "Not found.\n";
+        return;
+    }
+
+    $build = trim((string) @file_get_contents(APP_ROOT . '/BUILD'));
+    $configFile = config_local_path();
+    $deployedAt = is_file($configFile) ? gmdate('Y-m-d\TH:i:s\Z', (int) filemtime($configFile)) : null;
+
+    $out = array_merge(status_data(), [
+        'build'        => $build !== '' ? $build : null,
+        // The config file is rewritten by install.php on every deploy this
+        // project does today - a full reinstall, not a patch - so its mtime
+        // is a free, honest answer to "when did the code currently running
+        // actually land here", without needing a CI system to stamp one.
+        'deployed_at'  => $deployedAt,
+        'app_version'  => defined('APP_VERSION') ? APP_VERSION : null,
+        'api_version'  => defined('API_VERSION') ? API_VERSION : null,
+        'php_version'  => PHP_VERSION,
+        'hostname'     => gethostname() ?: null,
+        'php' => [
+            // The three settings that actually explain "why did my upload
+            // fail" without needing shell access to read php.ini by hand.
+            'memory_limit'         => ini_get('memory_limit'),
+            'upload_max_filesize'  => ini_get('upload_max_filesize'),
+            'post_max_size'        => ini_get('post_max_size'),
+        ],
+    ]);
+
+    // Everything below needs the database status_data() already checked -
+    // asked for again here rather than assumed, since 'operational' a moment
+    // ago is not a guarantee it still is one. Skipped rather than attempted
+    // and caught: a second connection failure here would be the same fact
+    // status_data() already reported, told twice.
+    if ($out['status'] !== 'unavailable') {
+        $update = update_status();
+        $out['migrations'] = [
+            'applied' => count($update['applied']),
+            'pending' => $update['pending'],
+            'total'   => $update['migrations_total'],
+        ];
+        $out['schema_ok']    = $update['structure']['ok'];
+        $out['needs_update'] = $update['needs_update'];
+
+        // Never params: that column is where API keys live. The same
+        // restraint admin/status already applies, extended here rather than
+        // re-decided - a debug switch is not a reason to hand out credentials
+        // any more than an admin session is.
+        $out['metadata_providers'] = array_map(static function (array $p): array {
+            return [
+                'type'       => $p['type'],
+                'name'       => $p['name'],
+                'is_enabled' => (bool) $p['is_enabled'],
+                'last_error' => $p['last_error'],
+            ];
+        }, all('SELECT type, name, is_enabled, last_error FROM metadata_providers ORDER BY priority, name'));
+    }
+
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    http_response_code($out['status'] === 'unavailable' ? 503 : 200);
+    echo json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+}
