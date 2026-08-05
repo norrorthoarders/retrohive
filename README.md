@@ -176,10 +176,29 @@ PHP 8.1+, MariaDB 10.6+ or MySQL 8+, and a webserver that can rewrite everything
 ## Installing
 
 ```
+mariadb -u root -e "CREATE DATABASE retrohive CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mariadb -u root -e "CREATE USER 'retrohive'@'localhost' IDENTIFIED BY 'a-long-random-password';"
+mariadb -u root -e "GRANT ALL PRIVILEGES ON retrohive.* TO 'retrohive'@'localhost'; FLUSH PRIVILEGES;"
+```
+
+Replace `localhost` with the actual host the webserver connects from if the database runs
+somewhere else, and use the same value on both the `CREATE USER` and `GRANT` lines - a
+mismatch between the two silently creates a user nothing can log in as. Already have a user
+and just need to reset its password instead of creating one from scratch?
+
+```
+mariadb -u root -e "ALTER USER 'retrohive'@'localhost' IDENTIFIED BY 'a-new-password'; FLUSH PRIVILEGES;"
+```
+
+```
 cp src/config.local.php.example src/config.local.php   # edit the database section
-mysql -e "CREATE DATABASE retrohive"
 php bin/install.php --interactive
 ```
 
-`docs/INSTALL.md` has the rest. `docs/openapi.yaml` is the API contract clients are written
-against.
+`docs/INSTALL.md` has the rest - including how to check what got created:
+
+```
+mariadb -u root -e "SELECT User, Host FROM mysql.user WHERE User = 'retrohive';"
+```
+
+`docs/openapi.yaml` is the API contract clients are written against.
