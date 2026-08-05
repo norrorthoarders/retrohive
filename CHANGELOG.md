@@ -1,5 +1,19 @@
 # Changelog
 
+**Found and fixed a real bug while building reordering: `all_categories()` ordered results
+alphabetically by name, completely ignoring `sort_order`.** The column existed, PATCH already
+accepted it, nothing was silently broken at the data layer - but nothing anywhere actually read
+it, so setting it changed nothing about what anyone would ever see. A reordering feature built on
+top of that would have looked broken while being, in a narrow sense, correct. Fixed to order by
+`sort_order, name` - the exact ordering the real tree editor's own query already uses, matched
+rather than invented.
+
+Proved live: before the fix, checked that this was genuinely the cause; after, moved a real
+category and confirmed both the database values swapped correctly and the tree's actual rendered
+order changed to match.
+
+This package is **build 24**.
+
 **The API layer for people, credit roles, and credits - full create/read/update/delete on all
 three, completing what last session's schema-only round left open.** Director, artist, author -
 and any other role - now genuinely creatable, editable, and assignable through the API, not just

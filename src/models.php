@@ -406,9 +406,16 @@ function all_categories(?int $libraryId = null): array
 {
     // One library's, or every library this account can reach. Never the template rows -
     // those exist to be copied and are filed under nothing.
+    //
+    // Ordered by sort_order first, name second - the same ordering the real
+    // tree editor's own query already uses. This read alphabetically only
+    // until now, which meant the column existed and was silently ignored:
+    // sort_order changed nothing about what anyone actually saw, and a
+    // reordering feature built on top of that would have had no visible
+    // effect regardless of how correctly it wrote the numbers.
     if ($libraryId !== null && $libraryId > 0) {
         return all('SELECT c.*, s.slug AS domain FROM categories c JOIN sections s ON s.id = c.section_id
-                     WHERE c.library_id = ? ORDER BY c.name', [$libraryId]);
+                     WHERE c.library_id = ? ORDER BY c.sort_order, c.name', [$libraryId]);
     }
     $reach = accessible_library_ids(acting_user(), ACCESS_VIEWER);
     if ($reach === []) {
@@ -416,7 +423,7 @@ function all_categories(?int $libraryId = null): array
     }
     return all('SELECT c.*, s.slug AS domain FROM categories c JOIN sections s ON s.id = c.section_id
                  WHERE c.library_id IN ('
-             . implode(',', array_fill(0, count($reach), '?')) . ') ORDER BY c.name', $reach);
+             . implode(',', array_fill(0, count($reach), '?')) . ') ORDER BY c.sort_order, c.name', $reach);
 }
 
 
