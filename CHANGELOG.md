@@ -1,5 +1,43 @@
 # Changelog
 
+**The API layer for people, credit roles, and credits - full create/read/update/delete on all
+three, completing what last session's schema-only round left open.** Director, artist, author -
+and any other role - now genuinely creatable, editable, and assignable through the API, not just
+present in the database.
+
+The actual point of the whole feature, proved live rather than assumed: `GET /credit-roles?
+domain=video` returns exactly Director, Writer, Producer, Composer - Artist, Programmer, Graphics
+and Design are correctly excluded, none of them tagged for video. This is what makes a real
+"credits" picker on a movie able to leave Composer off the list entirely, the reason this was
+built.
+
+The database's own CHECK constraint - exactly one of person or company per credit - is backed up
+by an application-level check first, so a bad request gets a real, specific message
+("Credit exactly one person or one company, not both and not neither") instead of a raw
+constraint failure surfacing through the API. Proved both directions live: both set together
+refused, neither set refused, one set succeeds.
+
+Delete guards on people and credit_roles match this session's own established pattern rather than
+relying on the database's ON DELETE RESTRICT alone: checked and refused with a real count and
+message before ever reaching the constraint - "Still credited on 1 title, so it was kept."
+Proved the full lifecycle live: created a person, credited them on a real title, confirmed both
+the person and the role they were credited in refuse deletion while that credit exists, deleted
+the credit, then confirmed the same person now deletes cleanly.
+
+Applied this session's own post-incident discipline before any of this went live: loaded every
+new and existing function directly after writing this round's insertion, confirmed all nineteen
+exist as real, correctly-scoped, callable functions - the same check that would have caught an
+earlier mistake this session in seconds rather than the hour it actually took.
+
+`docs/openapi.yaml` updated with all three new resources. Full suite re-run afterward: still 1 of
+25, the same pre-existing, unrelated issue as every check this session.
+
+**Still open**: no client-side screens yet for managing people or credit_roles, and no credits
+section on the titles form itself - the API can do everything now; nothing in the client can use
+it yet.
+
+This package is **build 23**.
+
 **In progress: the foundation for people and credits - director, artist, author, and any other
 role, as real relations rather than free text.** Three new tables: `people` (a real entity,
 separate from companies - a director is not an organization and forcing one into `companies`'

@@ -446,6 +446,31 @@ function all_companies(?string $makes = null, ?int $libraryId = null): array
     return all('SELECT * FROM companies WHERE library_id = ? ORDER BY name', [$libraryId]);
 }
 
+/** A library's people - directors, artists, authors - the same per-library shape companies already settled on. */
+function all_people(?int $libraryId = null): array
+{
+    if ($libraryId === null) {
+        $lib       = working_library();
+        $libraryId = $lib === null ? 0 : (int) $lib['id'];
+    }
+    return all('SELECT * FROM people WHERE library_id = ? ORDER BY name', [$libraryId]);
+}
+
+/** A library's credit roles, optionally narrowed to the domain(s) that matter for a given title. */
+function all_credit_roles(?int $libraryId = null, ?string $domain = null): array
+{
+    if ($libraryId === null) {
+        $lib       = working_library();
+        $libraryId = $lib === null ? 0 : (int) $lib['id'];
+    }
+    if ($domain !== null) {
+        return all("SELECT * FROM credit_roles
+                     WHERE library_id = ? AND FIND_IN_SET(?, domains)
+                     ORDER BY sort_order, name", [$libraryId, $domain]);
+    }
+    return all('SELECT * FROM credit_roles WHERE library_id = ? ORDER BY sort_order, name', [$libraryId]);
+}
+
 function all_tags(): array
 {
     return all('SELECT * FROM tags ORDER BY name');

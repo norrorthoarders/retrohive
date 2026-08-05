@@ -750,6 +750,61 @@ function company_to_api(array $r): array
     ];
 }
 
+/** A director, an artist, an author - a person, not a company, and nothing here pretends otherwise. */
+function person_to_api(array $r): array
+{
+    return [
+        'id'            => (int) $r['id'],
+        'name'          => $r['name'],
+        'slug'          => $r['slug'],
+        'library_id'    => isset($r['library_id']) && $r['library_id'] !== null ? (int) $r['library_id'] : null,
+        'born_year'     => $r['born_year'] === null ? null : (int) $r['born_year'],
+        'died_year'     => $r['died_year'] === null ? null : (int) $r['died_year'],
+        'website'       => $r['website'],
+        'wikipedia_url' => $r['wikipedia_url'],
+        'notes'         => $r['notes'],
+    ];
+}
+
+/** What a credit can be - Director, Composer - tagged with which domain(s) it makes sense in. */
+function credit_role_to_api(array $r): array
+{
+    return [
+        'id'         => (int) $r['id'],
+        'name'       => $r['name'],
+        'slug'       => $r['slug'],
+        'library_id' => isset($r['library_id']) && $r['library_id'] !== null ? (int) $r['library_id'] : null,
+        'domains'    => ($r['domains'] ?? '') === '' ? [] : explode(',', (string) $r['domains']),
+        'sort_order' => (int) ($r['sort_order'] ?? 100),
+    ];
+}
+
+/**
+ * One credit - a title, a role, and exactly one of a person or a company,
+ * matching the CHECK constraint the database itself enforces. `holder`
+ * carries whichever one it actually is, tagged so a client never has to
+ * guess from which of the two ids is non-null.
+ */
+function credit_to_api(array $r): array
+{
+    $isPerson = $r['person_id'] !== null;
+    return [
+        'id'         => (int) $r['id'],
+        'title_id'   => (int) $r['title_id'],
+        'role'       => [
+            'id'   => (int) $r['role_id'],
+            'name' => $r['role_name'] ?? null,
+            'slug' => $r['role_slug'] ?? null,
+        ],
+        'holder'     => [
+            'type' => $isPerson ? 'person' : 'company',
+            'id'   => (int) ($isPerson ? $r['person_id'] : $r['company_id']),
+            'name' => $r['holder_name'] ?? null,
+        ],
+        'sort_order' => (int) ($r['sort_order'] ?? 100),
+    ];
+}
+
 function user_to_api(array $u): array
 {
     return [

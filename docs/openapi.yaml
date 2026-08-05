@@ -1562,6 +1562,160 @@ paths:
         "403": { description: Curator access on this library is required }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /people:
+    get:
+      tags: [Taxonomy]
+      summary: Directors, artists, authors - people, not companies
+      parameters:
+        - { name: library_id, in: query, schema: { type: integer } }
+        - { name: q, in: query, schema: { type: string } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a person
+      description: Curator-or-better on the library, the same bar companies already sets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, name]
+              properties:
+                library_id: { type: integer }
+                name: { type: string }
+                born_year: { type: integer, nullable: true }
+                died_year: { type: integer, nullable: true }
+                website: { type: string, nullable: true }
+                wikipedia_url: { type: string, nullable: true }
+                notes: { type: string, nullable: true }
+      responses:
+        "201": { description: Created }
+        "422": { description: A missing name or an invalid URL }
+        "403": { description: Curator access on this library is required }
+
+  /people/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Taxonomy]
+      summary: Update a person
+      responses:
+        "200": { description: Updated }
+        "422": { description: A missing name or an invalid URL }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses: { "200": { description: Updated } }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a person
+      description: Refused while any credit still names them.
+      responses:
+        "204": { description: Deleted }
+        "422": { description: Still credited on a title }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /credit-roles:
+    get:
+      tags: [Taxonomy]
+      summary: Director, Composer - what a credit can be
+      description: >-
+        Pass `domain` to narrow to roles that apply there - what a title's
+        own credits picker should actually use, so adding a movie is never
+        offered Composer.
+      parameters:
+        - { name: library_id, in: query, schema: { type: integer } }
+        - { name: domain, in: query, schema: { type: string, enum: [hardware, software, video, music] } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Add a credit role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [library_id, name, domains]
+              properties:
+                library_id: { type: integer }
+                name: { type: string }
+                domains:
+                  type: array
+                  items: { type: string, enum: [hardware, software, video, music] }
+                sort_order: { type: integer }
+      responses:
+        "201": { description: Created }
+        "422": { description: A missing name or no domains chosen }
+        "403": { description: Curator access on this library is required }
+
+  /credit-roles/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Taxonomy]
+      summary: Update a credit role
+      responses:
+        "200": { description: Updated }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Taxonomy]
+      summary: Same as PATCH
+      responses: { "200": { description: Updated } }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a credit role
+      description: Refused while any credit still uses it.
+      responses:
+        "204": { description: Deleted }
+        "422": { description: Still used on a credit }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /credits:
+    get:
+      tags: [Taxonomy]
+      summary: Who did what on a title
+      parameters:
+        - { name: title_id, in: query, required: true, schema: { type: integer } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Taxonomy]
+      summary: Credit a person or a company for a role on a title
+      description: >-
+        Exactly one of person_id or company_id - the same rule the database's
+        own CHECK constraint enforces regardless of what this layer does.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title_id, role_id]
+              properties:
+                title_id: { type: integer }
+                role_id: { type: integer }
+                person_id: { type: integer, nullable: true }
+                company_id: { type: integer, nullable: true }
+                sort_order: { type: integer }
+      responses:
+        "201": { description: Created }
+        "422": { description: Both or neither of person_id/company_id, or a reference outside this library }
+        "403": { description: Curator access on this library is required }
+
+  /credits/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a credit
+      responses:
+        "204": { description: Deleted }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /tags:
     get:
       tags: [Taxonomy]

@@ -1914,6 +1914,321 @@ function api_companies_delete(int $id): void
     api_no_content();
 }
 
+/**
+ * People - directors, artists, authors. Curator-or-better on the library,
+ * the same bar companies already sets, since a person is shared reference
+ * data every credit on that library's titles can point at.
+ */
+function api_people_index(): void
+{
+    [$user, $token] = api_require_auth();
+    $libraryId = isset($_GET['library_id']) ? (int) $_GET['library_id'] : 0;
+    $q = isset($_GET['q']) && is_string($_GET['q']) ? trim($_GET['q']) : '';
+    if ($libraryId <= 0) {
+        $lib = working_library();
+        $libraryId = $lib === null ? 0 : (int) $lib['id'];
+    }
+    if ($q !== '') {
+        api_ok(array_map('person_to_api', all(
+            'SELECT * FROM people WHERE library_id = ? AND name LIKE ? ORDER BY name LIMIT 100',
+            [$libraryId, '%' . $q . '%']
+        )));
+        return;
+    }
+    api_ok(array_map('person_to_api', all_people($libraryId)));
+}
+
+function api_people_create(): void
+{
+    $in = api_body();
+    $libraryId = isset($in['library_id']) ? (int) $in['library_id'] : 0;
+    if ($libraryId <= 0) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['library_id' => 'Choose which library this person belongs to.']);
+    }
+    api_require_curates_library($libraryId);
+
+    $name = trim((string) ($in['name'] ?? ''));
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Name is required.']);
+    }
+
+    $data = api_person_payload($in);
+    $data['name']       = mb_substr($name, 0, 160);
+    $data['library_id'] = $libraryId;
+    $data['slug']       = unique_slug('people', slugify($name));
+
+    $id = insert_row('people', $data);
+    api_ok(person_to_api(one('SELECT * FROM people WHERE id = ?', [$id])), null, 201);
+}
+
+function api_people_update(int $id): void
+{
+    $existing = one('SELECT * FROM people WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No person with that id.', 404);
+    }
+    api_require_curates_library((int) $existing['library_id']);
+
+    $in = api_body();
+    $name = array_key_exists('name', $in) ? trim((string) $in['name']) : (string) $existing['name'];
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Name is required.']);
+    }
+
+    $data = api_person_payload($in, $existing);
+    $data['name'] = mb_substr($name, 0, 160);
+    $data['slug'] = unique_slug('people', slugify($name), $id);
+
+    update_row('people', $id, $data);
+    api_ok(person_to_api(one('SELECT * FROM people WHERE id = ?', [$id])));
+}
+
+/** Shared by create and update - $existing null on create, nothing to fall back to yet. */
+function api_person_payload(array $in, ?array $existing = null): array
+{
+    $field = fn(string $k) => array_key_exists($k, $in) ? $in[$k] : ($existing[$k] ?? null);
+    $data = [];
+    foreach (['website', 'wikipedia_url', 'notes'] as $k) {
+        $v = $field($k);
+        $data[$k] = $v === null || trim((string) $v) === '' ? null : trim((string) $v);
+    }
+    foreach (['born_year', 'died_year'] as $k) {
+        $v = $field($k);
+        $data[$k] = ($v === null || $v === '') ? null : (int) $v;
+    }
+    foreach (['website', 'wikipedia_url'] as $k) {
+        if ($data[$k] !== null && !filter_var($data[$k], FILTER_VALIDATE_URL)) {
+            api_error('validation_failed', 'Some fields need attention.', 422,
+                       [$k => 'Must be a full URL starting with https://.']);
+        }
+    }
+    return $data;
+}
+
+/** Refused while any credit still names this person - the same "never silently lose data" guard every other delete here carries. */
+function api_people_delete(int $id): void
+{
+    $existing = one('SELECT * FROM people WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No person with that id.', 404);
+    }
+    api_require_curates_library((int) $existing['library_id']);
+
+    $used = (int) scalar('SELECT COUNT(*) FROM credits WHERE person_id = ?', [$id]);
+    if ($used > 0) {
+        api_error('validation_failed', sprintf(
+            'Still credited on %d %s, so it was kept. Remove those credits first.',
+            $used, $used === 1 ? 'title' : 'titles'
+        ), 422);
+    }
+
+    delete_row('people', $id);
+    api_no_content();
+}
+
+/**
+ * Credit roles - Director, Composer - each tagged with which domain(s) it
+ * makes sense in, the same domains set platforms and companies already
+ * carry. Curator-or-better, the same bar people and companies both set.
+ */
+function api_credit_roles_index(): void
+{
+    api_require_auth();
+    $libraryId = isset($_GET['library_id']) ? (int) $_GET['library_id'] : 0;
+    $domain    = isset($_GET['domain']) && is_string($_GET['domain']) ? $_GET['domain'] : null;
+    if ($libraryId <= 0) {
+        $lib = working_library();
+        $libraryId = $lib === null ? 0 : (int) $lib['id'];
+    }
+    api_ok(array_map('credit_role_to_api', all_credit_roles($libraryId, $domain)));
+}
+
+function api_credit_roles_create(): void
+{
+    $in = api_body();
+    $libraryId = isset($in['library_id']) ? (int) $in['library_id'] : 0;
+    if ($libraryId <= 0) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['library_id' => 'Choose which library this role belongs to.']);
+    }
+    api_require_curates_library($libraryId);
+
+    $name = trim((string) ($in['name'] ?? ''));
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Name is required.']);
+    }
+
+    $picked = is_array($in['domains'] ?? null) ? $in['domains'] : [];
+    $picked = array_values(array_intersect(['hardware', 'software', 'video', 'music'], $picked));
+    if ($picked === []) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['domains' => 'Choose at least one domain this role applies to.']);
+    }
+
+    $id = insert_row('credit_roles', [
+        'library_id' => $libraryId,
+        'name'       => mb_substr($name, 0, 80),
+        'slug'       => unique_slug('credit_roles', slugify($name)),
+        'domains'    => implode(',', $picked),
+        'sort_order' => isset($in['sort_order']) ? (int) $in['sort_order'] : 100,
+    ]);
+    api_ok(credit_role_to_api(one('SELECT * FROM credit_roles WHERE id = ?', [$id])), null, 201);
+}
+
+function api_credit_roles_update(int $id): void
+{
+    $existing = one('SELECT * FROM credit_roles WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No role with that id.', 404);
+    }
+    api_require_curates_library((int) $existing['library_id']);
+
+    $in = api_body();
+    $name = array_key_exists('name', $in) ? trim((string) $in['name']) : (string) $existing['name'];
+    if ($name === '') {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['name' => 'Name is required.']);
+    }
+
+    $data = ['name' => mb_substr($name, 0, 80), 'slug' => unique_slug('credit_roles', slugify($name), $id)];
+    if (array_key_exists('domains', $in)) {
+        $picked = is_array($in['domains']) ? $in['domains'] : [];
+        $picked = array_values(array_intersect(['hardware', 'software', 'video', 'music'], $picked));
+        if ($picked === []) {
+            api_error('validation_failed', 'Some fields need attention.', 422,
+                       ['domains' => 'Choose at least one domain this role applies to.']);
+        }
+        $data['domains'] = implode(',', $picked);
+    }
+    if (array_key_exists('sort_order', $in)) {
+        $data['sort_order'] = (int) $in['sort_order'];
+    }
+
+    update_row('credit_roles', $id, $data);
+    api_ok(credit_role_to_api(one('SELECT * FROM credit_roles WHERE id = ?', [$id])));
+}
+
+/** Refused while any credit still uses this role - matches the database's own ON DELETE RESTRICT, checked first for the real message. */
+function api_credit_roles_delete(int $id): void
+{
+    $existing = one('SELECT * FROM credit_roles WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No role with that id.', 404);
+    }
+    api_require_curates_library((int) $existing['library_id']);
+
+    $used = (int) scalar('SELECT COUNT(*) FROM credits WHERE role_id = ?', [$id]);
+    if ($used > 0) {
+        api_error('validation_failed', sprintf(
+            'Still used on %d credit%s, so it was kept. Reassign those credits first.',
+            $used, $used === 1 ? '' : 's'
+        ), 422);
+    }
+
+    delete_row('credit_roles', $id);
+    api_no_content();
+}
+
+/**
+ * Credits - who did what on a title. One holder per credit, a person or a
+ * company never both, the same rule the database's own CHECK constraint
+ * enforces regardless of what this layer does - checked here too, so a bad
+ * request gets a real message instead of a raw constraint failure.
+ */
+function api_credits_index(): void
+{
+    api_require_auth();
+    $titleId = isset($_GET['title_id']) ? (int) $_GET['title_id'] : 0;
+    if ($titleId <= 0) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['title_id' => 'Which title to list credits for.']);
+    }
+    $rows = all(
+        "SELECT c.*, r.name AS role_name, r.slug AS role_slug,
+                COALESCE(p.name, co.name) AS holder_name
+           FROM credits c
+           JOIN credit_roles r ON r.id = c.role_id
+      LEFT JOIN people p       ON p.id = c.person_id
+      LEFT JOIN companies co   ON co.id = c.company_id
+          WHERE c.title_id = ?
+       ORDER BY c.sort_order, r.sort_order",
+        [$titleId]
+    );
+    api_ok(array_map('credit_to_api', $rows));
+}
+
+function api_credits_create(): void
+{
+    $in = api_body();
+    $titleId = isset($in['title_id']) ? (int) $in['title_id'] : 0;
+    $title = one('SELECT * FROM titles t JOIN platforms p ON p.id = t.platform_id WHERE t.id = ?', [$titleId]);
+    if ($title === null) {
+        api_error('validation_failed', 'Some fields need attention.', 422, ['title_id' => 'No such title.']);
+    }
+    $libraryId = (int) $title['library_id'];
+    api_require_curates_library($libraryId);
+
+    $roleId = isset($in['role_id']) ? (int) $in['role_id'] : 0;
+    $role = one('SELECT * FROM credit_roles WHERE id = ? AND library_id = ?', [$roleId, $libraryId]);
+    if ($role === null) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['role_id' => 'No such role in this library.']);
+    }
+
+    $personId  = isset($in['person_id'])  && (int) $in['person_id']  > 0 ? (int) $in['person_id']  : null;
+    $companyId = isset($in['company_id']) && (int) $in['company_id'] > 0 ? (int) $in['company_id'] : null;
+    if (($personId === null) === ($companyId === null)) {
+        api_error('validation_failed', 'Some fields need attention.', 422,
+                   ['person_id' => 'Credit exactly one person or one company, not both and not neither.']);
+    }
+    if ($personId !== null) {
+        $ok = one('SELECT id FROM people WHERE id = ? AND library_id = ?', [$personId, $libraryId]);
+        if ($ok === null) {
+            api_error('validation_failed', 'Some fields need attention.', 422,
+                       ['person_id' => 'No such person in this library.']);
+        }
+    } else {
+        $ok = one('SELECT id FROM companies WHERE id = ? AND library_id = ?', [$companyId, $libraryId]);
+        if ($ok === null) {
+            api_error('validation_failed', 'Some fields need attention.', 422,
+                       ['company_id' => 'No such company in this library.']);
+        }
+    }
+
+    $id = insert_row('credits', [
+        'library_id' => $libraryId,
+        'title_id'   => $titleId,
+        'role_id'    => $roleId,
+        'person_id'  => $personId,
+        'company_id' => $companyId,
+        'sort_order' => isset($in['sort_order']) ? (int) $in['sort_order'] : 100,
+    ]);
+    $row = one(
+        "SELECT c.*, r.name AS role_name, r.slug AS role_slug,
+                COALESCE(p.name, co.name) AS holder_name
+           FROM credits c
+           JOIN credit_roles r ON r.id = c.role_id
+      LEFT JOIN people p       ON p.id = c.person_id
+      LEFT JOIN companies co   ON co.id = c.company_id
+          WHERE c.id = ?",
+        [$id]
+    );
+    api_ok(credit_to_api($row), null, 201);
+}
+
+/** Refused, deliberately, on a title moving to another platform's library - a credit belongs to the title it names, not the other way round; delete and re-add rather than re-point one across libraries. */
+function api_credits_delete(int $id): void
+{
+    $existing = one('SELECT * FROM credits WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No credit with that id.', 404);
+    }
+    api_require_curates_library((int) $existing['library_id']);
+
+    delete_row('credits', $id);
+    api_no_content();
+}
+
 function api_tags_index(): void
 {
     api_require_auth();

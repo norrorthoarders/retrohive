@@ -315,6 +315,22 @@ if (str_starts_with($path, '/api/')) {
         ['PATCH',  '#^/api/v1/companies/(\d+)$#',         fn($id) => api_companies_update((int) $id)],
         ['PUT',    '#^/api/v1/companies/(\d+)$#',         fn($id) => api_companies_update((int) $id)],
         ['DELETE', '#^/api/v1/companies/(\d+)$#',         fn($id) => api_companies_delete((int) $id)],
+        ['GET',    '#^/api/v1/people$#',                  fn() => api_people_index()],
+        ['POST',   '#^/api/v1/people$#',                  fn() => api_people_create()],
+        ['PATCH',  '#^/api/v1/people/(\d+)$#',             fn($id) => api_people_update((int) $id)],
+        ['PUT',    '#^/api/v1/people/(\d+)$#',             fn($id) => api_people_update((int) $id)],
+        ['DELETE', '#^/api/v1/people/(\d+)$#',             fn($id) => api_people_delete((int) $id)],
+
+        ['GET',    '#^/api/v1/credit-roles$#',             fn() => api_credit_roles_index()],
+        ['POST',   '#^/api/v1/credit-roles$#',             fn() => api_credit_roles_create()],
+        ['PATCH',  '#^/api/v1/credit-roles/(\d+)$#',        fn($id) => api_credit_roles_update((int) $id)],
+        ['PUT',    '#^/api/v1/credit-roles/(\d+)$#',        fn($id) => api_credit_roles_update((int) $id)],
+        ['DELETE', '#^/api/v1/credit-roles/(\d+)$#',        fn($id) => api_credit_roles_delete((int) $id)],
+
+        ['GET',    '#^/api/v1/credits$#',                 fn() => api_credits_index()],
+        ['POST',   '#^/api/v1/credits$#',                 fn() => api_credits_create()],
+        ['DELETE', '#^/api/v1/credits/(\d+)$#',            fn($id) => api_credits_delete((int) $id)],
+
         ['GET',    '#^/api/v1/tags$#',                    fn() => api_tags_index()],
         ['POST',   '#^/api/v1/tags$#',                    fn() => api_tags_create()],
         ['PATCH',  '#^/api/v1/tags/(\d+)$#',               fn($id) => api_tags_update((int) $id)],
