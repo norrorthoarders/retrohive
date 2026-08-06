@@ -1774,79 +1774,84 @@ if ($running) {
                                          $label, $why);
                     }
 
-                    $copied = seed_library_hardware($libId);
-                    $log[]  = sprintf('Structure data copied into the library: %d machines', $copied);
-
-                    // What each machine runs, copied with the platforms. Reported
-                    // because a summary that lists everything except the newest thing
-                    // is how somebody concludes it did not happen.
-                    $envs = (int) scalar(
-                        'SELECT COUNT(*) FROM operating_systems WHERE library_id = ?', [$libId]
-                    );
-                    if ($envs > 0) {
-                        $log[] = sprintf('Environments copied: %d', $envs);
-                    }
-                    // The trees too, which are now by far the biggest thing seeding
-                    // makes - one per machine, sized to what that kind of machine has -
-                    // and the summary said nothing about them at all.
-                    $cats = (int) scalar(
-                        'SELECT COUNT(*) FROM categories WHERE library_id = ?', [$libId]
-                    );
-                    if ($cats > 0) {
-                        // What those branches say they hold, not just how many
-                        // there are.
-                        //
-                        // A count of 3,672 says the copy ran. It does not say the
-                        // tree is usable, and the thing that makes it usable -
-                        // every branch declaring games, applications, machines or
-                        // peripherals - is new enough to be worth showing rather
-                        // than assuming. If a line here ever reads "0 games", the
-                        // template data or the importer has stopped agreeing with
-                        // the column, which is exactly the failure that would
-                        // otherwise be found weeks later by a browser filter
-                        // returning nothing.
-                        $kinds = [];
-                        foreach (all('SELECT role, COUNT(*) AS n FROM categories
-                                       WHERE library_id = ? AND role <> "other"
-                                       GROUP BY role ORDER BY n DESC', [$libId]) as $row) {
-                            $kinds[] = (int) $row['n'] . ' ' . (string) $row['role']
-                                     . ((int) $row['n'] === 1 ? '' : 's');
-                        }
-                        $log[] = sprintf(
-                            'Category trees built: %d kinds across %d machines%s',
-                            $cats,
-                            (int) scalar(
-                                'SELECT COUNT(*) FROM categories WHERE library_id = ? AND parent_id IS NULL',
-                                [$libId]
-                            ),
-                            $kinds === [] ? '' : ' — ' . implode(', ', $kinds)
-                        );
-                    }
-
-                    // Whether those sources were actually switched on anywhere.
-                    //
-                    // "Configured: 7" says they exist; it does not say the tree
-                    // asks any of them, and those are different facts - the first
-                    // was true on the run before this one, when nothing had been
-                    // switched on at all and nothing said so.
-                    $switched = (int) scalar(
-                        'SELECT COUNT(DISTINCT ps.category_id) FROM provider_scopes ps
-                           JOIN categories c ON c.id = ps.category_id
-                          WHERE c.library_id = ? AND ps.enabled = 1', [$libId]);
-                    if ($switched > 0) {
-                        $log[] = sprintf(
-                            'Metadata sources switched on for %d branches, inherited by the rest',
-                            $switched);
-                    }
-
                     // Examples go to a second, shared library rather than the
                     // personal one - somebody's first sight of their own shelf
                     // should be the shelf, waiting for their own collection,
                     // not entries that are not theirs. "start empty" for that
-                    // one covers both structure and examples together.
+                    // one covers both structure and examples together, so
+                    // nothing below runs - and nothing is copied into $libId,
+                    // the personal library - unless examples was actually
+                    // asked for. This used to seed $libId directly regardless,
+                    // which is exactly the thing the comment above already
+                    // said should not happen; the code beneath it disagreed.
                     if ($want !== 'none' && !empty($plan['examples'])) {
                         $sharedId = seed_shared_example_library($adminId);
                         if ($sharedId > 0) {
+                            $copied = (int) scalar('SELECT COUNT(*) FROM hardware_models WHERE library_id = ?', [$sharedId]);
+                            $log[]  = sprintf('Structure data copied into the shared library: %d machines', $copied);
+
+                            // What each machine runs, copied with the platforms. Reported
+                            // because a summary that lists everything except the newest thing
+                            // is how somebody concludes it did not happen.
+                            $envs = (int) scalar(
+                                'SELECT COUNT(*) FROM operating_systems WHERE library_id = ?', [$sharedId]
+                            );
+                            if ($envs > 0) {
+                                $log[] = sprintf('Environments copied: %d', $envs);
+                            }
+                            // The trees too, which are now by far the biggest thing seeding
+                            // makes - one per machine, sized to what that kind of machine has -
+                            // and the summary said nothing about them at all.
+                            $cats = (int) scalar(
+                                'SELECT COUNT(*) FROM categories WHERE library_id = ?', [$sharedId]
+                            );
+                            if ($cats > 0) {
+                                // What those branches say they hold, not just how many
+                                // there are.
+                                //
+                                // A count of 3,672 says the copy ran. It does not say the
+                                // tree is usable, and the thing that makes it usable -
+                                // every branch declaring games, applications, machines or
+                                // peripherals - is new enough to be worth showing rather
+                                // than assuming. If a line here ever reads "0 games", the
+                                // template data or the importer has stopped agreeing with
+                                // the column, which is exactly the failure that would
+                                // otherwise be found weeks later by a browser filter
+                                // returning nothing.
+                                $kinds = [];
+                                foreach (all('SELECT role, COUNT(*) AS n FROM categories
+                                               WHERE library_id = ? AND role <> "other"
+                                               GROUP BY role ORDER BY n DESC', [$sharedId]) as $row) {
+                                    $kinds[] = (int) $row['n'] . ' ' . (string) $row['role']
+                                             . ((int) $row['n'] === 1 ? '' : 's');
+                                }
+                                $log[] = sprintf(
+                                    'Category trees built: %d kinds across %d machines%s',
+                                    $cats,
+                                    (int) scalar(
+                                        'SELECT COUNT(*) FROM categories WHERE library_id = ? AND parent_id IS NULL',
+                                        [$sharedId]
+                                    ),
+                                    $kinds === [] ? '' : ' — ' . implode(', ', $kinds)
+                                );
+                            }
+
+                            // Whether those sources were actually switched on anywhere.
+                            //
+                            // "Configured: 7" says they exist; it does not say the tree
+                            // asks any of them, and those are different facts - the first
+                            // was true on the run before this one, when nothing had been
+                            // switched on at all and nothing said so.
+                            $switched = (int) scalar(
+                                'SELECT COUNT(DISTINCT ps.category_id) FROM provider_scopes ps
+                                   JOIN categories c ON c.id = ps.category_id
+                                  WHERE c.library_id = ? AND ps.enabled = 1', [$sharedId]);
+                            if ($switched > 0) {
+                                $log[] = sprintf(
+                                    'Metadata sources switched on for %d branches, inherited by the rest',
+                                    $switched);
+                            }
+
                             $log[] = sprintf(
                                 'Shared example library created with %d entries of its own',
                                 (int) scalar('SELECT COUNT(*) FROM items WHERE library_id = ?', [$sharedId])

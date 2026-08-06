@@ -22,7 +22,7 @@
   {
     "slug": "memory",
     "name": "Memory",
-    "role": "other",
+    "role": "peripheral",
     "parent": "expansions",
     "sort_order": 32,
     "classes": "computer"
@@ -30,7 +30,7 @@
   {
     "slug": "graphics-card",
     "name": "Graphics card",
-    "role": "other",
+    "role": "peripheral",
     "parent": "expansions",
     "sort_order": 33,
     "classes": "computer"
@@ -84,7 +84,7 @@
   {
     "slug": "accelerator",
     "name": "Accelerator",
-    "role": "other",
+    "role": "peripheral",
     "parent": "expansions",
     "sort_order": 31,
     "classes": "computer"

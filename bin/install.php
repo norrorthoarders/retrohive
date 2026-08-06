@@ -636,20 +636,24 @@ if ($a['install']['deploy'] !== 'keep') {
     $libId = (int) ensure_first_library((int) $user['id']);
     say('First library created');
 
-    if ($a['install']['structure'] !== 'none') {
-        $GLOBALS['__membership_cache'] = [];
-        $copied = seed_library_hardware($libId);
-        say(sprintf('Copied into the library: %d machines', $copied));
-        if ($a['install']['examples']) {
-            // A second, shared library, not the personal one - the same
-            // move the web installer already makes: somebody's own shelf
-            // should be waiting for their own collection, not pre-filled
-            // with entries that are not theirs.
-            $sharedId = seed_shared_example_library((int) $user['id']);
-            if ($sharedId > 0) {
-                say(sprintf('Shared example library created with %d entries of its own',
-                    (int) scalar('SELECT COUNT(*) FROM items WHERE library_id = ?', [$sharedId])));
-            }
+    // Deliberately not seeded here. This library is the one shelf a
+    // person is promised as their own - ensure_first_library()'s own
+    // comment already says a personal library starts empty, and this
+    // call used to disagree with it, copying hardware structure into
+    // it directly whenever structure sync was on, structure this
+    // account never asked for on their own shelf. seed_shared_example_
+    // library() below already carries the same structure and the
+    // examples both, into a library that plainly says "this is an
+    // example, edit or delete freely" - which is where they belong.
+    if ($a['install']['structure'] !== 'none' && $a['install']['examples']) {
+        // A second, shared library, not the personal one - the same
+        // move the web installer already makes: somebody's own shelf
+        // should be waiting for their own collection, not pre-filled
+        // with entries that are not theirs.
+        $sharedId = seed_shared_example_library((int) $user['id']);
+        if ($sharedId > 0) {
+            say(sprintf('Shared example library created with %d entries of its own',
+                (int) scalar('SELECT COUNT(*) FROM items WHERE library_id = ?', [$sharedId])));
         }
     }
 }

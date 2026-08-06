@@ -1064,19 +1064,30 @@ paths:
   /items/{id}/links/candidates:
     get:
       tags: [Items]
-      summary: What may be installed in this machine
+      summary: What may be installed in this machine, or which machines this peripheral could go in
       description: >
         Already filtered by the rules, so a client is not offering choices the
         server will refuse: only hardware, only peripherals, only into a machine,
         and only where the peripheral either lists this machine as compatible or
         names nothing at all. Platforms have to agree — a Zorro card does not go
         in a C64, and a catalogue that says it does is worth less than no
-        catalogue.
+        catalogue. direction decides which side of that rule this entry plays:
+        contains (the default) treats it as the machine, listing peripherals that
+        could be fitted into it; inside treats it as the peripheral, listing
+        machines it could be fitted into. Calling this from a peripheral's own
+        edit page without direction=inside answers a different question than the
+        one being asked - every candidate machine gets checked as though it were
+        a peripheral fitting into this peripheral, which is never true, so the
+        list comes back empty regardless of what's actually compatible.
       parameters:
         - name: id
           in: path
           required: true
           schema: { type: integer }
+        - name: direction
+          in: query
+          schema: { type: string, enum: [contains, inside], default: contains }
+          description: contains if this entry is the machine being asked about; inside if it's the peripheral.
       responses:
         "200": { description: OK }
         "404": { description: No entry with that id }

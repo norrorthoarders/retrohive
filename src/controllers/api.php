@@ -5320,10 +5320,21 @@ function api_link_refusal(array $machine, array $part): ?string
 function api_item_links_candidates(int $itemId): void
 {
     api_require_auth();
-    $machine = find_item($itemId);
-    if ($machine === null || !can_read_library((int) $machine['library_id'])) {
+    $item = find_item($itemId);
+    if ($item === null || !can_read_library((int) $item['library_id'])) {
         api_error('not_found', 'No catalogue entry with that id.', 404);
     }
+
+    // The same asymmetry api_link_refusal() itself enforces: it wants
+    // the machine first and the peripheral second, always in that
+    // order, so a call from a peripheral's own edit page has to swap
+    // which side each row plays rather than the item being edited
+    // always standing in as "the machine". Without this, editing a
+    // peripheral and asking what it could be installed in refused
+    // every real machine outright - the check ran backwards, testing
+    // whether each candidate machine was a peripheral fitting into
+    // this peripheral, which is never true.
+    $direction = ($_GET['direction'] ?? 'contains') === 'inside' ? 'inside' : 'contains';
 
     [$acl, $aclP] = library_filter_sql('library_id', ACCESS_VIEWER);
     $rows = all("SELECT * FROM v_items
@@ -5332,7 +5343,9 @@ function api_item_links_candidates(int $itemId): void
 
     $out = [];
     foreach ($rows as $row) {
-        if (api_link_refusal($machine, $row) === null) {
+        $machine = $direction === 'contains' ? $item : $row;
+        $part    = $direction === 'contains' ? $row : $item;
+        if (api_link_refusal($machine, $part) === null) {
             $out[] = item_to_api($row);
         }
     }

@@ -1,5 +1,65 @@
 # Changelog
 
+**A real report - a fresh personal library should start totally empty, with only the shared "The
+club shelf" example library getting structure and examples, and only when selected - checked
+against the actual install code, where both installers genuinely disagreed with their own stated
+intent.**
+
+`ensure_first_library()`'s own comment already says a personal library starts empty - "it used to
+be filled with the whole starter set... a new personal shelf starts empty" - and
+`seed_shared_example_library()`'s own comment already says examples belong in a library that
+plainly reads as an example, not the one shelf somebody is promised as their own. Both were right.
+Both `bin/install.php` and `public/install.php` disagreed with them anyway: each called
+`seed_library_hardware()` directly on the freshly-created personal library whenever structure sync
+was on, independent of whether examples were ever selected - a leftover call from before the
+redesign those comments describe, never removed to match it.
+
+Fixed in both installers the same way: nothing is copied into the personal library at all now.
+Structure and examples move together into `seed_shared_example_library()`'s own library, and only
+when both structure sync and examples are actually selected - matching the report's own words
+exactly. The web installer's own reporting (environments copied, category trees built, metadata
+sources switched on per branch) all read the personal library's own id before this; all now read
+the shared library's instead, since that's genuinely where the data ends up.
+
+Proved live against the real command-line installer, not assumed from reading the diff: a full
+install with structure and examples both selected left the personal library at zero items, zero
+hardware models, zero platforms, zero categories - genuinely empty - while the shared library
+correctly held 14 example entries and its own real structure. A second full install with structure
+selected but examples declined created no shared library at all, and the personal library stayed
+just as empty.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 65**.
+
+**Two real bugs found and fixed while closing out last round's own feature - one in the API this
+session already built, one in the structure template data itself.**
+
+`GET /items/{id}/links/candidates` extended with a `direction` parameter. The check it runs,
+`api_link_refusal()`, always requires a machine first and a peripheral second - the endpoint
+always treated the entry being asked about as the machine, which is correct when a machine's own
+edit page asks what could be fitted into it, and silently wrong the other way round: calling it
+from a peripheral's own page to ask which machines it could go in checked every candidate machine
+as though it were a peripheral fitting into this peripheral, which is never true, so the answer
+came back empty regardless of what was genuinely compatible. `direction=inside` now swaps which
+side plays which role.
+
+Investigating that led to a second, unrelated bug: three real hardware categories - Memory,
+Graphics card, and Accelerator, all children of Expansions - had `role: "other"` hardcoded in
+`structure/hardware_categories.json` rather than inheriting `peripheral` from their own parent.
+A BigRAM 2008 memory expansion, filed correctly under Memory, was refused as a candidate outright
+- `%s is not a peripheral` - for a card that plainly is one. All three corrected to `peripheral`,
+matching what their parent category already says they are.
+
+Proved live: confirmed the same peripheral that was wrongly refused before both fixes is now a
+genuine, real candidate for its own machine; confirmed the new `direction=inside` call from the
+peripheral's own id returns the real machine it could be fitted into, where it previously,
+silently returned nothing.
+
+`docs/openapi.yaml` updated. Full suite: still 1 of 25, unchanged.
+
+This package is **build 64**.
+
 **The metadata lookup and import system, built in full - search, preview, and apply - closing
 the largest remaining gap from the old web UI: a full search-and-review workflow that was, until
 now, only ever reachable from a server-rendered template.**
