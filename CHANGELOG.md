@@ -1,5 +1,89 @@
 # Changelog
 
+**`POST /admin/auth-methods/test` - genuinely new, not something this API already had under a
+different name.** Works on whatever is submitted rather than only on what was last saved: a
+brand new directory that has never been created, or an existing one's edited-but-unsaved
+settings. An optional id merges submitted fields over a stored directory's own params the same
+way a save would, so testing a directory that already has a bind password on file does not
+require retyping it just to press Test.
+
+Always answers 200 - a failed test is still an answered question, not an error. `ok`, `message`,
+and further diagnostic detail lines, the same shape `ldap_test_connection()` already returns
+everywhere else it's called.
+
+An earlier round's own documentation for `POST /admin/auth-methods` claimed testing "needs a
+real server to answer and is not part of this API" - true when written, genuinely false now.
+Corrected in the same round rather than left standing.
+
+Proved live: a brand new, unsaved directory correctly returned the real, honest refusal this
+environment gives for any LDAP test - the PHP ldap extension genuinely isn't installed here, the
+same limitation noted throughout this session - rather than a fabricated success; an existing
+saved directory tested the same way, correctly merging a submitted override over its own stored
+settings, confirmed directly in isolation since the extension's own absence stops that merge from
+being observable through the test result itself.
+
+`docs/openapi.yaml` updated in the same round. Full suite: still 1 of 25, unchanged.
+
+This package is **build 51**.
+
+**`POST /tokens` gained an optional `expires_at` - the function underneath it, `create_api_token()`,
+already had a parameter for this; the endpoint just never passed anything through.** Checked the
+function signature directly rather than assuming a new column or migration was needed - there
+wasn't one. A real calendar date, not "expires in N days": a person picking a date knows what
+they mean by it, and a client is still free to offer a short list of presets that resolve to one
+without this endpoint needing to know the difference.
+
+Refused if the date isn't genuinely in the future, so a token can't be created already expired by
+mistake. Omit it entirely for a token that never expires - the existing, unchanged behaviour.
+
+Proved live: a token created with a real future date stored and returned it correctly; the same
+call with a date in 2020 was refused with a clear reason; a token created with no expiration at
+all still worked exactly as before, `expires_at` genuinely null.
+
+`docs/openapi.yaml` updated in the same round. Full suite: still 1 of 25, unchanged.
+
+This package is **build 50**.
+
+**`GET /admin/system-status` - genuinely new, not a port of anything the old app already had.**
+Checked for an existing equivalent first rather than assuming one - there wasn't one - so this is
+a real, from-scratch design: PHP memory and opcache status, system load average, disk space,
+database size and table count, and one honest timing sample from the request that fetched it.
+Administrator-only, since none of this describes the collection - it describes the server the
+collection runs on.
+
+The timing figure is deliberately modest: how long this one call took, from PHP's own start to a
+real query executing, not an average or a trend line. There's no request log behind it to build
+one from, and claiming a trend without the data behind it would be worse than not offering the
+number at all.
+
+Proved live: confirmed the full response shape against this real environment (actual disk
+free/total, actual database size, an actual sub-millisecond query sample); confirmed a genuine
+non-admin account is correctly refused with a 403 rather than a generic error.
+
+`docs/openapi.yaml` updated in the same round - caught and fixed a broken `$ref` to a response
+component that doesn't exist in this file, replaced with a plain inline description matching
+every other 403 documented here. Full suite: still 1 of 25, unchanged.
+
+This package is **build 49**.
+
+**`GET /platforms` gained an optional `library_id` - the real fix for a genuinely widespread
+duplicate-platforms bug reported against the categories editor.** Without it, every platform
+across every library the caller can read comes back in one list - an account with two libraries
+that both copied "Amiga" in from the template set genuinely sees "Amiga" twice, each a different
+row rather than a rendering glitch. Additive: nothing that calls this without the new parameter
+changes behaviour, and every client-side picker built for one library's own form (categories,
+titles, items, hardware and software models, environments, and the platforms list itself - seven
+call sites in all) now passes it.
+
+Proved live: confirmed the duplication is real and reproducible without the parameter (32 rows,
+16 unique names, across a personal library and a shared one both holding their own copy of the
+same 16 platforms); confirmed the same request with `library_id` set returns exactly 16, one per
+name, correctly scoped to the one library asked for.
+
+`docs/openapi.yaml` updated in the same round. Full suite: still 1 of 25, unchanged.
+
+This package is **build 48**.
+
 **`docs/openapi.yaml` gained the one real, pre-existing gap this session's own habit of checking
 every round finally caught: `POST /auth/verify/resend` was never documented, unrelated to
 anything touched this round.** Found by the same self-checking test this session has relied on

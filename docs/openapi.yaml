@@ -610,8 +610,12 @@ paths:
                 name: { type: string }
                 scope: { type: string, enum: [read, write] }
                 platform: { type: string }
+                expires_at:
+                  type: string
+                  description: A real calendar date, not "expires in N days" - optional; omit for a token that never expires. Must be in the future.
       responses:
         "201": { description: Created, with the plaintext token shown once }
+        "422": { description: A missing name, or an expires_at that isn't a real future date }
 
   /tokens/{id}:
     delete:
@@ -1290,8 +1294,9 @@ paths:
       description: >-
         Unlike a metadata source, saving a directory method never requires
         a test - the real save handler reaches its insert with no network
-        step in between. Test and Inspect are separate, optional actions
-        needing a real server to answer and are not part of this API.
+        step in between. Test is a separate, optional action - see
+        POST /admin/auth-methods/test. Inspect (looking up a real user) is
+        not part of this API, needing a real server to answer.
       requestBody:
         required: true
         content:
@@ -1311,6 +1316,32 @@ paths:
       responses:
         "201": { description: Created }
         "422": { description: Missing name }
+
+  /admin/auth-methods/test:
+    post:
+      tags: [Admin]
+      summary: Test a directory connection without saving
+      description: >-
+        Works on whatever is submitted, not what was last saved - a brand
+        new directory that has never been created, or an existing one's
+        edited-but-unsaved settings. An id is optional; when given and a
+        stored row exists, submitted fields are merged over the stored
+        ones the same way a save would be, so testing does not require
+        retyping a bind password already on file. Needs the PHP ldap
+        extension; a clear, honest answer either way, not just success or
+        silence.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: { type: integer, description: An existing directory's id, to test against its own stored params merged with what's submitted. Omit or 0 for a directory that does not exist yet. }
+                type: { type: string, enum: [ldap, ad] }
+                params: { type: object }
+      responses:
+        "200":
+          description: ok (boolean), message, and details (an array of further diagnostic lines) - always 200, since a failed test is still an answered question.
 
   /admin/auth-methods/{id}:
     parameters: [{ $ref: "#/components/parameters/Id" }]
@@ -1414,6 +1445,30 @@ paths:
       responses:
         "200": { description: Same shape as GET /admin/update, reflecting the fresh check }
 
+  /admin/system-status:
+    get:
+      tags: [Admin]
+      summary: Instance-wide performance and capacity
+      description: >-
+        PHP memory and opcache status, system load average, disk space,
+        database size, and one genuine timing sample from the request
+        that fetched it. Performance and capacity, not collection
+        content - administrator-only, since disk paths, memory figures,
+        and database size describe the server itself rather than
+        anything a library member has a reason to see. The request
+        timing is a single real sample, not an average or a trend -
+        there is no request log behind it, so it says nothing about any
+        call before or after it.
+      responses:
+        "200":
+          description: >-
+            php (version, memory_used_mb, memory_peak_mb, memory_limit,
+            opcache_enabled), system (load_average or null on platforms
+            without one, disk_free_gb, disk_total_gb, disk_used_pct),
+            database (size_mb, tables, item_count), request
+            (sampled_at_ms, query_ms), app_version, server_time.
+        "403": { description: That area is for administrators }
+
   /platforms:
     get:
       tags: [Taxonomy]
@@ -1423,6 +1478,19 @@ paths:
         and carries no access level; the counts hanging off it are filtered to
         what the caller can see. Before 1.3 this lived at `GET /libraries`,
         which is what led the API to authorise against the wrong column.
+
+        Without `library_id`, every platform across every library the caller
+        can read comes back - an account with two libraries that both copied
+        "Amiga" in from the template set sees "Amiga" twice, each a genuinely
+        different row. Pass `library_id` to scope to one library's own copy
+        instead, the shape a picker built for a single library's own form
+        actually needs.
+      parameters:
+        - name: library_id
+          in: query
+          required: false
+          schema: { type: integer }
+          description: Scope to one library's own platforms instead of every library the caller can read.
       responses:
         "200":
           description: OK

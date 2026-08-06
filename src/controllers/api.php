@@ -204,18 +204,37 @@ function api_tokens_create(): void
     if ($scope === 'write' && !can_edit_anything()) {
         $scope = 'read';
     }
+
+    // Optional, and a real calendar date rather than "expires in N days" -
+    // a person picking a date knows what they mean by it; a client is
+    // free to still offer a shorter list of presets that resolve to one.
+    $expiresAt = null;
+    if (!empty($in['expires_at'])) {
+        $raw = trim((string) $in['expires_at']);
+        $ts = strtotime($raw);
+        if ($ts === false) {
+            api_error('validation_failed', 'expires_at must be a date the server can read.', 422);
+        }
+        if ($ts <= time()) {
+            api_error('validation_failed', 'expires_at has to be in the future.', 422);
+        }
+        $expiresAt = date('Y-m-d 23:59:59', $ts);
+    }
+
     [$id, $plain] = create_api_token(
         (int) $user['id'],
         $name,
         $scope,
-        isset($in['platform']) ? mb_substr((string) $in['platform'], 0, 40) : null
+        isset($in['platform']) ? mb_substr((string) $in['platform'], 0, 40) : null,
+        $expiresAt
     );
     api_ok([
-        'id'    => $id,
-        'name'  => $name,
-        'scope' => $scope,
-        'token' => $plain,
-        'note'  => 'Store this now. It is not recoverable.',
+        'id'         => $id,
+        'name'       => $name,
+        'scope'      => $scope,
+        'token'      => $plain,
+        'expires_at' => $expiresAt === null ? null : api_datetime($expiresAt),
+        'note'       => 'Store this now. It is not recoverable.',
     ], null, 201);
 }
 
@@ -986,12 +1005,23 @@ function api_platforms_index(): void
     api_require_auth();
     [$acl, $aclP] = library_filter_sql('i.library_id', ACCESS_VIEWER);
 
+    // A single library, when asked for one - a picker built for one
+    // library's own categories editor has no use for every platform
+    // across every library the account can reach, and showing all of
+    // them duplicated each name once per library that happened to copy
+    // it in. Optional, and additive: nothing that already calls this
+    // without the parameter changes behaviour.
+    $onlyLibrary = api_query_int('library_id');
+    if ($onlyLibrary !== null && !can_read_library($onlyLibrary)) {
+        api_error('forbidden', 'That library is not one you may read.', 403);
+    }
+
     // The ACL was applied to the item *count* only, never to which platforms
     // came back: 'FROM platforms p' with no scope returned every row on the
     // instance - template rows, and every other library's custom machines by
     // name. platforms_index() on the web side gets this right and says why
     // ("Somebody else's Sharp MZ-2500 is not anybody's business"); this did not.
-    $mine = accessible_library_ids(acting_user(), ACCESS_VIEWER);
+    $mine = $onlyLibrary !== null ? [$onlyLibrary] : accessible_library_ids(acting_user(), ACCESS_VIEWER);
     if ($mine === []) {
         api_ok([]);
     }
@@ -2951,6 +2981,21 @@ function api_stats(): void
     [$acl, $aclP] = library_filter_sql('library_id', ACCESS_VIEWER);
     [$aclI, $iP]  = library_filter_sql('i.library_id', ACCESS_VIEWER);
 
+    // One library, when asked for one - the real overview's own per-shelf
+    // tabs narrow every panel at once by adding this same clause rather
+    // than running a different query, so nothing here can fall out of
+    // step with what the tabs promise.
+    $onlyLibrary = api_query_int('library_id');
+    if ($onlyLibrary !== null) {
+        if (!can_read_library($onlyLibrary)) {
+            api_error('forbidden', 'That library is not one you may read.', 403);
+        }
+        $acl .= ' AND library_id = ?';
+        $aclP[] = $onlyLibrary;
+        $aclI .= ' AND i.library_id = ?';
+        $iP[] = $onlyLibrary;
+    }
+
     $totals = one('SELECT COUNT(*) AS items,
                           SUM(status = \'owned\') AS owned,
                           SUM(status = \'wishlist\') AS wanted,
@@ -4091,6 +4136,36 @@ function api_auth_methods_update(int $id): void
     ]);
 }
 
+/**
+ * Test a directory connection without saving anything - the same
+ * "prove it before committing to it" the real edit page's own Test
+ * button offers, working on whatever is currently on screen rather
+ * than what was last saved. An id is optional: testing a brand new,
+ * not-yet-created directory works the same as testing an existing
+ * one's edited-but-unsaved settings.
+ */
+function api_auth_methods_test(): void
+{
+    api_require_admin();
+
+    $in   = api_body();
+    $type = in_array($in['type'] ?? 'ldap', ['ldap', 'ad'], true) ? (string) $in['type'] : 'ldap';
+    $id   = isset($in['id']) ? (int) $in['id'] : 0;
+
+    $existing = $id > 0 ? one('SELECT * FROM auth_methods WHERE id = ?', [$id]) : null;
+    $existingParams = $existing === null ? [] : ldap_params($existing);
+    $params = api_metadata_merge_params(
+        $existingParams === [] ? ldap_default_params($type) : $existingParams,
+        (array) ($in['params'] ?? [])
+    );
+
+    [$ok, $message, $details] = ldap_test_connection([
+        'id' => $id, 'type' => $type, 'params' => json_encode($params, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+    ]);
+
+    api_ok(['ok' => $ok, 'message' => $message, 'details' => $details]);
+}
+
 function api_auth_methods_delete(int $id): void
 {
     api_require_admin();
@@ -4222,6 +4297,84 @@ function api_admin_update_status(): void
         'checked_at'      => setting('update_checked_at', '') !== ''
             ? api_datetime(setting('update_checked_at', '')) : null,
         'error'           => setting('update_error', '') ?: null,
+    ]);
+}
+
+/**
+ * Instance-wide system status - performance and capacity, not
+ * collection content. Administrator-only: disk paths, memory figures,
+ * and database size describe the server this instance runs on, not
+ * anything a library member has a reason to see.
+ *
+ * The request timing figure is exactly what it says and no more: how
+ * long this one call took to run, measured from PHP's own start to the
+ * moment this function executed a real query. It is a genuine sample,
+ * not an average or a trend - there is no request log this reads from,
+ * so a single slow moment here says nothing about the one before it.
+ * A dashboard wanting a trend would need one built on top of this, not
+ * assumed to already exist underneath it.
+ */
+function api_admin_system_status(): void
+{
+    api_require_admin();
+
+    $requestStarted = (float) ($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true));
+
+    // A real query, timed, rather than assuming the connection is fast
+    // because it is local. Small on purpose: this is a health check, not
+    // a load test.
+    $queryStart = microtime(true);
+    $itemCount  = (int) scalar('SELECT COUNT(*) FROM items');
+    $queryMs    = round((microtime(true) - $queryStart) * 1000, 2);
+
+    $dbInfo = one(
+        "SELECT SUM(data_length + index_length) AS bytes, COUNT(*) AS tables
+           FROM information_schema.tables WHERE table_schema = DATABASE()"
+    ) ?? [];
+
+    $diskPath  = APP_ROOT;
+    $diskFree  = @disk_free_space($diskPath);
+    $diskTotal = @disk_total_space($diskPath);
+
+    $load = function_exists('sys_getloadavg') ? sys_getloadavg() : null;
+
+    $opcache = function_exists('opcache_get_status') ? @opcache_get_status(false) : false;
+
+    api_ok([
+        'php' => [
+            'version'          => PHP_VERSION,
+            'memory_used_mb'   => round(memory_get_usage(true) / 1048576, 2),
+            'memory_peak_mb'   => round(memory_get_peak_usage(true) / 1048576, 2),
+            'memory_limit'     => ini_get('memory_limit'),
+            'opcache_enabled'  => $opcache !== false && !empty($opcache['opcache_enabled']),
+        ],
+        'system' => [
+            // Null on platforms without a load average at all (Windows;
+            // some containers), rather than a made-up zero that reads as
+            // "idle" when it actually means "unknown".
+            'load_average' => $load === false || $load === null ? null : [
+                '1min' => round($load[0], 2), '5min' => round($load[1], 2), '15min' => round($load[2], 2),
+            ],
+            'disk_free_gb'  => $diskFree === false ? null : round($diskFree / 1073741824, 2),
+            'disk_total_gb' => $diskTotal === false ? null : round($diskTotal / 1073741824, 2),
+            'disk_used_pct' => ($diskFree === false || $diskTotal === false || $diskTotal <= 0)
+                ? null : round((1 - $diskFree / $diskTotal) * 100, 1),
+        ],
+        'database' => [
+            'size_mb'    => isset($dbInfo['bytes']) && $dbInfo['bytes'] !== null ? round((float) $dbInfo['bytes'] / 1048576, 2) : null,
+            'tables'     => isset($dbInfo['tables']) ? (int) $dbInfo['tables'] : null,
+            'item_count' => $itemCount,
+        ],
+        'request' => [
+            // From PHP's own start (as close to "the request arrived" as
+            // this process can say) to the query above returning -
+            // routing, session start, auth, and one real query, the same
+            // path every ordinary page takes before it does its own work.
+            'sampled_at_ms' => round((microtime(true) - $requestStarted) * 1000, 2),
+            'query_ms'      => $queryMs,
+        ],
+        'app_version' => APP_VERSION,
+        'server_time' => api_datetime(date('Y-m-d H:i:s')),
     ]);
 }
 
