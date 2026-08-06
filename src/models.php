@@ -512,7 +512,7 @@ function company_id_for_name(?string $name, string $makes = 'software'): ?int
     if ($name === '') {
         return null;
     }
-    $makes = $makes === 'hardware' ? 'hardware' : 'software';
+    $makes = in_array($makes, ['hardware', 'video', 'music'], true) ? $makes : 'software';
 
     $lib = working_library();
     $libId = $lib === null ? null : (int) $lib['id'];
@@ -1105,7 +1105,13 @@ function category_effective_role(int $categoryId): ?string
         return $cache[$categoryId];
     }
 
-    $kinds = ['machine', 'peripheral', 'game', 'application'];
+    // machine/peripheral cover hardware, game/application cover software -
+    // movie/tv_show/music were added to the template data before any item
+    // ever used one, and this list was never extended to match. Nothing
+    // caught it because nothing exercised a video or music item's own
+    // category role until now - the same shape of gap several other spots
+    // in this session turned out to have.
+    $kinds = ['machine', 'peripheral', 'game', 'application', 'movie', 'tv_show', 'music'];
     // Nearest first, so the first hit is the one that governs. One query for the
     // whole line rather than one per step up it.
     $line = category_ancestry($categoryId);
@@ -1539,7 +1545,10 @@ function filing_options(?string $domain = null, ?int $libraryId = null): array
     foreach ($out as $row) {
         $roleById[$row['id']] = $row['role'];
     }
-    $kinds = ['machine', 'peripheral', 'game', 'application'];
+    // Same list category_effective_role() uses - kept in step with it rather
+    // than re-deriving separately, since both are answering the identical
+    // question for the identical column.
+    $kinds = ['machine', 'peripheral', 'game', 'application', 'movie', 'tv_show', 'music'];
     foreach ($out as $i => $row) {
         $kind = in_array($row['role'], $kinds, true) ? $row['role'] : '';
         if ($kind === '') {
@@ -2468,6 +2477,8 @@ function seed_library_examples(int $libraryId): int
     // a card cannot be its own parent.
     // The software side too, so a fresh install has both halves.
     $made += seed_library_software_examples($libraryId);
+    $made += seed_library_video_examples($libraryId);
+    $made += seed_library_music_examples($libraryId);
 
     $host = $created['amiga-2000'] ?? null;
     if ($host !== null) {
@@ -2664,6 +2675,169 @@ function seed_library_software_examples(int $libraryId): int
                 'present' => $present, 'sort_order' => $order,
             ]);
         }
+        $made++;
+    }
+
+    return $made;
+}
+
+/**
+ * A couple of physical releases on the video side, so a fresh install
+ * shows what a movie or show looks like alongside the software and
+ * hardware examples that have always been there. No software-model
+ * equivalent here - video releases have no boxed-release template
+ * concept in this schema - so this is items and companies only, not a
+ * title-plus-model pair.
+ *
+ * Two formats deliberately: a disc and a tape, since "Video" was never
+ * only Blu-ray.
+ */
+/**
+ * Find or create a company by name, scoped to an explicit library rather
+ * than working_library() - company_id_for_name() reads that, and this
+ * runs from the installer, where there is no session and so no working
+ * library at all. Calling that function here would have silently done
+ * nothing every time, exactly as it is documented to: "no library in
+ * hand... the template is the right answer here rather than a new
+ * orphan row" - correct for an import run, wrong for seeding a library
+ * that definitely exists and is passed in directly.
+ */
+function seed_company_for_name(int $libraryId, string $name, string $makes): ?int
+{
+    $name = trim($name);
+    if ($name === '') {
+        return null;
+    }
+    $mine = one('SELECT id, makes FROM companies WHERE name = ? AND library_id = ? LIMIT 1', [$name, $libraryId]);
+    if ($mine !== null) {
+        if (!in_array($makes, explode(',', (string) $mine['makes']), true)) {
+            update_row('companies', (int) $mine['id'], ['makes' => (string) $mine['makes'] . ',' . $makes]);
+        }
+        return (int) $mine['id'];
+    }
+    return (int) insert_row('companies', [
+        'library_id' => $libraryId,
+        'name'       => mb_substr($name, 0, 160),
+        'slug'       => unique_slug('companies', slugify($name)),
+        'makes'      => $makes,
+    ]);
+}
+
+function seed_library_video_examples(int $libraryId): int
+{
+    $made = 0;
+
+    foreach ([
+        [
+            'name'      => 'Metropolis Nights',
+            'platform'  => 'blu-ray',
+            'category'  => 'movies',
+            'studio'    => 'Silverreel Pictures',
+            'year'      => 1998,
+            'box'       => 'near_mint',
+        ],
+        [
+            'name'      => 'Late Shift Detective',
+            'platform'  => 'vhs',
+            'category'  => 'tv-shows',
+            'studio'    => 'Harborlight Television',
+            'year'      => 1991,
+            'box'       => 'good',
+        ],
+    ] as $ex) {
+        if (one('SELECT id FROM items WHERE library_id = ? AND title = ?', [$libraryId, $ex['name']]) !== null) {
+            continue;
+        }
+
+        $plat = one('SELECT id FROM platforms WHERE library_id = ? AND slug = ?', [$libraryId, $ex['platform']]);
+        if ($plat === null) {
+            continue;
+        }
+        $cat = one('SELECT id FROM categories WHERE library_id = ? AND platform_id = ? AND source_slug = ?',
+                   [$libraryId, $plat['id'], $ex['category']]);
+        if ($cat === null) {
+            continue;
+        }
+
+        $studioId = seed_company_for_name($libraryId, $ex['studio'], 'video');
+
+        insert_row('items', [
+            'library_id'    => $libraryId,
+            'platform_id'   => (int) $plat['id'],
+            'category_id'   => (int) $cat['id'],
+            'title'         => $ex['name'],
+            'developer_id'  => $studioId,
+            'release_year'  => $ex['year'],
+            'status'        => 'owned',
+            'has_box'       => 1,
+            'condition_box' => $ex['box'],
+            'completeness'  => 'cib',
+        ]);
+        $made++;
+    }
+
+    return $made;
+}
+
+/**
+ * A couple of releases on the music side - a disc and a record, the same
+ * "more than one format" point the video examples make. `developer_id`
+ * carries the performing artist here, matching how the same column
+ * carries the studio on a video release and the developer on a piece of
+ * software: whoever made the thing, not whoever pressed or sold it.
+ */
+function seed_library_music_examples(int $libraryId): int
+{
+    $made = 0;
+
+    foreach ([
+        [
+            'name'      => 'Nightbound Sessions',
+            'platform'  => 'cd',
+            'artist'    => 'The Coastline Drifters',
+            'label'     => 'Amberlane Records',
+            'year'      => 1997,
+            'box'       => 'very_good',
+        ],
+        [
+            'name'      => 'Analogue Horizon',
+            'platform'  => 'vinyl',
+            'artist'    => 'Solvent Skies',
+            'label'     => 'Amberlane Records',
+            'year'      => 1979,
+            'box'       => 'good',
+        ],
+    ] as $ex) {
+        if (one('SELECT id FROM items WHERE library_id = ? AND title = ?', [$libraryId, $ex['name']]) !== null) {
+            continue;
+        }
+
+        $plat = one('SELECT id FROM platforms WHERE library_id = ? AND slug = ?', [$libraryId, $ex['platform']]);
+        if ($plat === null) {
+            continue;
+        }
+        $cat = one('SELECT id FROM categories WHERE library_id = ? AND platform_id = ? AND source_slug = ?',
+                   [$libraryId, $plat['id'], 'recordings']);
+        if ($cat === null) {
+            continue;
+        }
+
+        $artistId = seed_company_for_name($libraryId, $ex['artist'], 'music');
+        $labelId  = seed_company_for_name($libraryId, $ex['label'], 'music');
+
+        insert_row('items', [
+            'library_id'    => $libraryId,
+            'platform_id'   => (int) $plat['id'],
+            'category_id'   => (int) $cat['id'],
+            'title'         => $ex['name'],
+            'developer_id'  => $artistId,
+            'publisher_id'  => $labelId,
+            'release_year'  => $ex['year'],
+            'status'        => 'owned',
+            'has_box'       => 1,
+            'condition_box' => $ex['box'],
+            'completeness'  => 'cib',
+        ]);
         $made++;
     }
 

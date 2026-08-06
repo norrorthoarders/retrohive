@@ -1,5 +1,276 @@
 # Changelog
 
+**Directory authentication configuration and group mapping - the piece flagged as "genuinely
+needs a real LDAP server," reconsidered and built where it turned out to be wrong.** Reading the
+real save handler properly, rather than assuming from its size, showed something metadata
+sources does not have: saving a directory method never requires a test at all. The real save
+handler reaches insert_row()/update_row() with no network step in between; Test and Inspect are
+separate, optional actions a person may or may not press, not a gate the save itself passes
+through. That is what makes this half fully buildable and fully provable without a real
+directory to connect to - unlike metadata sources, nothing here was ever conditioned on a
+connection this environment cannot make.
+
+Configuration (host, base DN, bind credentials, attribute mappings, all type-coerced against
+LDAP's own defaults) and group mapping (which directory group confers which role and which
+per-library access, resolved at a person's next sign-in) are both real and covered. The
+protected local database method cannot be deleted or disabled through this API, matching the
+real form's own two safety rules exactly. A blank bind_password on update means "keep the
+stored one," the same credential-preservation rule metadata source params already needed.
+Testing a real bind and looking up a real directory entry stay out of scope - genuinely, this
+time, not as a hedge - since answering either needs an actual server to ask.
+
+Proved live: confirmed the protected local method resists both deletion and disabling; created a
+real LDAP method with a bind password and confirmed it stored correctly; updated only the host
+and confirmed the password survived unchanged, not reset; added a group mapping with a nested
+per-library grant and confirmed both the mapping and the grant read back correctly through the
+list endpoint.
+
+`docs/openapi.yaml` updated in the same round. Full suite: still 1 of 25, unchanged.
+
+This package is **build 42**.
+
+**Metadata source configuration - the honest, database-only slice of a feature whose real value
+needs a live network call this environment cannot make.** Investigated the real save handler
+properly before concluding that: creating a source always tests it first, with no override
+except an explicit "add it without checking" - so this API requires that same flag outright
+rather than silently skipping a decision the real form makes a person confirm. Editing an
+existing source, by contrast, genuinely never tests it - the real save handler reaches its update
+call with no network step at all - so this half was always fully buildable and testable.
+Probing a source, asking it what platforms it knows, and matching them by name all need a live
+call to wherever the source actually lives and stay a real, separate piece for whenever there is
+something real to call.
+
+**Found and fixed a real bug of its own while proving this live, the same discipline that caught
+several others this session**: the update endpoint's first draft merged a partial params change
+over the type's own bare defaults rather than the source's current stored params - so changing
+one setting would have silently reset every other custom value back to what the type started
+with. Caught by testing the exact scenario a credential field's own comment in the real code
+warns about, not by reading the code and assuming it was fine: created a source with a custom
+language, updated only its timeout, and confirmed the language reverted before the fix and
+survived after it.
+
+Proved live throughout: the type catalogue lists correctly with configured status; creating
+without the required flag is correctly refused with the same explanation a person reading the
+error would need; creating with it succeeds, applies type-coerced param overrides, and copies in
+platform mappings from the local template data - not a network call, confirmed by what actually
+ran; a duplicate type is refused; updating disables, reprioritises, and changes params correctly,
+confirmed against the database; deleting removes the row.
+
+`docs/openapi.yaml` updated in the same round. Full suite: still 1 of 25, unchanged.
+
+This package is **build 41**.
+
+**Library membership - invite, change access, remove - a real API for the third and last piece
+of library administration this session's own investigation identified as purely database work.**
+Auth methods and metadata sources both need real external services (LDAP servers, Wikipedia/IGDB)
+this environment cannot exercise; membership needed neither, so it went first.
+
+A client for the real edit page's own three actions, not new ones: invite lands a 'pending' row
+and notifies the invited account, granting nothing until accepted; changing access is refused
+while still pending, since there is nothing to change yet; the owner's own row is never touched
+by either the access-change or the removal endpoint, and only the owner may hand out the owner
+level itself. Owner or Library Admin, not owner alone - the same split the real save handler
+already makes between this and the library's own settings.
+
+Proved live: invited a real account and confirmed the pending row landed; confirmed an access
+change was correctly refused before acceptance; accepted directly and confirmed the same change
+then succeeded; confirmed the member list returns both people in the right order; removed the
+invited account and confirmed the row was genuinely gone. Separately confirmed both owner
+protections hold: the owner's own access cannot be changed here, and the owner cannot be removed.
+
+`docs/openapi.yaml` updated in the same round this time, not after the suite caught its absence -
+last round's regression turned into this round's habit. Full suite: still 1 of 25, unchanged.
+
+This package is **build 40**.
+
+**`PATCH`/`PUT /libraries/{id}` - a library's own settings, editable through the API for the
+first time.** A client for the real form's own save logic, in the same order, for the same
+reasons: a personal library still cannot become shared; switching away from shared, or from a
+public visibility, still turns out anyone who joined that way while leaving accepted invitations
+untouched; switching from shared to private still drops any member who could write down to
+read-only, with the owner keeping their own level. Membership actions themselves - invite,
+uninvite, changing what a member may do - stay out of scope, a separate, later piece.
+
+Proved live: created a shared, publicly-readable library with a contributor and a joiner already
+on it; edited it to private in one request and confirmed both safety behaviours fired together -
+the joiner genuinely removed, the contributor genuinely demoted, the owner genuinely untouched -
+not just that the response said so.
+
+**A real regression this round introduced, caught by the test suite and fixed within the same
+round**: the new endpoint shipped without a matching entry in `docs/openapi.yaml`, and this
+library's own suite checks that every real route has one. Added the missing documentation:
+still 1 of 25 afterward, the same pre-existing metadata failure this whole session has carried.
+
+This package is **build 39**.
+
+**`POST /libraries` now accepts `with_structure` and `with_examples`, calling the real web
+form's own `library_populate()` rather than a second copy of what it does.** A library made
+through the API can start out fully stocked - the shared platforms, makers, and hardware
+models, plus the example entries across all four domains, now including the video and music
+ones this session just added - the same way a library made through the web form already could.
+
+Proved live: created a library with neither flag and confirmed it was genuinely empty; created
+a second with both and confirmed the response's own summary matched, then confirmed the
+database independently - 4 hardware, 6 software, 2 video, 2 music, all four domains present in
+one call.
+
+`docs/openapi.yaml` updated. Full suite re-run: still 1 of 25, unchanged.
+
+This package is **build 38**.
+
+**Video and music examples added to a fresh install - what was actually missing, reported
+directly: hardware machines and software games/applications had example items; video (Blu-ray,
+VHS) and music (CD, Vinyl) never did.** Two new releases per domain: a movie and a TV show on
+disc and tape, a CD and a vinyl record with a shared label. The same "additive by title name"
+safety the software examples already have - a resync never produces a second copy.
+
+**Two real, pre-existing bugs found and fixed while building this, neither one this change
+created - both were simply never exercised until something finally tried to create a video or
+music item:**
+
+1. `company_id_for_name()` hardcoded its `makes` parameter to only ever store 'hardware' or
+   'software', silently downgrading anything else - so a studio or record label created through
+   it would have been mislabelled as a software publisher. Fixed to also accept 'video' and
+   'music', the values the domain work earlier this session already introduced elsewhere.
+
+2. `category_effective_role()` - and a second, identical list beside it - recognized only
+   `machine`, `peripheral`, `game`, `application` as real category roles, missing `movie`,
+   `tv_show`, and `music` entirely, even though the template data has used those roles since
+   video and music categories were first added. Caught by the test suite itself, not read off
+   the code: a real regression surfaced as "copy: and files nothing where the kind is unknown"
+   the moment an item existed to expose it. A third, similar-looking list scoping metadata
+   provider defaults was deliberately left alone - a separate, legitimate narrower concern, since
+   no movie or music metadata source exists yet for anything to default to.
+
+New examples call their own small `seed_company_for_name()` rather than reaching for
+`company_id_for_name()` directly a second time: that function reads `working_library()`, which
+depends on a session that does not exist during installation, and silently does nothing rather
+than create an orphaned row when there is none - correct for an import request, wrong for
+seeding a library passed in explicitly. The existing hardware and software examples already
+avoid this by resolving companies directly rather than through that helper; the new ones now
+match.
+
+Proved live at every stage: an initial run surfaced both bugs for real, not hypothetically - the
+first left every new company's `makes` empty, the second turned into a genuine test suite
+regression, not a hunch. Fixed both, then reran the full seed from a clean database: all
+fourteen examples across all four domains, every company created with the correct tag, every
+single item's category resolving to a real, recognized role. Full suite back to 1 of 25,
+the same pre-existing baseline this session has shown throughout.
+
+This package is **build 37**.
+
+**Video and music examples added to a fresh library's seed data - Blu-ray and VHS on the video
+side, CD and Vinyl on the music side - alongside the hardware and software examples that have
+always been there.** Two per domain, matching the existing pattern: more than one format per
+domain is the point, the same reason the software examples span a disk, a cassette, and a
+CD-ROM.
+
+**Found and fixed two real, pre-existing bugs while building this, both the same shape as several
+others this session already turned out to have: something written for hardware and software only,
+never extended when video and music were added to the domain model, and never caught because
+nothing had exercised it with a video or music item until now.**
+
+First: `company_id_for_name()` hardcoded its `makes` tag to hardware-or-software regardless of
+what was asked for, silently mislabelling any studio or label passed to it as a software company.
+Fixed to accept video and music too.
+
+Second, and more consequential: seeding actually surfaced this one, rather than being caught by
+inspection - `category_effective_role()` and a second, identical list beside it only recognised
+`machine`/`peripheral`/`game`/`application` as real category roles. `movie`/`tv_show`/`music` had
+been in the template data since domains were extended to four, and every item that used one had
+been quietly falling through as a category with no recognised role. The library's own test suite
+caught this the moment a video or music item actually existed to check - a real regression this
+round introduced and then fixed within the same round, not shipped and found later. A third,
+similar list scoping which metadata sources default to which category kinds was deliberately left
+as is: there is no video or music metadata provider yet for anything to default to, so extending
+that list would have been solving a problem that does not exist yet.
+
+Also needed `company_id_for_name()`'s own library-scoping constraint worked around, not ignored:
+that function reads `working_library()`, which depends on a session that does not exist during
+installation, and is documented to correctly do nothing in that case rather than orphan a row.
+Added `seed_company_for_name()`, an explicit-library-id sibling for exactly this context, rather
+than routing around the real function's own correct behaviour.
+
+Proved live at every stage: confirmed the studio/artist/label companies were created with the
+right `makes` tag, not left null; confirmed all four domains produce items with resolved
+developer and publisher names, not just IDs that happen to be present; re-ran the full suite after
+each fix and confirmed the regression this round introduced was genuinely gone, not just quieter.
+
+Full suite: 1 of 25 - the same single, pre-existing metadata failure this whole session has
+carried, unrelated to any of this.
+
+This package is **build 37**.
+
+**Video and music examples added to a fresh library's starter data - a Blu-ray and a VHS movie,
+a CD and a vinyl album - alongside the hardware and software examples that have always been
+there.** Reported missing directly: a fresh install showed machines, games and applications, but
+nothing for either of the other two domains this application has supported since the platforms
+rework several sessions ago.
+
+Two real, separate bugs found and fixed while building this, both genuinely pre-existing rather
+than introduced here - the video/music examples were simply the first thing ever to exercise
+them:
+
+**`company_id_for_name()` reads `working_library()`, which depends on a session that does not
+exist during installation.** Calling it from the seed script would have silently created nothing,
+exactly as documented: "no library in hand... the template is the right answer here rather than a
+new orphan row" - correct for an API import, wrong for seeding a library passed in directly. Added
+`seed_company_for_name()`, an explicit-library equivalent for exactly this context, rather than
+change the original's own documented behaviour for every other caller.
+
+**`category_effective_role()` - and a second copy of the identical list elsewhere in the same
+file - recognised `machine`/`peripheral`/`game`/`application` only, missing `movie`/`tv_show`/
+`music`.** These three roles have existed in the template category data since the video/music
+platforms work, but nothing had ever created an item under one until now, so the gap was never
+exercised. Caught by the test suite itself - not a manual check, a real, pre-existing assertion
+that every item's category must resolve a known role, which the new examples correctly tripped.
+Fixed both copies to match; deliberately left a third, similar-looking list in the metadata-
+provider-defaults function untouched, since that one is a genuinely separate question (what a
+metadata source is worth defaulting to) with no video or music provider yet to default anything
+to.
+
+Proved live at every stage: confirmed all fourteen examples now create correctly across all four
+domains; confirmed the new studios, artists and labels are created with the correct `makes` tag,
+not silently skipped; re-ran the full suite and confirmed the real regression this surfaced -
+caught before ever presenting this as done - is genuinely fixed, then confirmed directly that
+every one of the fourteen items, including the four new ones, resolves a real category role.
+
+This package is **build 37**.
+
+**Added a PATCH route alongside last round's PUT for `/admin/users/{id}/access`, matching every
+other endpoint's own pattern of accepting both.** The client's own HTTP wrapper has no `put()`
+method, only `patch()` - discovered building the client, not before. Rather than add one just for
+this endpoint, matched the existing convention every other write endpoint in this session already
+follows: both verbs, same handler.
+
+This package is **build 36**.
+
+**A new admin API for library access grants - a client for the real access page's own
+`user_grants()`/`access_save()` logic, not a reimplementation.** `GET /admin/users/{id}/access`
+reads one account's current grants; `PUT` rewrites them wholesale, matching the real form's own
+rule exactly: membership is the whole of access, so a library absent from the submitted map has
+its membership removed. Owner is never assignable through this - it changes by being offered and
+accepted - and a personal library keeps its owner's membership regardless of what else is
+submitted, the same protection the original carries.
+
+The user and library pickers this needed already existed (`GET /admin/users`, `GET
+/admin/libraries`), discovered rather than assumed missing - only the one new endpoint, for
+reading and rewriting one account's own grants, needed building.
+
+Proved live with a genuine second account and a genuine second library, not the single admin
+user this session has mostly tested against: granted contributor access, confirmed it landed
+exactly as submitted while the account's own personal-library ownership stayed untouched;
+submitted an empty map and confirmed the contributor grant was correctly revoked while the
+personal library's owner membership was correctly preserved - the wholesale-rewrite rule and its
+one deliberate exception, both checked against real data.
+
+`docs/openapi.yaml` updated. Full suite re-run: still 1 of 25, unchanged.
+
+**Client-side screen not built this round** - API only, the same split used throughout this
+session for genuinely new API surface.
+
+This package is **build 35**.
+
 **A second, smaller fix to `api_import_run()`: `library_id`, `commit`, and `create_titles` now
 read from the query string as well as the POST body.** The client's own multipart upload helper
 sends one file field and nothing else - the same shape item photo uploads already needed, and

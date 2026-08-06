@@ -992,8 +992,22 @@ paths:
                 description: { type: string, maxLength: 500 }
                 kind: { type: string, enum: [private, shared], default: private }
                 color: { type: string, example: "#cba6f7" }
+                with_structure:
+                  type: boolean
+                  description: Copy in the shared starter platforms, makers, and hardware models.
+                with_examples:
+                  type: boolean
+                  description: >-
+                    Add a handful of example entries across hardware, software, video,
+                    and music. Brings the starter structure along automatically even if
+                    with_structure was not also sent - an example needs something to
+                    point at.
       responses:
-        "201": { description: Created }
+        "201":
+          description: >-
+            Created. meta.note describes what was added, when with_structure or
+            with_examples was sent - the same summary the web form's own create
+            page shows.
         "422": { description: A missing name, an unknown kind, or a colour that is not six hex digits }
     get:
       tags: [Taxonomy]
@@ -1011,6 +1025,283 @@ paths:
                 type: object
                 properties:
                   data: { type: array, items: { $ref: "#/components/schemas/Library" } }
+
+  /libraries/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Libraries]
+      summary: A library's own settings
+      description: >-
+        Name, description, kind, colour, and visibility - owner only. A
+        client for the real form's own save logic: the same guards apply,
+        in the same order. A personal library cannot become shared.
+        Switching away from shared, or from a public visibility, removes
+        anyone who joined that way - an invitation somebody accepted
+        always wins over this. Switching from shared to private drops any
+        member who could write down to read-only; the owner keeps their
+        own level. Membership actions (invite, uninvite, changing what a
+        member may do) are a separate, later piece - not here.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 120 }
+                description: { type: string, maxLength: 500 }
+                kind: { type: string, enum: [private, shared] }
+                visibility: { type: string, enum: [members, public, public_write], default: members }
+                color: { type: string, example: "#cba6f7" }
+      responses:
+        "200":
+          description: >-
+            Saved. meta.note describes anyone turned out or demoted by a
+            visibility change, when that happened.
+        "403": { description: Only an owner can change that library }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { description: A missing name, or a personal library asked to become shared }
+    put:
+      tags: [Libraries]
+      summary: Same as PATCH
+      responses: { "200": { description: Saved } }
+
+  /libraries/{id}/members:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Libraries]
+      summary: Who is on this library
+      description: Owner or Library Admin. Owner listed first, then by decreasing access.
+      responses:
+        "200": { description: OK }
+        "403": { description: That library is not one you may administer }
+    post:
+      tags: [Libraries]
+      summary: Invite somebody
+      description: >-
+        An offer, not access: the row lands 'pending' and grants nothing
+        until accepted. A client for the real edit page's own invite
+        action - the same grantable-levels check, the same notification.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, access]
+              properties:
+                user_id: { type: integer }
+                access: { type: string, enum: [viewer, contributor, editor, curator, admin, owner] }
+      responses:
+        "201": { description: Invited }
+        "403": { description: That library is not one you may administer }
+        "422": { description: No such account, or not a level this library hands out }
+
+  /libraries/{id}/members/{memberId}:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+      - { name: memberId, in: path, required: true, schema: { type: integer } }
+    patch:
+      tags: [Libraries]
+      summary: Change what an accepted member may do
+      description: >-
+        Refused while the invitation is still pending - there is nothing
+        to change yet. The owner's own access is never set here, and only
+        the owner may hand out the owner level itself.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [access]
+              properties:
+                access: { type: string, enum: [viewer, contributor, editor, curator, admin, owner] }
+      responses:
+        "200": { description: Changed }
+        "403": { description: Forbidden - the owner's own row, or owner-only action attempted by somebody else }
+        "422": { description: Not a known level, or the invitation has not been accepted yet }
+    delete:
+      tags: [Libraries]
+      summary: Remove access
+      description: The owner cannot be removed from their own library.
+      responses:
+        "204": { description: Removed }
+        "403": { description: That library is not one you may administer, or this is the owner }
+
+  /admin/metadata-providers:
+    get:
+      tags: [Admin]
+      summary: Configured sources, and every type available to add
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Admin]
+      summary: Add a source - configuration only, not the network half
+      description: >-
+        The real form always tests a source before adding it, with "add it
+        without checking" as the only way past a failed or unreachable
+        check. This API cannot make that call at all, so it requires the
+        same flag outright: skip_probe must be true, or the request is
+        refused. Probing a source, asking it what platforms it knows, and
+        matching them by name are a separate, later piece - they need a
+        live call to wherever the source actually lives.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, skip_probe]
+              properties:
+                type: { type: string, description: One of the keys from GET's own meta.types. }
+                skip_probe: { type: boolean, description: Must be true. }
+                priority: { type: integer, default: 100 }
+                params:
+                  type: object
+                  description: Overrides merged over the type's own defaults, coerced to each default's type.
+      responses:
+        "201": { description: Added, unchecked - meta.note says so plainly }
+        "422": { description: Unknown type, already configured, or skip_probe not sent }
+
+  /admin/metadata-providers/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Admin]
+      summary: Enable, disable, reprioritise, or change a source's own params
+      description: >-
+        Only the keys actually sent are changed - a params object with one
+        key updates that key and leaves every other stored value alone,
+        the same "what comes back is authoritative, for what it names"
+        rule the real form applies to credential fields specifically and
+        this applies to every param.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_enabled: { type: boolean }
+                priority: { type: integer }
+                params: { type: object }
+      responses:
+        "200": { description: Saved }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Admin]
+      summary: Remove a source
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/auth-methods:
+    get:
+      tags: [Admin]
+      summary: Directory authentication methods
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Admin]
+      summary: Add a directory - configuration only
+      description: >-
+        Unlike a metadata source, saving a directory method never requires
+        a test - the real save handler reaches its insert with no network
+        step in between. Test and Inspect are separate, optional actions
+        needing a real server to answer and are not part of this API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                type: { type: string, enum: [ldap, ad], default: ldap }
+                name: { type: string, maxLength: 120 }
+                description: { type: string }
+                is_enabled: { type: boolean }
+                sort_order: { type: integer, default: 10 }
+                params:
+                  type: object
+                  description: Overrides merged over the type's own defaults - host, base_dn, bind_dn, bind_password, and so on.
+      responses:
+        "201": { description: Created }
+        "422": { description: Missing name }
+
+  /admin/auth-methods/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Admin]
+      summary: Change a directory's own settings
+      description: >-
+        Only the keys sent are changed, the same rule metadata source
+        params follow. A blank bind_password in the submitted params
+        means "keep the stored one" - it is never blanked by its own
+        absence, or by a save that did not mean to touch it.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: string }
+                is_enabled: { type: boolean }
+                sort_order: { type: integer }
+                params: { type: object }
+      responses:
+        "200": { description: Saved }
+        "403": { description: The local database method cannot be disabled }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Admin]
+      summary: Remove a directory
+      description: Refused for the protected local method, or while any account still uses it.
+      responses:
+        "204": { description: Removed }
+        "403": { description: Protected, or still in use }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/auth-methods/{id}/groups:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Admin]
+      summary: A directory's own group-to-access mappings
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Admin]
+      summary: Map a directory group to a role and library access
+      description: >-
+        Resolved at the person's own next sign-in, against whatever
+        groups the directory reports for them then - this only stores
+        the mapping.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [group_name]
+              properties:
+                group_name: { type: string, description: The directory's own group name or DN. }
+                role: { type: string, enum: [user, admin], default: user }
+                default_access: { type: string, enum: [none, viewer, contributor, editor, curator, admin], default: none }
+                priority: { type: integer, default: 100 }
+                library_grants:
+                  type: object
+                  description: libraryId => one of viewer, contributor, editor, curator, admin.
+      responses:
+        "201": { description: Added }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { description: No group name sent }
+
+  /admin/auth-methods/{id}/groups/{mapId}:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+      - { name: mapId, in: path, required: true, schema: { type: integer } }
+    delete:
+      tags: [Admin]
+      summary: Remove a group mapping
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /platforms:
     get:
@@ -1841,6 +2132,47 @@ paths:
         "204": { description: Deleted }
         "403": { description: Owner access on this library is required }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/users/{id}/access:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Admin]
+      summary: One account's library access
+      description: >-
+        [libraryId => level] for whichever libraries this account has a
+        membership row in. A library absent from the map means no access.
+      responses:
+        "200": { description: OK }
+        "403": { description: Administrator access is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Admin]
+      summary: Rewrite one account's library access wholesale
+      description: >-
+        A client for the real access page's own bulk-save rule, not a new
+        one: membership is the whole of access, so a library absent from
+        the submitted map has its membership removed. Owner is never
+        assignable here - it changes by being offered and accepted - and
+        a personal library keeps its owner's membership regardless.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [access]
+              properties:
+                access:
+                  type: object
+                  description: libraryId => one of viewer, contributor, editor, curator, admin.
+      responses:
+        "200": { description: The account's access, after the rewrite }
+        "403": { description: Administrator access is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Admin]
+      summary: Same as PUT
+      responses: { "200": { description: The account's access, after the rewrite } }
 
   /import:
     post:

@@ -3381,8 +3381,639 @@ function api_libraries_create(): void
     log_security('library.created', sprintf('Created library "%s"', $name), LOG_NOTICE,
                  ['subject_type' => 'library', 'subject_id' => $id]);
 
+    // Starting contents - the same library_populate() the web form's own
+    // create page already calls, not a second copy of what it does. "It
+    // starts out empty" is a real, valid answer when neither flag is sent,
+    // which is why this only runs at all when asked for.
+    $note = '';
+    if (!empty($in['with_structure']) || !empty($in['with_examples'])) {
+        $note = library_populate($id, [
+            'structure' => !empty($in['with_structure']),
+            'examples'  => !empty($in['with_examples']),
+        ]);
+    }
+
     $row = one('SELECT l.*, 0 AS n FROM libraries l WHERE l.id = ?', [$id]);
-    api_ok(library_to_api($row), null, 201);
+    api_ok(library_to_api($row), $note === '' ? null : ['note' => $note], 201);
+}
+
+/**
+ * A library's own settings - name, description, kind, colour. A client
+ * for the real form's own save logic, not a new one: the same guards
+ * apply, in the same order, for the same reasons.
+ *
+ * Membership actions (invite, uninvite, changing what a member may do)
+ * are not here - that half of the real form's own save handler is a
+ * separate, later piece, the same way this round left library editing
+ * itself for its own round after creation.
+ */
+function api_libraries_update(int $id): void
+{
+    [$user] = api_require_write();
+    $library = one('SELECT * FROM libraries WHERE id = ?', [$id]);
+    if ($library === null) {
+        api_error('not_found', 'No library with that id.', 404);
+    }
+    if (!can_own_library($id)) {
+        api_error('forbidden', 'Only an owner can change that library.', 403);
+    }
+
+    $in   = api_body();
+    $name = trim((string) ($in['name'] ?? $library['name']));
+    if ($name === '') {
+        api_error('validation_failed', 'Give the library a name.', 422, ['name' => 'Required.']);
+    }
+
+    // A personal library cannot become shared - the one shelf the account
+    // is promised, and sharing it would hand somebody else the only place
+    // its owner can always write to.
+    $personal = (int) ($library['is_personal'] ?? 0) === 1;
+    $kindIn   = isset($in['kind']) ? (string) $in['kind'] : (string) $library['kind'];
+    if ($personal && $kindIn === 'shared') {
+        api_error('validation_failed', 'A personal library cannot be shared.', 422,
+                   ['kind' => 'Not allowed on a personal library.']);
+    }
+    $kind = $personal ? 'private' : ($kindIn === 'shared' ? 'shared' : 'private');
+
+    $visibility = (string) ($in['visibility'] ?? 'members');
+    [$publicRead, $publicWrite] = library_visibility_flags($kind, $visibility);
+
+    // Unpublishing turns the joiners out - the same rule the web form's
+    // own save applies, for the same reason: "members only" while a dozen
+    // uninvited people still read it is a state the library should not be
+    // left in. Only the joiners; an accepted invitation always wins over
+    // this.
+    $wasPublic = (int) ($library['public_read'] ?? 0) === 1 || (int) ($library['public_write'] ?? 0) === 1;
+    $turnedOut = 0;
+    if ($wasPublic && $publicRead === 0 && $publicWrite === 0) {
+        $turnedOut = (int) scalar(
+            "SELECT COUNT(*) FROM library_members
+              WHERE library_id = ? AND note = 'Joined a published library' AND user_id <> ?",
+            [$id, (int) ($library['owner_id'] ?? 0)]
+        );
+        if ($turnedOut > 0) {
+            q("DELETE FROM library_members
+                WHERE library_id = ? AND note = 'Joined a published library' AND user_id <> ?",
+              [$id, (int) ($library['owner_id'] ?? 0)]);
+            $GLOBALS['__membership_cache'] = [];
+        }
+    }
+
+    // Shared to private demotes anybody who could write - the kind and the
+    // membership have to agree, and the membership is what acl.php actually
+    // enforces. The owner keeps their own level.
+    $demoted = 0;
+    if ($kind === 'private' && ($library['kind'] ?? '') === 'shared') {
+        $demoted = (int) scalar(
+            'SELECT COUNT(*) FROM library_members WHERE library_id = ? AND user_id <> ? AND access <> ?',
+            [$id, (int) $library['owner_id'], ACCESS_VIEWER]
+        );
+        if ($demoted > 0) {
+            q('UPDATE library_members SET access = ? WHERE library_id = ? AND user_id <> ? AND access <> ?',
+              [ACCESS_VIEWER, $id, (int) $library['owner_id'], ACCESS_VIEWER]);
+            $GLOBALS['__membership_cache'] = [];
+        }
+    }
+
+    $colourIn = trim((string) ($in['color'] ?? ''));
+    $colour   = preg_match('/^#[0-9a-fA-F]{6}$/', $colourIn) === 1
+                ? strtolower($colourIn) : (string) $library['accent_color'];
+
+    update_row('libraries', $id, [
+        'name'         => mb_substr($name, 0, 120),
+        'slug'         => unique_slug('libraries', slugify($name), $id),
+        'description'  => isset($in['description'])
+                           ? (mb_substr(trim((string) $in['description']), 0, 500) ?: null)
+                           : $library['description'],
+        'kind'         => $kind,
+        'public_read'  => $publicRead,
+        'public_write' => $publicWrite,
+        'accent_color' => $colour,
+    ]);
+
+    log_server('library.updated', 'Library "' . $name . '" changed', LOG_INFO,
+               ['subject_type' => 'library', 'subject_id' => $id]);
+
+    $notes = [];
+    if ($turnedOut > 0) {
+        $notes[] = sprintf('%d %s who had joined can no longer reach it.',
+                            $turnedOut, $turnedOut === 1 ? 'person' : 'people');
+    }
+    if ($demoted > 0) {
+        $notes[] = sprintf('%d member%s dropped to read-only.', $demoted, $demoted === 1 ? '' : 's');
+    }
+
+    $row = one('SELECT l.*, 0 AS n FROM libraries l WHERE l.id = ?', [$id]);
+    api_ok(library_to_api($row), $notes === [] ? null : ['note' => implode(' ', $notes)]);
+}
+
+/**
+ * Members - a client for the same three actions the real edit page's own
+ * save handler already offers (invite, change access, uninvite), not new
+ * ones. Owner or Library Admin, not owner alone: managing who is on the
+ * shelf is curator-level work, the same split library_edit_save() itself
+ * already makes between this and the library's own settings, which stay
+ * owner-only.
+ */
+function api_library_members_index(int $libraryId): void
+{
+    api_require_auth();
+    if (!can_administer_library($libraryId) && !is_admin()) {
+        api_error('forbidden', 'That library is not one you may administer.', 403);
+    }
+    $rows = all(
+        "SELECT m.*, u.username, u.display_name
+           FROM library_members m JOIN users u ON u.id = m.user_id
+          WHERE m.library_id = ?
+       ORDER BY FIELD(m.access,'owner','admin','curator','editor','contributor','viewer'), u.username",
+        [$libraryId]
+    );
+    api_ok(array_map(static fn(array $r): array => [
+        'user_id'      => (int) $r['user_id'],
+        'username'     => (string) $r['username'],
+        'display_name' => (string) $r['display_name'],
+        'access'       => (string) $r['access'],
+        'status'       => (string) $r['status'],
+        'granted_at'   => api_datetime($r['granted_at'] ?? null),
+    ], $rows));
+}
+
+function api_library_members_invite(int $libraryId): void
+{
+    [$me] = api_require_write();
+    $library = one('SELECT * FROM libraries WHERE id = ?', [$libraryId]);
+    if ($library === null) {
+        api_error('not_found', 'No library with that id.', 404);
+    }
+    if (!can_administer_library($libraryId) && !is_admin()) {
+        api_error('forbidden', 'That library is not one you may administer.', 403);
+    }
+
+    $in    = api_body();
+    $who   = isset($in['user_id']) ? (int) $in['user_id'] : null;
+    $level = (string) ($in['access'] ?? ACCESS_VIEWER);
+    if ($who === null || $who === (int) $me['id']) {
+        api_error('validation_failed', 'Choose somebody to invite.', 422, ['user_id' => 'Required.']);
+    }
+    $account = one('SELECT id, username FROM users WHERE id = ? AND is_active = 1', [$who]);
+    if ($account === null) {
+        api_error('validation_failed', 'No active account with that id.', 422, ['user_id' => 'Not found.']);
+    }
+    $allowed = library_grantable_levels($library);
+    if (!in_array($level, $allowed, true)) {
+        api_error('validation_failed', 'That is not a level this library hands out.', 422,
+                   ['access' => 'Not grantable.']);
+    }
+
+    q("INSERT INTO library_members (library_id, user_id, access, status, granted_by)
+       VALUES (?, ?, ?, 'pending', ?)
+       ON DUPLICATE KEY UPDATE access = VALUES(access), granted_by = VALUES(granted_by)",
+      [$libraryId, $who, $level, (int) $me['id']]);
+    $GLOBALS['__membership_cache'] = [];
+
+    notify($who, 'library.invited', [
+        'subject'      => sprintf('%s invited you to %s',
+                                  $me['display_name'] ?: $me['username'], $library['name']),
+        'body'         => sprintf(
+            "You have been invited to the library \"%s\" as %s.\n\n"
+            . "Nothing has changed yet - an invitation gives no access until you accept it. "
+            . "You can accept or decline it from your profile.",
+            $library['name'], access_label($level)
+        ),
+        'link_path'    => '/profile',
+        'subject_type' => 'library',
+        'subject_id'   => $libraryId,
+        'dedupe_key'   => 'library.invited:' . $libraryId,
+    ]);
+    log_server('library.invited', sprintf('%s invited to "%s" as %s',
+               $account['username'], $library['name'], access_label($level)), LOG_INFO,
+               ['subject_type' => 'library', 'subject_id' => $libraryId]);
+
+    api_ok(['user_id' => $who, 'access' => $level, 'status' => 'pending'], null, 201);
+}
+
+function api_library_members_update(int $libraryId, int $memberId): void
+{
+    [$me] = api_require_write();
+    $library = one('SELECT * FROM libraries WHERE id = ?', [$libraryId]);
+    if ($library === null) {
+        api_error('not_found', 'No library with that id.', 404);
+    }
+    if (!can_administer_library($libraryId) && !is_admin()) {
+        api_error('forbidden', 'That library is not one you may administer.', 403);
+    }
+
+    $in   = api_body();
+    $want = (string) ($in['access'] ?? '');
+    if (!in_array($want, access_levels(), true) || $want === ACCESS_NONE) {
+        api_error('validation_failed', 'That is not a level this library grants.', 422,
+                   ['access' => 'Not a known value.']);
+    }
+    if ($memberId === (int) $library['owner_id']) {
+        api_error('forbidden', "The owner's own access is not set from here.", 403);
+    }
+    $meIsOwner = (int) $library['owner_id'] === (int) $me['id'] || is_admin();
+    if ($want === ACCESS_OWNER && !$meIsOwner) {
+        api_error('forbidden', 'Only the owner can hand the library to somebody else.', 403);
+    }
+    $row = one('SELECT * FROM library_members WHERE library_id = ? AND user_id = ?', [$libraryId, $memberId]);
+    if ($row === null || (string) $row['status'] !== 'accepted') {
+        api_error('validation_failed', 'That person has not accepted yet, so there is nothing to change.', 422);
+    }
+
+    q('UPDATE library_members SET access = ? WHERE library_id = ? AND user_id = ?',
+      [$want, $libraryId, $memberId]);
+    $GLOBALS['__membership_cache'] = [];
+    log_security('library.access', sprintf('access in library %d set to %s', $libraryId, $want),
+                 LOG_NOTICE, ['library' => $libraryId, 'user' => $memberId, 'access' => $want]);
+
+    api_ok(['user_id' => $memberId, 'access' => $want]);
+}
+
+function api_library_members_delete(int $libraryId, int $memberId): void
+{
+    api_require_write();
+    $library = one('SELECT * FROM libraries WHERE id = ?', [$libraryId]);
+    if ($library === null) {
+        api_error('not_found', 'No library with that id.', 404);
+    }
+    if (!can_administer_library($libraryId) && !is_admin()) {
+        api_error('forbidden', 'That library is not one you may administer.', 403);
+    }
+    if ($memberId === (int) $library['owner_id']) {
+        api_error('forbidden', 'The owner cannot be removed from their own library.', 403);
+    }
+
+    $name = (string) (scalar('SELECT username FROM users WHERE id = ?', [$memberId]) ?? 'They');
+    q('DELETE FROM library_members WHERE library_id = ? AND user_id = ?', [$libraryId, $memberId]);
+    $GLOBALS['__membership_cache'] = [];
+    log_server('library.uninvited', sprintf('%s removed from "%s"', $name, $library['name']),
+               LOG_NOTICE, ['subject_type' => 'library', 'subject_id' => $libraryId]);
+
+    api_no_content();
+}
+
+/**
+ * Metadata sources - configuration only, not the network half. The real
+ * screen tests a source before ever adding it, with no override for
+ * that check except an explicit "add it without checking" - so this API
+ * requires the same flag rather than silently skipping a decision the
+ * real form makes the person confirm. Probing several sources at once,
+ * asking a source what platforms it knows, and matching them by name
+ * all involve a live call to wherever the source actually lives and are
+ * a real, separate piece for whenever that can be built against
+ * something real to call.
+ */
+function api_metadata_providers_index(): void
+{
+    api_require_admin();
+    $configured = all('SELECT * FROM metadata_providers ORDER BY priority, id');
+    $taken = array_column($configured, 'type');
+    $types = [];
+    foreach (metadata_provider_types() as $key => $def) {
+        $types[$key] = ['label' => (string) ($def['label'] ?? $key), 'configured' => in_array($key, $taken, true)];
+    }
+    api_ok(array_map(static function (array $r): array {
+        return [
+            'id'         => (int) $r['id'],
+            'type'       => (string) $r['type'],
+            'name'       => (string) $r['name'],
+            'is_enabled' => (bool) $r['is_enabled'],
+            'priority'   => (int) $r['priority'],
+            'params'     => metadata_params($r),
+            'last_error' => $r['last_error'] ?? null,
+        ];
+    }, $configured), ['types' => $types]);
+}
+
+/** Type default merged with a submitted override, coerced to the default's own type. */
+function api_metadata_merge_params(array $defaults, array $submitted): array
+{
+    $params = $defaults;
+    foreach (array_keys($defaults) as $key) {
+        if (!array_key_exists($key, $submitted)) {
+            continue;
+        }
+        $value = $submitted[$key];
+        $params[$key] = match (true) {
+            is_int($defaults[$key])   => (int) $value,
+            is_float($defaults[$key]) => (float) $value,
+            default                   => (string) $value,
+        };
+    }
+    return $params;
+}
+
+function api_metadata_providers_create(): void
+{
+    api_require_admin();
+    $in   = api_body();
+    $type = (string) ($in['type'] ?? '');
+    $def  = metadata_provider_definition($type);
+    if ($def === null) {
+        api_error('validation_failed', 'Unknown source type.', 422, ['type' => 'Not recognised.']);
+    }
+    if (one('SELECT id FROM metadata_providers WHERE type = ?', [$type]) !== null) {
+        api_error('validation_failed', ($def['label'] ?? $type) . ' is already configured.', 422,
+                   ['type' => 'Already configured.']);
+    }
+    // The real form always tests first and offers this as the way past a
+    // failed or unreachable check; there being no way here to run that
+    // check at all, the flag is required outright rather than defaulted.
+    if (empty($in['skip_probe'])) {
+        api_error('validation_failed',
+                   'Adding a source normally tests it first. This API cannot make that call, '
+                   . 'so send skip_probe: true to add it unchecked - the same escape hatch the '
+                   . 'real form offers when a check fails.', 422, ['skip_probe' => 'Required.']);
+    }
+
+    $params = api_metadata_merge_params($def['params'] ?? [], (array) ($in['params'] ?? []));
+    $id = (int) insert_row('metadata_providers', [
+        'type'       => $type,
+        'name'       => (string) $def['label'],
+        'params'     => json_encode($params, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        'is_enabled' => 1,
+        'priority'   => isset($in['priority']) ? (int) $in['priority'] : 100,
+        'last_error' => null,
+    ]);
+
+    foreach (all('SELECT id FROM libraries') as $lib) {
+        seed_library_provider_scopes((int) $lib['id']);
+    }
+    $mapped = metadata_seed_platform_map($id, $type);
+
+    $row = one('SELECT * FROM metadata_providers WHERE id = ?', [$id]);
+    api_ok([
+        'id' => $id, 'type' => $type, 'name' => (string) $def['label'],
+        'is_enabled' => true, 'priority' => (int) $row['priority'], 'params' => metadata_params($row),
+    ], ['note' => $def['label'] . ' added without checking it.'
+        . ($mapped > 0 ? sprintf(' %d platform mapping%s came with it.', $mapped, $mapped === 1 ? '' : 's') : '')],
+       201);
+}
+
+function api_metadata_providers_update(int $id): void
+{
+    api_require_admin();
+    $row = one('SELECT * FROM metadata_providers WHERE id = ?', [$id]);
+    if ($row === null) {
+        api_error('not_found', 'No source with that id.', 404);
+    }
+    $def = metadata_provider_definition((string) $row['type']);
+
+    $in = api_body();
+    $data = [];
+    if (array_key_exists('is_enabled', $in)) {
+        $data['is_enabled'] = !empty($in['is_enabled']) ? 1 : 0;
+    }
+    if (array_key_exists('priority', $in)) {
+        $data['priority'] = (int) $in['priority'];
+    }
+    if (array_key_exists('params', $in) && is_array($in['params'])) {
+        // The row's own current params, not the type's bare defaults - an
+        // update that resends only one key must not silently reset every
+        // other custom value back to what the type started with. Matches
+        // the real form's own rule: what comes back is authoritative only
+        // for the keys actually sent.
+        $data['params'] = json_encode(
+            api_metadata_merge_params(metadata_params($row), $in['params']),
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+        );
+    }
+    if ($data === []) {
+        api_error('validation_failed', 'Nothing to change.', 422);
+    }
+
+    update_row('metadata_providers', $id, $data);
+    $fresh = one('SELECT * FROM metadata_providers WHERE id = ?', [$id]);
+    api_ok([
+        'id' => $id, 'type' => (string) $fresh['type'], 'name' => (string) $fresh['name'],
+        'is_enabled' => (bool) $fresh['is_enabled'], 'priority' => (int) $fresh['priority'],
+        'params' => metadata_params($fresh),
+    ]);
+}
+
+function api_metadata_providers_delete(int $id): void
+{
+    api_require_admin();
+    if (one('SELECT id FROM metadata_providers WHERE id = ?', [$id]) === null) {
+        api_error('not_found', 'No source with that id.', 404);
+    }
+    delete_row('metadata_providers', $id);
+    api_no_content();
+}
+
+/**
+ * Directory authentication - configuration and group mapping only, the
+ * same honest split as metadata sources. Unlike a source, saving a
+ * directory method never requires a test at all - the real save handler
+ * reaches insert_row()/update_row() with no network step in between, and
+ * Test/Inspect are separate, optional actions a person may or may not
+ * press. That is what makes this half fully buildable: nothing here was
+ * ever gated behind a connection this environment cannot make. Testing
+ * a real bind and looking up a real directory entry stay out of scope,
+ * needing an actual server to answer either.
+ */
+function api_auth_methods_index(): void
+{
+    api_require_admin();
+    $rows = all(
+        'SELECT m.*, (SELECT COUNT(*) FROM users u WHERE u.auth_method_id = m.id) AS user_count
+           FROM auth_methods m ORDER BY m.sort_order, m.id'
+    );
+    api_ok(array_map(static function (array $r): array {
+        return [
+            'id'           => (int) $r['id'],
+            'type'         => (string) $r['type'],
+            'name'         => (string) $r['name'],
+            'description'  => $r['description'] ?? null,
+            'is_enabled'   => (bool) $r['is_enabled'],
+            'is_protected' => (bool) $r['is_protected'],
+            'sort_order'   => (int) $r['sort_order'],
+            'user_count'   => (int) $r['user_count'],
+            'params'       => ldap_params($r),
+        ];
+    }, $rows));
+}
+
+function api_auth_methods_create(): void
+{
+    api_require_admin();
+    $in   = api_body();
+    $type = in_array($in['type'] ?? 'ldap', ['ldap', 'ad'], true) ? (string) $in['type'] : 'ldap';
+    $name = trim((string) ($in['name'] ?? ''));
+    if ($name === '') {
+        api_error('validation_failed', 'Give the directory a name.', 422, ['name' => 'Required.']);
+    }
+
+    $params = api_metadata_merge_params(ldap_default_params($type), (array) ($in['params'] ?? []));
+    $id = (int) insert_row('auth_methods', [
+        'type'        => $type,
+        'name'        => mb_substr($name, 0, 120),
+        'description' => isset($in['description']) ? (trim((string) $in['description']) ?: null) : null,
+        'params'      => json_encode($params, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        'is_enabled'  => !empty($in['is_enabled']) ? 1 : 0,
+        'sort_order'  => isset($in['sort_order']) ? (int) $in['sort_order'] : 10,
+    ]);
+
+    log_security('auth.method.created', sprintf('Directory "%s" added (%s)', $name, $type), LOG_WARNING,
+                 ['method' => $name, 'type' => $type, 'enabled' => !empty($in['is_enabled']) ? 1 : 0]);
+
+    $row = one('SELECT * FROM auth_methods WHERE id = ?', [$id]);
+    api_ok([
+        'id' => $id, 'type' => $type, 'name' => $row['name'], 'is_enabled' => (bool) $row['is_enabled'],
+        'sort_order' => (int) $row['sort_order'], 'params' => ldap_params($row),
+    ], null, 201);
+}
+
+function api_auth_methods_update(int $id): void
+{
+    api_require_admin();
+    $row = one('SELECT * FROM auth_methods WHERE id = ?', [$id]);
+    if ($row === null) {
+        api_error('not_found', 'No directory with that id.', 404);
+    }
+    $in = api_body();
+    if ((int) $row['is_protected'] === 1 && array_key_exists('is_enabled', $in) && empty($in['is_enabled'])) {
+        api_error('forbidden', 'The local database method cannot be disabled — it is the way back in.', 403);
+    }
+
+    $data = [];
+    if (array_key_exists('name', $in)) {
+        $name = trim((string) $in['name']);
+        if ($name === '') {
+            api_error('validation_failed', 'Give the directory a name.', 422, ['name' => 'Required.']);
+        }
+        $data['name'] = mb_substr($name, 0, 120);
+    }
+    if (array_key_exists('description', $in)) {
+        $data['description'] = trim((string) $in['description']) ?: null;
+    }
+    if (array_key_exists('is_enabled', $in)) {
+        $data['is_enabled'] = !empty($in['is_enabled']) ? 1 : 0;
+    }
+    if (array_key_exists('sort_order', $in)) {
+        $data['sort_order'] = (int) $in['sort_order'];
+    }
+    if (array_key_exists('params', $in) && is_array($in['params'])) {
+        // Blank bind_password means "keep the stored one" - the same rule
+        // the real form applies, so saving other fields never blanks a
+        // credential nobody retyped.
+        $submitted = $in['params'];
+        if (array_key_exists('bind_password', $submitted) && trim((string) $submitted['bind_password']) === ''
+            && !empty(ldap_params($row)['bind_password'])) {
+            unset($submitted['bind_password']);
+        }
+        $data['params'] = json_encode(
+            api_metadata_merge_params(ldap_params($row), $submitted),
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+        );
+    }
+    if ($data === []) {
+        api_error('validation_failed', 'Nothing to change.', 422);
+    }
+
+    update_row('auth_methods', $id, $data);
+    log_security('auth.method.changed', sprintf('Directory "%s" reconfigured', $data['name'] ?? $row['name']),
+                 LOG_WARNING, ['method' => $data['name'] ?? $row['name'], 'type' => $row['type']]);
+
+    $fresh = one('SELECT * FROM auth_methods WHERE id = ?', [$id]);
+    api_ok([
+        'id' => $id, 'type' => $fresh['type'], 'name' => $fresh['name'],
+        'is_enabled' => (bool) $fresh['is_enabled'], 'sort_order' => (int) $fresh['sort_order'],
+        'params' => ldap_params($fresh),
+    ]);
+}
+
+function api_auth_methods_delete(int $id): void
+{
+    api_require_admin();
+    $m = one('SELECT * FROM auth_methods WHERE id = ?', [$id]);
+    if ($m === null) {
+        api_error('not_found', 'No such method.', 404);
+    }
+    if ((int) $m['is_protected'] === 1) {
+        api_error('forbidden', 'The local database method cannot be removed.', 403);
+    }
+    if ((int) scalar('SELECT COUNT(*) FROM users WHERE auth_method_id = ?', [$id]) > 0) {
+        api_error('forbidden', 'Accounts still use that method. Move or remove them first.', 403);
+    }
+    delete_row('auth_methods', $id);
+    log_security('auth.method.deleted', sprintf('Directory "%s" removed', $m['name']), LOG_WARNING,
+                 ['method' => $m['name'], 'type' => $m['type']]);
+    api_no_content();
+}
+
+/**
+ * Group mapping - which directory group confers which role and library
+ * access, resolved at the person's own next sign-in. Pure configuration,
+ * the same as the method it belongs to.
+ */
+function api_auth_group_maps_index(int $methodId): void
+{
+    api_require_admin();
+    $rows = all('SELECT * FROM auth_group_map WHERE auth_method_id = ? ORDER BY priority, id', [$methodId]);
+    api_ok(array_map(static function (array $r): array {
+        $grants = all('SELECT library_id, access FROM auth_group_library_access WHERE group_map_id = ?', [(int) $r['id']]);
+        return [
+            'id'             => (int) $r['id'],
+            'group_name'     => (string) $r['group_name'],
+            'role'           => (string) $r['role'],
+            'default_access' => (string) $r['default_access'],
+            'priority'       => (int) $r['priority'],
+            'library_grants' => array_map(static fn(array $g): array => [
+                'library_id' => (int) $g['library_id'], 'access' => (string) $g['access'],
+            ], $grants),
+        ];
+    }, $rows));
+}
+
+function api_auth_group_maps_create(int $methodId): void
+{
+    api_require_admin();
+    if (one('SELECT id FROM auth_methods WHERE id = ?', [$methodId]) === null) {
+        api_error('not_found', 'No directory with that id.', 404);
+    }
+    $in    = api_body();
+    $group = trim((string) ($in['group_name'] ?? ''));
+    if ($group === '') {
+        api_error('validation_failed', 'Give the directory group name or DN.', 422, ['group_name' => 'Required.']);
+    }
+    $access = access_levels();
+    $default = in_array($in['default_access'] ?? ACCESS_NONE, $access, true) ? (string) $in['default_access'] : ACCESS_NONE;
+
+    $mapId = (int) insert_row('auth_group_map', [
+        'auth_method_id' => $methodId,
+        'group_name'     => mb_substr($group, 0, 512),
+        'role'           => ($in['role'] ?? 'user') === 'admin' ? 'admin' : 'user',
+        'default_access' => $default,
+        'priority'       => isset($in['priority']) ? (int) $in['priority'] : 100,
+    ]);
+
+    foreach ((array) ($in['library_grants'] ?? []) as $libraryId => $level) {
+        $libraryId = (int) $libraryId;
+        if (!in_array($level, [ACCESS_VIEWER, ACCESS_CONTRIBUTOR, ACCESS_EDITOR, ACCESS_CURATOR, ACCESS_ADMIN], true)) {
+            continue;
+        }
+        if (one('SELECT id FROM libraries WHERE id = ?', [$libraryId]) === null) {
+            continue;
+        }
+        q('INSERT INTO auth_group_library_access (group_map_id, library_id, access)
+           VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE access = VALUES(access)',
+          [$mapId, $libraryId, (string) $level]);
+    }
+
+    api_ok(['id' => $mapId, 'group_name' => $group], null, 201);
+}
+
+function api_auth_group_maps_delete(int $methodId, int $mapId): void
+{
+    api_require_admin();
+    $map = one('SELECT auth_method_id FROM auth_group_map WHERE id = ?', [$mapId]);
+    if ($map === null || (int) $map['auth_method_id'] !== $methodId) {
+        api_error('not_found', 'No such mapping.', 404);
+    }
+    delete_row('auth_group_map', $mapId);
+    api_no_content();
 }
 
 /**

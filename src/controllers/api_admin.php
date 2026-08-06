@@ -615,6 +615,82 @@ function api_users_update(int $id): void
     api_ok(api_user_row($fresh));
 }
 
+/**
+ * One account's library access - a client for the same table the real
+ * access page reads (user_grants()), not a reimplementation. [libraryId
+ * => access] for whichever libraries this account currently has a
+ * membership row in; a library absent from the map means no access.
+ */
+function api_user_access_show(int $id): void
+{
+    api_require_admin();
+    $user = one('SELECT id, username FROM users WHERE id = ?', [$id]);
+    if ($user === null) {
+        api_error('not_found', 'No account with that id.', 404);
+    }
+    api_ok(user_grants($id));
+}
+
+/**
+ * Rewrite one account's library access wholesale - a client for
+ * access_save()'s own rule, not a new one: membership is the whole of
+ * access, so a library absent from the submitted map has its membership
+ * removed, exactly as the real form's own bulk save already works.
+ * Owner is never assignable here - it is one column on the library
+ * itself, changed by being offered and accepted, not by this map - and a
+ * personal library keeps its owner's membership regardless, the same
+ * guard the original carries.
+ */
+function api_user_access_update(int $id): void
+{
+    [$me] = api_require_admin();
+    $user = one('SELECT id, username FROM users WHERE id = ?', [$id]);
+    if ($user === null) {
+        api_error('not_found', 'No account with that id.', 404);
+    }
+
+    $in = api_body();
+    $submitted = $in['access'] ?? [];
+    if (!is_array($submitted)) {
+        api_error('validation_failed', 'Must be an object of libraryId => level.', 422,
+                   ['access' => 'Must be an object.']);
+    }
+
+    $keep = [];
+    foreach ($submitted as $libraryId => $level) {
+        $libraryId = (int) $libraryId;
+        $level     = is_string($level) ? $level : ACCESS_NONE;
+
+        if (!in_array($level, [ACCESS_VIEWER, ACCESS_CONTRIBUTOR, ACCESS_EDITOR, ACCESS_CURATOR, ACCESS_ADMIN], true)) {
+            continue;
+        }
+        if (one('SELECT id FROM libraries WHERE id = ?', [$libraryId]) === null) {
+            continue;
+        }
+
+        q('INSERT INTO library_members (library_id, user_id, access, granted_by, note)
+           VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE access = VALUES(access), granted_by = VALUES(granted_by)',
+          [$libraryId, $id, $level, $me === null ? null : (int) $me['id'], 'Set from the access page']);
+        $keep[] = $libraryId;
+    }
+
+    if ($keep === []) {
+        q('DELETE FROM library_members WHERE user_id = ?', [$id]);
+    } else {
+        $placeholders = implode(',', array_fill(0, count($keep), '?'));
+        q("DELETE FROM library_members WHERE user_id = ? AND library_id NOT IN ($placeholders)",
+          array_merge([$id], $keep));
+    }
+
+    q("INSERT IGNORE INTO library_members (library_id, user_id, access, note)
+       SELECT id, owner_id, ?, 'Personal library'
+       FROM libraries WHERE is_personal = 1 AND owner_id = ?", [ACCESS_OWNER, $id]);
+
+    $GLOBALS['__membership_cache'] = [];
+    api_ok(user_grants($id));
+}
+
 // ---------------------------------------------------------------------------
 // Libraries
 // ---------------------------------------------------------------------------
