@@ -101,6 +101,26 @@ paths:
         "204": { description: Revoked }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /auth/verify/resend:
+    post:
+      tags: [Auth]
+      summary: Resend the email verification link
+      description: >-
+        Answers the same way whether or not the account exists, or already
+        needs no confirming - a real response either way would let a
+        caller enumerate usernames one guess at a time. Throttled the
+        same as a login attempt.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+      responses:
+        "200": { description: "Always the same message, regardless of what actually happened" }
+        "429": { description: Too many attempts - throttled }
+
   /auth/me:
     get:
       tags: [Auth]

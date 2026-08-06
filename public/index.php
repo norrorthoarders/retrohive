@@ -232,6 +232,7 @@ if (str_starts_with($path, '/api/')) {
     $apiRoutes = [
         ['GET',    '#^/api/v1/meta$#',                    fn() => api_meta()],
         ['POST',   '#^/api/v1/auth/login$#',              fn() => api_login()],
+        ['POST',   '#^/api/v1/auth/verify/resend$#',      fn() => api_auth_verify_resend()],
         ['POST',   '#^/api/v1/auth/logout$#',             fn() => api_logout()],
         ['GET',    '#^/api/v1/auth/me$#',                 fn() => api_me()],
 

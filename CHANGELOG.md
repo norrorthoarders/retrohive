@@ -1,5 +1,20 @@
 # Changelog
 
+**`docs/openapi.yaml` gained the one real, pre-existing gap this session's own habit of checking
+every round finally caught: `POST /auth/verify/resend` was never documented, unrelated to
+anything touched this round.** Found by the same self-checking test this session has relied on
+throughout, not introduced by this round's own changes - a genuinely older gap, surfaced now
+rather than earlier for reasons this round didn't need to chase down, since the fix itself was
+small and the same either way.
+
+Answers the same way regardless of whether the account exists or already needs no confirming,
+so a response can't be used to enumerate real usernames one guess at a time; throttled the same
+as a login attempt.
+
+Full suite: back to 1 of 25, the one pre-existing metadata failure unrelated to any of this.
+
+This package is **build 47**.
+
 **`POST /admin/example-library` - a client for the same `seed_shared_example_library()` both
 installers already call, made reachable after installation.**
 

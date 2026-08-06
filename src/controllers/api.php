@@ -84,6 +84,18 @@ function api_login(): void
         api_error('invalid_credentials', 'That username and password do not match.', 401);
     }
 
+    // The same rule the web sign-in already enforces, missing here entirely -
+    // a correct password issued a working token regardless of whether the
+    // account had ever confirmed its address, on an instance that requires
+    // exactly that. A client asking for a token has to be told the same way
+    // a browser posting the login form already is, or the requirement is
+    // real for one path into the same account and not the other.
+    if (needs_email_verification($row)) {
+        api_error('email_unverified',
+                   'Confirm your email address before signing in. Check your inbox for the link, '
+                   . 'or ask for another one.', 403, ['username' => $username]);
+    }
+
     // An account with nothing it may change can never hold a write token,
     // whatever it asked for. That is a membership question, not a role one.
     set_acting_user($row);
@@ -3633,6 +3645,33 @@ function api_admin_example_library_create(): void
 
     $row = one('SELECT l.*, 0 AS n FROM libraries l WHERE l.id = ?', [$libId]);
     api_ok(library_to_api($row), null, 201);
+}
+
+/**
+ * Resend an account's own verification email - unauthenticated
+ * deliberately, since the whole point is reaching somebody who cannot
+ * sign in yet. A client for the real login page's own resend action,
+ * matching its privacy-conscious shape exactly: the same message comes
+ * back whether the account exists, needs confirming, or neither, so
+ * this cannot be used to check which usernames are real. Rate limited
+ * the same way a real sign-in attempt already is.
+ */
+function api_auth_verify_resend(): void
+{
+    $in       = api_body();
+    $username = trim((string) ($in['username'] ?? ''));
+
+    [$allowed, $wait] = throttle_check($username);
+    if (!$allowed) {
+        api_error('throttled', throttle_message($wait), 429);
+    }
+
+    $user = $username === '' ? null : one('SELECT * FROM users WHERE username = ?', [$username]);
+    if ($user !== null && needs_email_verification($user)) {
+        send_verification_email((int) $user['id']);
+    }
+
+    api_ok(['message' => 'If that account needs confirming, another link is on its way.']);
 }
 
 /**
