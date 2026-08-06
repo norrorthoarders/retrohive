@@ -2723,6 +2723,52 @@ function seed_company_for_name(int $libraryId, string $name, string $makes): ?in
     ]);
 }
 
+/** The same find-or-create pattern seed_company_for_name() uses, for a person instead of a company. */
+function seed_person_for_name(int $libraryId, string $name): ?int
+{
+    $name = trim($name);
+    if ($name === '') {
+        return null;
+    }
+    $mine = one('SELECT id FROM people WHERE name = ? AND library_id = ? LIMIT 1', [$name, $libraryId]);
+    if ($mine !== null) {
+        return (int) $mine['id'];
+    }
+    return (int) insert_row('people', [
+        'library_id' => $libraryId,
+        'name'       => mb_substr($name, 0, 160),
+        'slug'       => unique_slug('people', slugify($name)),
+    ]);
+}
+
+/**
+ * A title, a person, and a credit tying them together for one role - the
+ * example data's own way of putting a name to a role, the same real
+ * mechanism a person cataloguing a real film or record would use, not a
+ * free-text field invented to avoid it. Title-less items stay title-less
+ * everywhere else in this example set; this is the one place a title
+ * exists at all, and only because a credit has nowhere else to attach.
+ */
+function seed_credit_for_item(int $libraryId, int $titleId, string $roleSlug, string $personName): void
+{
+    $role = one('SELECT id FROM credit_roles WHERE slug = ?', [$roleSlug]);
+    if ($role === null) {
+        return;
+    }
+    $personId = seed_person_for_name($libraryId, $personName);
+    if ($personId === null) {
+        return;
+    }
+    if (one('SELECT id FROM credits WHERE title_id = ? AND role_id = ? AND person_id = ?',
+            [$titleId, (int) $role['id'], $personId]) !== null) {
+        return;
+    }
+    insert_row('credits', [
+        'library_id' => $libraryId, 'title_id' => $titleId, 'role_id' => (int) $role['id'],
+        'person_id'  => $personId, 'sort_order' => 100,
+    ]);
+}
+
 function seed_library_video_examples(int $libraryId): int
 {
     $made = 0;
@@ -2733,14 +2779,17 @@ function seed_library_video_examples(int $libraryId): int
             'platform'  => 'blu-ray',
             'category'  => 'movies',
             'studio'    => 'Silverreel Pictures',
+            'director'  => 'Corinne Vasquez',
             'year'      => 1998,
             'box'       => 'near_mint',
+            'tags'      => 'neo-noir, favourite',
         ],
         [
             'name'      => 'Late Shift Detective',
             'platform'  => 'vhs',
             'category'  => 'tv-shows',
             'studio'    => 'Harborlight Television',
+            'director'  => 'Marcus Idoia',
             'year'      => 1991,
             'box'       => 'good',
         ],
@@ -2761,10 +2810,40 @@ function seed_library_video_examples(int $libraryId): int
 
         $studioId = seed_company_for_name($libraryId, $ex['studio'], 'video');
 
-        insert_row('items', [
+        // A title exists here for one reason: a credit has to attach to
+        // one, and putting a name to a director is worth that. Nothing
+        // else about this title matters the way it does for a software
+        // release with a boxed-release template behind it - no contents
+        // list, no work_key beyond the slug itself.
+        //
+        // Checked for an existing one first, the same guard the software
+        // examples already needed: titles have no library_id at all, so
+        // two different libraries both seeding "Metropolis Nights" on
+        // Blu-ray hit the same row rather than two - and without this
+        // check, the second library's own insert died on a duplicate
+        // rather than reusing what the first already made.
+        $existingTitle = one('SELECT id FROM titles WHERE platform_id = ? AND name = ? AND release_year <=> ?',
+                             [(int) $plat['id'], $ex['name'], $ex['year']]);
+        if ($existingTitle !== null) {
+            $titleId = (int) $existingTitle['id'];
+        } else {
+            $titleId = (int) insert_row('titles', [
+                'platform_id'  => (int) $plat['id'],
+                'category_id'  => (int) $cat['id'],
+                'developer_id' => $studioId,
+                'name'         => $ex['name'],
+                'slug'         => unique_slug('titles', slugify($ex['name'] . '-' . $ex['platform'])),
+                'work_key'     => slugify($ex['name']),
+                'release_year' => $ex['year'],
+            ]);
+        }
+        seed_credit_for_item($libraryId, $titleId, 'director', $ex['director']);
+
+        $itemId = (int) insert_row('items', [
             'library_id'    => $libraryId,
             'platform_id'   => (int) $plat['id'],
             'category_id'   => (int) $cat['id'],
+            'title_id'      => $titleId,
             'title'         => $ex['name'],
             'developer_id'  => $studioId,
             'release_year'  => $ex['year'],
@@ -2773,6 +2852,9 @@ function seed_library_video_examples(int $libraryId): int
             'condition_box' => $ex['box'],
             'completeness'  => 'cib',
         ]);
+        if (!empty($ex['tags'])) {
+            sync_item_tags($itemId, $ex['tags']);
+        }
         $made++;
     }
 
@@ -2795,6 +2877,7 @@ function seed_library_music_examples(int $libraryId): int
             'name'      => 'Nightbound Sessions',
             'platform'  => 'cd',
             'artist'    => 'The Coastline Drifters',
+            'composer'  => 'Naomi Fentress',
             'label'     => 'Amberlane Records',
             'year'      => 1997,
             'box'       => 'very_good',
@@ -2803,9 +2886,11 @@ function seed_library_music_examples(int $libraryId): int
             'name'      => 'Analogue Horizon',
             'platform'  => 'vinyl',
             'artist'    => 'Solvent Skies',
+            'composer'  => 'Erik Halvorsen',
             'label'     => 'Amberlane Records',
             'year'      => 1979,
             'box'       => 'good',
+            'tags'      => 'favourite',
         ],
     ] as $ex) {
         if (one('SELECT id FROM items WHERE library_id = ? AND title = ?', [$libraryId, $ex['name']]) !== null) {
@@ -2825,10 +2910,35 @@ function seed_library_music_examples(int $libraryId): int
         $artistId = seed_company_for_name($libraryId, $ex['artist'], 'music');
         $labelId  = seed_company_for_name($libraryId, $ex['label'], 'music');
 
-        insert_row('items', [
+        // Same guard the video examples just needed, for the same reason:
+        // titles have no library_id at all, so two different libraries
+        // both seeding "Nightbound Sessions" on CD hit the same row
+        // rather than two, and without this check the second library's
+        // own insert died on a duplicate rather than reusing what the
+        // first already made.
+        $existingTitle = one('SELECT id FROM titles WHERE platform_id = ? AND name = ? AND release_year <=> ?',
+                             [(int) $plat['id'], $ex['name'], $ex['year']]);
+        if ($existingTitle !== null) {
+            $titleId = (int) $existingTitle['id'];
+        } else {
+            $titleId = (int) insert_row('titles', [
+                'platform_id'  => (int) $plat['id'],
+                'category_id'  => (int) $cat['id'],
+                'developer_id' => $artistId,
+                'publisher_id' => $labelId,
+                'name'         => $ex['name'],
+                'slug'         => unique_slug('titles', slugify($ex['name'] . '-' . $ex['platform'])),
+                'work_key'     => slugify($ex['name']),
+                'release_year' => $ex['year'],
+            ]);
+        }
+        seed_credit_for_item($libraryId, $titleId, 'composer', $ex['composer']);
+
+        $itemId = (int) insert_row('items', [
             'library_id'    => $libraryId,
             'platform_id'   => (int) $plat['id'],
             'category_id'   => (int) $cat['id'],
+            'title_id'      => $titleId,
             'title'         => $ex['name'],
             'developer_id'  => $artistId,
             'publisher_id'  => $labelId,
@@ -2838,6 +2948,9 @@ function seed_library_music_examples(int $libraryId): int
             'condition_box' => $ex['box'],
             'completeness'  => 'cib',
         ]);
+        if (!empty($ex['tags'])) {
+            sync_item_tags($itemId, $ex['tags']);
+        }
         $made++;
     }
 

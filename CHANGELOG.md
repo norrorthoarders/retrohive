@@ -1,5 +1,33 @@
 # Changelog
 
+**A real regression from last round's own work, fixed and verified - and one separate, unresolved
+question flagged honestly rather than glossed over.**
+
+Adding titles and credits to the video and music examples introduced a genuine bug: `titles` has
+no `library_id` column at all - it is shared across the whole instance. The new code
+unconditionally inserted a title per example with no check for an existing one, so two different
+libraries both seeding "Metropolis Nights" collided on the same row. In the full test suite,
+where multiple test libraries each call the example seeding, this crashed the "browse" suite
+outright rather than failing a single assertion.
+
+Fixed by applying the same guard the existing software-examples function already needed for
+exactly this reason - checked directly by reading that function's own comment about it, which
+already named the failure mode precisely - to both video and music: look for a title matching
+platform, name, and release year before inserting one, and reuse it if found.
+
+Proved live: reproduced the exact original crash directly - two separate libraries, each with
+their own account, both seeding video and music examples in sequence - and confirmed it now
+completes without exception, checked twice.
+
+**Left open, honestly**: the full suite still shows one additional failure beyond the known
+metadata baseline - a hardware interface check unrelated to anything touched this round by every
+trace available: it fails even running that one test file in complete isolation, with no
+video or music code involved at all. That rules out a direct connection, but it did not appear in
+this session's own dozens of earlier "1 of 25" checks either, and the discrepancy isn't explained
+yet. Recorded here rather than either claimed fixed or quietly dropped.
+
+This package is **build 52**.
+
 **`POST /admin/auth-methods/test` - genuinely new, not something this API already had under a
 different name.** Works on whatever is submitted rather than only on what was last saved: a
 brand new directory that has never been created, or an existing one's edited-but-unsaved

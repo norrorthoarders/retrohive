@@ -90,5 +90,22 @@
     "founded": 1888,
     "website": "https://www.columbiarecords.com",
     "wikipedia": "https://en.wikipedia.org/wiki/Columbia_Records"
+  },
+  {
+    "slug": "creative-technology",
+    "name": "Creative Technology",
+    "country": "SG",
+    "sort_order": 12,
+    "founded": 1981,
+    "wikipedia": "https://en.wikipedia.org/wiki/Creative_Technology"
+  },
+  {
+    "slug": "3dfx-interactive",
+    "name": "3dfx Interactive",
+    "country": "US",
+    "sort_order": 13,
+    "founded": 1994,
+    "defunct": 2000,
+    "wikipedia": "https://en.wikipedia.org/wiki/3dfx_Interactive"
   }
 ]
