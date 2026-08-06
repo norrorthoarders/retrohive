@@ -76,30 +76,14 @@ function settings_schema(): array
             ],
         ],
 
-        'registration' => [
-            'label' => 'Registration',
-            'help'  => 'Who may make an account on this instance.',
+        'signin' => [
+            'label' => 'Sign-in',
+            'help'  => 'Security rules that apply once an account already exists, regardless of how it was made.',
             'fields' => [
-                'registration_mode' => [
-                    'kind'    => 'select',
-                    'label'   => 'Who may register',
-                    'default' => 'closed',
-                    'options' => [
-                        'closed' => 'Nobody - accounts are made by an administrator',
-                        'secret' => 'Anybody with the invitation code',
-                        'public' => 'Anybody',
-                    ],
-                ],
-                'registration_approval' => [
-                    'kind'    => 'bool',
-                    'label'   => 'Approval required',
-                    'help'    => 'A new account waits until an administrator lets it in.',
-                    'default' => '',
-                ],
                 'require_email_verification' => [
                     'kind'    => 'bool',
-                    'label'   => 'Verify the address',
-                    'help'    => 'Needs mail to be working, or nobody can finish registering.',
+                    'label'   => 'Require a confirmed email address to sign in',
+                    'help'    => 'Needs a relay that has answered a test message, or this locks out everybody, including whoever ticks it.',
                     'default' => '',
                 ],
             ],

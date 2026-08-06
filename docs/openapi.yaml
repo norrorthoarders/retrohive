@@ -121,6 +121,72 @@ paths:
         "200": { description: "Always the same message, regardless of what actually happened" }
         "429": { description: Too many attempts - throttled }
 
+  /auth/register/status:
+    get:
+      tags: [Auth]
+      summary: Whether registration is open, and under what name
+      description: >-
+        A client for registration_allowed() from the monolith, exposed
+        so a client can ask this before it ever shows a username field.
+        Answers the same way for a wrong secret, a closed instance, and
+        an address nobody ever issued - allowed:false with the same
+        reason string either way, so a caller cannot tell the three
+        apart by which message came back.
+      parameters:
+        - name: route
+          in: query
+          schema: { type: string, enum: [register, join, invite] }
+          description: Which door is being tried. Defaults to register.
+        - name: token
+          in: query
+          schema: { type: string }
+          description: The secret address's own token (join), or an invitation's own token (invite).
+      responses:
+        "200":
+          description: >-
+            allowed (boolean), reason (string, present only when not
+            allowed), invite_email (the address an invitation was sent
+            to, present only for a valid invite - never a value the
+            caller supplied).
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Create an account - public sign-up, a secret address, or an accepted invitation
+      description: >-
+        A client for registration_submit() from the monolith - same
+        validation, same create_user() call, same invite_redeem() on an
+        accepted invitation, same registration_apply_approval()
+        afterward. On an invitation, the account's email is always the
+        invitation's own address; any email sent in the body is
+        ignored rather than trusted, the same way the monolith's own
+        form disables that field entirely rather than only hiding it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [route, username, password, password_confirm]
+              properties:
+                route: { type: string, enum: [register, join, invite] }
+                token: { type: string, description: Required for join and invite. }
+                username: { type: string }
+                display_name: { type: string }
+                email: { type: string, description: Ignored for join and invite - the invitation's own address is used instead. }
+                password: { type: string, minLength: 10 }
+                password_confirm: { type: string }
+      responses:
+        "201":
+          description: >-
+            status (active or pending), message, and - only when active
+            - the same shape a fresh login returns: token, token_id,
+            token_type, scope, expires_at, user. A pending account
+            (email confirmation or administrator approval required)
+            carries token:null; there is nothing to sign in with yet.
+        "403": { description: Registration is closed, or the token names no invitation this instance issued }
+        "422": { description: A field failed validation - details is keyed by field name }
+
   /auth/me:
     get:
       tags: [Auth]
@@ -248,6 +314,55 @@ paths:
         "422": { description: Refused, with each field named in details }
         "403": { description: Administrator access is required }
 
+  /admin/registration:
+    get:
+      tags: [Admin]
+      summary: Who may create an account, and the secret address if that's the mode
+      description: >-
+        A dedicated pair of endpoints rather than part of the generic
+        settings schema above - registration's real shape (four modes
+        including invite, a three-way approval, a rotatable secret URL
+        that is computed rather than stored) doesn't fit that schema's
+        select/bool/secret vocabulary without leaving invite mode
+        unreachable or lying about a type, the same reasoning auth
+        methods and hardware sync already have their own endpoints
+        rather than being squeezed into something more generic.
+      responses:
+        "200":
+          description: >-
+            mode (closed/public/secret/invite), approval
+            (auto/email/admin), mail_enabled, mail_verified (both
+            gate which options this endpoint's own PATCH will
+            accept), and secret_url - only present, and only
+            meaningful, when mode is secret.
+        "403": { description: Administrator access is required }
+    patch:
+      tags: [Admin]
+      summary: Change the mode or approval, or issue a new secret address
+      description: >-
+        Either mode and approval, or rotate_secret alone - rotating is
+        its own action rather than a side effect of saving the other
+        two fields, the same reasoning the real app's own settings
+        page gives: a secret that changes every time the page is saved
+        is a secret nobody can hand out. Refuses invite mode outright
+        when no mail relay is configured. Rotating works regardless of
+        the current mode - the secret it produces is simply unused
+        unless mode is actually secret, so there is nothing unsafe
+        about generating one ahead of switching to that mode.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mode: { type: string, enum: [closed, public, secret, invite] }
+                approval: { type: string, enum: [auto, email, admin] }
+                rotate_secret: { type: boolean }
+      responses:
+        "200": { description: Same shape as the GET above, reflecting what was actually saved }
+        "422": { description: An unreachable mode (invite without mail configured), with the reason in details }
+        "403": { description: Administrator access is required }
+
   /notifications:
     get:
       tags: [Notifications]
@@ -314,17 +429,111 @@ paths:
       parameters:
         - name: q
           in: query
-          required: true
-          description: The title to look for.
+          description: The title to look for. Required unless item_id is given, in which case that entry's own title is the default.
           schema: { type: string }
+        - name: item_id
+          in: query
+          description: >-
+            An entry to search from. Its own platform, and the domain its
+            category belongs to, are used automatically unless platform_id
+            overrides the platform - the same derivation the real app's own
+            lookup page does, so a hardware entry asks hardware sources and
+            a software one asks software sources without the caller having
+            to work either out itself.
+          schema: { type: integer }
         - name: platform_id
           in: query
           description: Narrow to one platform. Not an access boundary, only a filter.
           schema: { type: integer }
       responses:
-        "200": { description: OK }
+        "200":
+          description: >-
+            Results, plus meta.query, meta.domain (present when item_id
+            named an entry), meta.errors, meta.providers.
         "403": { description: A read-only token }
-        "422": { description: q was missing, or platform_id names no platform }
+        "404": { description: item_id names no entry, or none this token may read }
+        "422": { description: q was missing with no item_id to default from, or platform_id names no platform }
+
+  /metadata/preview:
+    post:
+      tags: [Metadata]
+      summary: What a candidate would set on an entry
+      description: >-
+        A client for four functions that already existed in core with
+        nothing exposing them - metadata_to_item_fields(),
+        metadata_to_hardware_fields(), metadata_spec_rows(), and
+        metadata_images_already_here() - plus metadata_title_resembles().
+        Not new logic; a way to reach logic that only ever ran inside a
+        server-rendered template before now. The candidate travels in the
+        request body exactly as the search returned it, rather than being
+        looked up by an id it doesn't have - the same way the real app's
+        own review form carries it as a hidden field, so a preview and
+        the apply that follows it are guaranteed to agree on what the
+        candidate actually said.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [candidate]
+              properties:
+                candidate: { type: object, description: Exactly one object from a search response's own data array. }
+                item_id: { type: integer, description: Optional - without it, only looks_right and fields are meaningful; hardware_fields, spec_rows and current values need a real entry to compare against. }
+                query: { type: string, description: What was actually searched for, for looks_right - defaults to the entry's own title, then the candidate's own. }
+      responses:
+        "200":
+          description: >-
+            looks_right (bool), fields, hardware_fields (each entry:
+            field, label, value, current - hardware_fields always empty
+            for a non-hardware entry or no item_id), spec_rows (each:
+            label, value, current, index), documents (passed through
+            unchanged), images (each candidate image plus already_here).
+        "403": { description: A read-only token }
+        "404": { description: item_id names no entry this token may read }
+        "422": { description: candidate was missing or not an object }
+
+  /metadata/apply:
+    post:
+      tags: [Metadata]
+      summary: Write whichever fields, hardware detail, spec rows, documents or images were ticked
+      description: >-
+        A client for the real app's own metadata_apply(), copied field by
+        field rather than re-derived: developer and publisher resolved
+        through company_id_for_name() on the entry's own side of the shop
+        (a lookup on a machine never files its maker as a software
+        house), hardware detail refused outright for a non-hardware
+        entry regardless of what apply_hw named, artwork fetched
+        server-side with the same thumbnail fallback and duplicate
+        detection the real handler already has, specification rows
+        merged into what the entry already has rather than overwritten,
+        documents kept as links only - nothing is downloaded but the
+        artwork itself.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [item_id, candidate]
+              properties:
+                item_id: { type: integer }
+                candidate: { type: object, description: Exactly the object preview was given, or the search returned. }
+                apply: { type: array, items: { type: string }, description: Item field names from a preview's own fields array. }
+                apply_hw: { type: array, items: { type: string }, description: Hardware field names - ignored entirely on a non-hardware entry. }
+                apply_spec: { type: array, items: { type: string }, description: Spec row index values, as strings, from a preview's own spec_rows. }
+                documents: { type: array, items: { type: string }, description: Document index values, as strings, from the candidate's own documents array. }
+                artwork: { type: array, items: { type: string }, description: Image index values, as strings, from the candidate's own images array. }
+      responses:
+        "200":
+          description: >-
+            fields_applied, hardware_applied, images_added,
+            images_already_there, documents_added, spec_rows_added,
+            provider_label - counts, not the data itself, since the
+            caller already has everything it just sent.
+        "403": { description: A read-only token, or that library is not one this account may write }
+        "404": { description: item_id names no entry }
+        "422": { description: candidate was missing or not an object, or nothing at all was ticked across apply/apply_hw/apply_spec/documents/artwork }
 
   /admin/users:
     get:

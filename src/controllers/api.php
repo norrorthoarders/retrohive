@@ -3218,20 +3218,52 @@ function api_metadata_search(): void
 {
     api_require_write();
     $title = isset($_GET['q']) && is_string($_GET['q']) ? trim($_GET['q']) : '';
-    if ($title === '') {
-        api_error('validation_failed', 'Pass ?q= with a title to search for.', 422);
+
+    // An item to search from, rather than a bare title - the same
+    // derivation the real app's own lookup page does: the item's own
+    // platform and domain decide what gets asked, and its own title
+    // is the default when nothing else was typed. Optional, because
+    // the bare search this endpoint already had is still real - not
+    // every lookup starts from an existing entry.
+    $itemId = api_query_int('item_id');
+    $item   = null;
+    if ($itemId !== null) {
+        $item = find_item($itemId);
+        if ($item === null || !can_read_item($item)) {
+            api_error('not_found', 'No catalogue entry with that id.', 404);
+        }
+        if ($title === '') {
+            $title = (string) ($item['title'] ?? '');
+        }
     }
-    // A platform is not an access boundary, so there is nothing to check here
-    // beyond it existing. What the caller may then do with a result is decided
-    // when they write it to a library.
+    if ($title === '') {
+        api_error('validation_failed', 'Pass ?q= with a title to search for, or ?item_id= of an entry to search from.', 422);
+    }
+
     $platformId = api_query_int('platform_id');
+    if ($item !== null && $platformId === null && !empty($item['platform_id'])) {
+        $platformId = (int) $item['platform_id'];
+    }
     if ($platformId !== null && one('SELECT id FROM platforms WHERE id = ?', [$platformId]) === null) {
         api_error('validation_failed', 'No platform with that id.', 422);
     }
 
-    $out = metadata_search_all($title, $platformId);
+    // Hardware entries ask hardware sources, software entries ask
+    // software ones - the same domain the item's own category already
+    // answers, derived here rather than trusted from the caller so a
+    // bare search cannot claim to be a hardware lookup it isn't.
+    $domain = null;
+    $categoryId = null;
+    if ($item !== null && !empty($item['category_id'])) {
+        $categoryId = (int) $item['category_id'];
+        $domain = (string) (scalar('SELECT s.slug FROM categories c JOIN sections s ON s.id = c.section_id
+                                     WHERE c.id = ?', [$categoryId]) ?: 'software');
+    }
+
+    $out = metadata_search_all($title, $platformId, $domain, $categoryId);
     api_ok($out['results'], [
         'query'    => $title,
+        'domain'   => $domain,
         'count'    => count($out['results']),
         // An object, always.
         //
@@ -3245,6 +3277,238 @@ function api_metadata_search(): void
             fn($p) => ['id' => (int) $p['id'], 'name' => $p['name'], 'type' => $p['type']],
             enabled_metadata_providers()
         ),
+    ]);
+}
+
+/**
+ * What a candidate would set on an entry, computed rather than left for
+ * a client to work out from raw provider data - metadata_to_item_
+ * fields(), metadata_to_hardware_fields(), metadata_spec_rows(), and
+ * metadata_images_already_here() all already existed in core with
+ * nothing exposing them; this is a client for those four functions
+ * plus metadata_title_resembles(), not new logic of its own.
+ *
+ * The candidate itself travels in the request body rather than being
+ * looked up by id, the same way the real app's own review form
+ * carries it as a hidden field - a search result has no id of its own
+ * to look up by, and re-running the search here to get one back would
+ * mean two different searches could answer differently between a
+ * preview and the apply that follows it.
+ */
+function api_metadata_preview(): void
+{
+    api_require_write();
+    $in = api_body();
+
+    $candidate = $in['candidate'] ?? null;
+    if (!is_array($candidate)) {
+        api_error('validation_failed', 'Send the candidate exactly as the search returned it.', 422);
+    }
+
+    $itemId = isset($in['item_id']) ? (int) $in['item_id'] : null;
+    $item   = null;
+    if ($itemId !== null) {
+        $item = find_item($itemId);
+        if ($item === null || !can_read_item($item)) {
+            api_error('not_found', 'No catalogue entry with that id.', 404);
+        }
+    }
+
+    $isHardware = $item !== null && (string) (scalar(
+        'SELECT s.slug FROM categories c JOIN sections s ON s.id = c.section_id WHERE c.id = ?',
+        [(int) $item['category_id']]
+    ) ?: '') === 'hardware';
+
+    $fields = metadata_to_item_fields($candidate);
+    $hwFields = $isHardware
+        ? metadata_to_hardware_fields($candidate, $item !== null ? (int) $item['platform_id'] : null)
+        : [];
+    $specRows = $isHardware ? metadata_spec_rows($candidate, $itemId) : [];
+    $alreadyHere = metadata_images_already_here($candidate, $itemId);
+
+    // What the entry currently has, named the same way the fields
+    // above are - so a client can show "currently" beside "would
+    // become" without knowing the item schema itself.
+    $current = [];
+    $hwCurrent = [];
+    if ($item !== null) {
+        $current = [
+            'title' => $item['title'], 'release_year' => $item['release_year'],
+            'release_date' => $item['release_date'] ?? null,
+            'developer_name' => $item['developer_name'] ?? null,
+            'publisher_name' => $item['publisher_name'] ?? null,
+            'external_url' => $item['external_url'] ?? null,
+            'description' => $item['description'] ?? null,
+        ];
+        if ($isHardware) {
+            $hwCurrent = one('SELECT * FROM item_hardware WHERE item_id = ?', [$itemId]) ?? [];
+        }
+    }
+
+    $domain = $item !== null ? ($isHardware ? 'hardware' : 'software') : null;
+    $labelFor = fn(string $f) => item_field_label($f, $domain);
+    $hwLabels = hardware_field_labels();
+
+    api_ok([
+        'looks_right' => metadata_title_resembles(
+            (string) ($in['query'] ?? ($item['title'] ?? ($candidate['title'] ?? ''))),
+            (string) ($candidate['title'] ?? '')
+        ),
+        'fields' => array_map(fn($f, $v) => [
+            'field' => $f, 'label' => $labelFor($f), 'value' => $v, 'current' => $current[$f] ?? null,
+        ], array_keys($fields), array_values($fields)),
+        'hardware_fields' => array_map(fn($f, $v) => [
+            'field' => $f, 'label' => $hwLabels[$f] ?? $f, 'value' => $v, 'current' => $hwCurrent[$f] ?? null,
+        ], array_keys($hwFields), array_values($hwFields)),
+        'spec_rows' => $specRows,
+        'documents' => array_values($candidate['documents'] ?? []),
+        'images' => array_map(fn($i, $img) => array_merge($img, ['already_here' => !empty($alreadyHere[(int) $i])]),
+                              array_keys($candidate['images'] ?? []), array_values($candidate['images'] ?? [])),
+    ]);
+}
+
+/**
+ * The write side - a client for the real app's own metadata_apply(),
+ * copied field by field rather than re-derived: developer/publisher
+ * resolved through company_id_for_name() on the entry's own side of
+ * the shop, hardware detail only for a hardware entry regardless of
+ * what was posted, artwork fetched server-side with the thumbnail
+ * fallback and duplicate detection the real handler already has,
+ * specs merged rather than overwritten, documents kept as links only.
+ */
+function api_metadata_apply(): void
+{
+    [$user] = api_require_write();
+    $in = api_body();
+
+    $itemId = isset($in['item_id']) ? (int) $in['item_id'] : 0;
+    $item = $itemId > 0 ? find_item($itemId) : null;
+    if ($item === null) {
+        api_error('not_found', 'No catalogue entry with that id.', 404);
+    }
+    if (!can_write_item($item)) {
+        api_error('forbidden', 'That library is read-only for your account.', 403);
+    }
+
+    $candidate = $in['candidate'] ?? null;
+    if (!is_array($candidate)) {
+        api_error('validation_failed', 'Send the candidate exactly as the search returned it.', 422);
+    }
+
+    $wanted     = is_array($in['apply'] ?? null) ? array_map('strval', $in['apply']) : [];
+    $wantedHw   = is_array($in['apply_hw'] ?? null) ? array_map('strval', $in['apply_hw']) : [];
+    $wantedSpec = is_array($in['apply_spec'] ?? null) ? array_map('strval', $in['apply_spec']) : [];
+    $wantedDoc  = is_array($in['documents'] ?? null) ? array_map('strval', $in['documents']) : [];
+    $wantedArt  = is_array($in['artwork'] ?? null) ? array_map('strval', $in['artwork']) : [];
+
+    if ($wanted === [] && $wantedHw === [] && $wantedSpec === [] && $wantedDoc === [] && $wantedArt === []) {
+        api_error('validation_failed', 'Tick at least one field, image, document or hardware detail to import.', 422);
+    }
+
+    $isHardware = (string) (scalar(
+        'SELECT s.slug FROM categories c JOIN sections s ON s.id = c.section_id WHERE c.id = ?',
+        [(int) $item['category_id']]
+    ) ?: 'software') === 'hardware';
+    $applyMakes = $isHardware ? 'hardware' : 'software';
+
+    $data = [];
+    foreach (metadata_to_item_fields($candidate) as $field => $value) {
+        if (!in_array($field, $wanted, true)) {
+            continue;
+        }
+        if ($field === 'developer_name') {
+            $data['developer_id'] = company_id_for_name((string) $value, $applyMakes);
+        } elseif ($field === 'publisher_name') {
+            $data['publisher_id'] = company_id_for_name((string) $value, $applyMakes);
+        } else {
+            $data[$field] = $value;
+        }
+    }
+
+    $hwFields = [];
+    if ($isHardware && $wantedHw !== []) {
+        foreach (metadata_to_hardware_fields($candidate, (int) $item['platform_id']) as $field => $value) {
+            if (in_array($field, $wantedHw, true)) {
+                $hwFields[$field] = $value;
+            }
+        }
+        if ($hwFields !== []) {
+            save_item_hardware($itemId, $hwFields);
+        }
+    }
+
+    if ($data !== []) {
+        update_row('items', $itemId, $data);
+        record_metadata_import($itemId, $candidate, $data, (int) $user['id']);
+    }
+
+    $art = 0;
+    $artSame = 0;
+    if ($wantedArt !== []) {
+        foreach ($candidate['images'] ?? [] as $index => $image) {
+            if (!in_array((string) $index, $wantedArt, true)) {
+                continue;
+            }
+            $caption = trim((string) ($image['caption'] ?? '')) !== ''
+                ? (string) $image['caption']
+                : 'From ' . ($candidate['provider_label'] ?? 'a metadata source');
+            [$ok, $artError, $dupe] = array_pad(metadata_import_image(
+                $itemId, (string) ($image['url'] ?? ''), (string) ($image['kind'] ?? 'box_front'), $caption
+            ), 3, false);
+            if ($dupe) {
+                $artSame++;
+                continue;
+            }
+            if (!$ok && !empty($image['thumb_url']) && $image['thumb_url'] !== ($image['url'] ?? '')) {
+                [$ok, $artError, $dupe] = array_pad(metadata_import_image(
+                    $itemId, (string) $image['thumb_url'], (string) ($image['kind'] ?? 'box_front'), $caption
+                ), 3, false);
+                if ($dupe) {
+                    $artSame++;
+                    continue;
+                }
+            }
+            if ($ok) {
+                $art++;
+            }
+        }
+    }
+
+    $specsAdded = 0;
+    if ($isHardware && $wantedSpec !== []) {
+        $offered = metadata_spec_rows($candidate, $itemId);
+        $chosen = array_values(array_filter($offered, fn($row) => in_array((string) $row['index'], $wantedSpec, true)));
+        $specsAdded = metadata_apply_specs($itemId, $chosen);
+    }
+
+    $docs = 0;
+    if ($wantedDoc !== []) {
+        foreach ((array) ($candidate['documents'] ?? []) as $dx => $doc) {
+            if (!in_array((string) $dx, $wantedDoc, true)) {
+                continue;
+            }
+            if (add_item_document($itemId, (string) ($doc['name'] ?? 'Document'), (string) ($doc['url'] ?? ''),
+                                  (string) ($candidate['provider_label'] ?? 'a metadata source'))) {
+                $docs++;
+            }
+        }
+    }
+
+    log_event('metadata', 'import.applied',
+        sprintf('entry %d: %d field(s), %d hardware, %d image(s), %d doc(s), %d spec row(s)',
+                $itemId, count($data), count($hwFields), $art, $docs, $specsAdded),
+        LOG_INFO, ['item' => $itemId, 'source' => (string) ($candidate['provider'] ?? ''),
+                   'fields' => count($data), 'hardware' => count($hwFields), 'images' => $art,
+                   'images_already_there' => $artSame, 'links' => $docs, 'specs' => $specsAdded]);
+
+    api_ok([
+        'fields_applied'   => count($data),
+        'hardware_applied' => count($hwFields),
+        'images_added'     => $art,
+        'images_already_there' => $artSame,
+        'documents_added'  => $docs,
+        'spec_rows_added'  => $specsAdded,
+        'provider_label'   => $candidate['provider_label'] ?? null,
     ]);
 }
 
@@ -3843,6 +4107,142 @@ function api_auth_verify_resend(): void
     }
 
     api_ok(['message' => 'If that account needs confirming, another link is on its way.']);
+}
+
+/**
+ * Whether a client may show a registration form at all, and under what
+ * name - a client for registration_allowed(), the same function the
+ * real web sign-up form's own GET handler already calls, exposed here
+ * because a client needs to know before it ever shows a username field
+ * whether "closed", a wrong secret, or an already-used invitation is
+ * what it's actually looking at.
+ */
+function api_auth_register_status(): void
+{
+    $route = (string) ($_GET['route'] ?? 'register');
+    $token = (string) ($_GET['token'] ?? '');
+    if (!in_array($route, ['register', 'join', 'invite'], true)) {
+        $route = 'register';
+    }
+
+    [$ok, $whatOrWhy] = registration_allowed($route, $token);
+    if (!$ok) {
+        // The same answer for a wrong secret, a closed instance, and an
+        // address nobody ever issued - registration_form()'s own
+        // reasoning, carried through here rather than a client being
+        // able to tell the three apart by which error came back.
+        api_ok(['allowed' => false, 'reason' => (string) $whatOrWhy, 'invite_email' => null]);
+        return;
+    }
+    $invite = is_array($whatOrWhy) ? $whatOrWhy : null;
+    api_ok(['allowed' => true, 'reason' => null, 'invite_email' => $invite['email'] ?? null]);
+}
+
+/**
+ * The account itself - a client for registration_submit()'s own logic,
+ * which until now only the web form's session-based POST could reach.
+ * Same validation, same create_user() call, same invite_redeem() on an
+ * accepted invitation, same registration_apply_approval() afterward -
+ * copied rather than re-derived, so a rule changed on one side doesn't
+ * quietly drift from the other.
+ */
+function api_auth_register(): void
+{
+    $in    = api_body();
+    $route = (string) ($in['route'] ?? 'register');
+    $token = (string) ($in['token'] ?? '');
+    if (!in_array($route, ['register', 'join', 'invite'], true)) {
+        $route = 'register';
+    }
+
+    [$ok, $whatOrWhy] = registration_allowed($route, $token);
+    if (!$ok) {
+        api_error('forbidden', (string) $whatOrWhy, 403);
+    }
+    $invite = is_array($whatOrWhy) ? $whatOrWhy : null;
+
+    $username = trim((string) ($in['username'] ?? ''));
+    $password = (string) ($in['password'] ?? '');
+    $confirm  = (string) ($in['password_confirm'] ?? '');
+    // On an invitation the address is the one that was invited, not one
+    // sent in the body - the same reasoning registration_submit() gives:
+    // an invitation to one address is not an invitation for whoever
+    // holds the token to sign up as somebody else.
+    $email = $invite !== null ? (string) $invite['email'] : trim((string) ($in['email'] ?? ''));
+
+    $errors = [];
+    if (!preg_match('/^[A-Za-z0-9._-]{3,64}$/', $username)) {
+        $errors['username'] = 'Username can use letters, numbers, dot, dash and underscore, '
+                             . '3 to 64 characters.';
+    } elseif (one('SELECT id FROM users WHERE username = ?', [$username]) !== null) {
+        $errors['username'] = 'That username is taken.';
+    }
+    if (strlen($password) < 10) {
+        $errors['password'] = 'Use a password of at least 10 characters.';
+    } elseif ($password !== $confirm) {
+        $errors['password_confirm'] = 'The two passwords do not match.';
+    }
+    if ($invite === null && ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL))) {
+        $errors['email'] = 'An email address is required, and that one does not look like one.';
+    }
+    if ($errors !== []) {
+        api_error('validation_failed', 'Fix the fields below and try again.', 422, $errors);
+    }
+
+    try {
+        // 'user', never 'admin' - the same comment registration_submit()
+        // carries: the first account on an instance is an administrator
+        // because somebody has to be, the twentieth is not, whatever
+        // door it came in by.
+        $id = create_user($username, $password,
+                          (string) ($in['display_name'] ?? $username), 'user', $email);
+    } catch (InvalidArgumentException $e) {
+        api_error('validation_failed', $e->getMessage(), 422, ['username' => $e->getMessage()]);
+    }
+
+    if ($invite !== null) {
+        invite_redeem((int) $invite['id'], (int) $id);
+    }
+
+    log_security('register.created',
+        sprintf('%s created an account by %s (api)', $username, $route), LOG_NOTICE,
+        ['user' => $id, 'route' => $route]);
+
+    $waitFor = registration_apply_approval((int) $id);
+    if ($waitFor !== '') {
+        log_security('register.pending',
+            sprintf('%s signed up and is waiting (%s)', $username, registration_approval()),
+            LOG_NOTICE, ['user' => $id]);
+        notify_admins('registration.pending', [
+            'subject'      => sprintf('%s is waiting for approval', $username),
+            'body'         => sprintf('Signed up %s. %s', date('j M Y, H:i'), registration_approval()),
+            'link_path'    => '/manage/users',
+            'subject_type' => 'user',
+            'subject_id'   => $id,
+        ]);
+        api_ok(['status' => 'pending', 'message' => $waitFor, 'token' => null], null, 201);
+    }
+
+    // Approved outright: the same token a fresh login would issue, so a
+    // client doesn't have to make a second request to turn a new
+    // account into a working session.
+    $row = one('SELECT * FROM users WHERE id = ?', [$id]);
+    set_acting_user($row);
+    [$tokenId, $plain] = create_api_token((int) $id, 'API client', 'write', null, null);
+    log_security('api.token.issued',
+                 sprintf('Token issued to "API client" for %s, write access', $username),
+                 LOG_NOTICE, ['subject_type' => 'user', 'subject_id' => $id]);
+
+    api_ok([
+        'status'     => 'active',
+        'message'    => 'Welcome. Start by adding a library, then your first entry.',
+        'token'      => $plain,
+        'token_id'   => $tokenId,
+        'token_type' => 'Bearer',
+        'scope'      => 'write',
+        'expires_at' => null,
+        'user'       => user_to_api($row),
+    ], null, 201);
 }
 
 /**

@@ -1,5 +1,106 @@
 # Changelog
 
+**The metadata lookup and import system, built in full - search, preview, and apply - closing
+the largest remaining gap from the old web UI: a full search-and-review workflow that was, until
+now, only ever reachable from a server-rendered template.**
+
+Three endpoints. `GET /metadata/search` extended to accept `item_id`, deriving platform and
+domain from the entry itself exactly the way the real app's own lookup page does, so a hardware
+entry asks hardware sources and a software one asks software sources without a caller working
+either out. `POST /metadata/preview` is new - a client for four functions that already existed
+in core with nothing exposing them (`metadata_to_item_fields()`, `metadata_to_hardware_fields()`,
+`metadata_spec_rows()`, `metadata_images_already_here()`) plus `metadata_title_resembles()` -
+computing the full currently/would-become comparison a review screen needs. `POST /metadata/apply`
+is new too - a direct client for the real app's own `metadata_apply()`, copied field by field:
+developer and publisher resolved on the entry's own side of the shop, hardware detail refused
+outright for a non-hardware entry regardless of what was posted, artwork fetched server-side with
+the same duplicate detection and thumbnail fallback the real handler already has, specs merged
+rather than overwritten.
+
+Proved live and thoroughly, not just checked for a clean response: preview showed a real seeded
+item's actual current values against a synthetic candidate; apply produced real, verified changes
+to the database - a title field, a publisher resolved to a real company row, a document link, and
+- on a genuine hardware item - real hardware detail and spec rows; applying hardware fields to a
+software entry was confirmed genuinely refused, not merely accepted and ignored; re-applying the
+same import twice was confirmed genuinely idempotent, no duplicate spec row.
+
+A real regression caught by the full suite after this seemed done: the two new endpoints weren't
+in `docs/openapi.yaml`, caught by this repo's own completeness test - added now, matching the
+detail the rest of the file already uses, confirmed the suite is back to baseline after the fix.
+
+Full suite: back to 1 of 25.
+
+This package is **build 63**.
+
+**The secret-address registration mode, closed out - a dedicated `GET`/`PATCH /admin/registration`
+covering all four modes properly (closed/public/secret/invite), not just the two the client's own
+login page already knew to ask about.**
+
+Along the way, a real, separate mistake in the generic settings schema was found and fixed: the
+old `registration` schema section had `require_email_verification` bundled into it, but that
+field is actually saved by a completely different handler (`section === 'signin'` in the real
+app, not `'registration'`) - the schema was describing a field it had no working save path for.
+Removed the outdated `registration` section entirely (four modes shrunk to three there, and
+approval was wrongly typed as a plain boolean rather than the real three-way choice), and gave
+`require_email_verification` its own correctly-named `signin` section instead. The generic
+`api_settings_update()` also had no equivalent of the real app's own safety check for that one
+field - turning on required email verification without a mail relay that has actually answered
+a test message would lock out every account, including whoever just turned it on - added
+directly, since nothing about the generic schema could express that rule on its own.
+
+Proved live end to end: default closed state refuses correctly; switching to secret mode produces
+a working `secret_url` that a real request to `/join/{token}` genuinely accepts; rotating
+produces a genuinely different secret and immediately invalidates the old one; invite mode is
+correctly refused when no mail relay is configured.
+
+`docs/openapi.yaml` updated for both new endpoints. Full suite: still 1 of 25, unchanged.
+
+This package is **build 62**.
+
+**Registration built - public sign-up, a secret address, and invitation acceptance - closing a
+gap this client's own login page had self-documented in MIGRATION.md from an earlier session:
+"whether public sign-up is open is instance configuration this web app has no way to ask for
+yet."**
+
+Two new endpoints, direct clients for the monolith's own registration_allowed() and
+registration_submit() rather than re-derived logic: `GET /auth/register/status` answers whether
+registration is open at all and under what name - the same answer for a wrong secret, a closed
+instance, and an address nobody ever issued, so a caller can't tell the three apart by which
+message came back. `POST /auth/register` creates the account: same validation, same
+create_user() call (always role 'user', never 'admin' - the first account on an instance is an
+administrator because somebody has to be, the twentieth is not, whatever door it came in by),
+same invite_redeem() on an accepted invitation, same registration_apply_approval() afterward.
+
+On an invitation, the account's email is always the invitation's own address - any email sent in
+the request body is ignored rather than trusted, matching the monolith's own form disabling that
+field entirely rather than only hiding it.
+
+**A real bug caught before shipping**: the first version of api_auth_register() shaped the new
+account's response without first calling set_acting_user() on it, which would have left
+can_edit_anything() evaluating against stale session state rather than the account that was just
+made. Caught by checking api_login()'s own call order directly rather than assuming the shape
+alone was enough.
+
+**Two genuine regressions caught by the full suite, both traced and fixed before packaging**: the
+new endpoints weren't in `docs/openapi.yaml` at all, caught by this repo's own test that checks
+every real route is documented - added now, in the same detail the rest of the file already
+uses. Separately, a metadata test broke on inspection: it expected `hardware_vocab_code()` to map
+"ZORRO III" to a `z3` code that a much earlier round in this same session correctly removed, at
+explicit request, collapsing Zorro II and Zorro III into one real `zorro` code. The test's own
+purpose - proving case-insensitive matching - was still correct; its fixture just hadn't caught
+up. Fixed in `retrohive-tools` to use a name that reflects the vocabulary as it now genuinely is.
+
+Proved live: closed mode refuses; public mode with auto-approval creates a real account with a
+working token in the same response; mismatched passwords are refused; the invite flow's security
+property was checked directly - an attacker-supplied email in the request body is genuinely
+ignored in favour of the invitation's own locked address, the invite is marked used, and
+redeeming it twice is refused.
+
+Full suite: back to 1 of 25 after both fixes, confirmed after the corrections rather than before
+them.
+
+This package is **build 61**.
+
 **Two of the metrics an industry guide on API monitoring names as the ones aggregate-only stats
 hide - max latency alongside average, and a separate "slowest" view distinct from "busiest" -
 added to the request tracking built up over the last few rounds.**

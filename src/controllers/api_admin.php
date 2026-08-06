@@ -267,6 +267,18 @@ function api_settings_update(): void
             $errors[(string) $name] = $problem;
             continue;
         }
+        // The one field in this generic schema with a rule the schema
+        // itself cannot express: requiring a confirmed email address
+        // to sign in is safe only against a relay that has actually
+        // answered a test message - turned on regardless, this locks
+        // out every account, including whoever just turned it on. The
+        // real app's own section='signin' handler already enforces
+        // this; the generic path here has no equivalent unless it is
+        // named explicitly.
+        if ($name === 'require_email_verification' && $storable === '1' && !mail_verified()) {
+            $errors[(string) $name] = 'Needs a relay that has answered a test message first.';
+            continue;
+        }
         $checked[(string) $name] = $storable;
     }
 
@@ -279,6 +291,75 @@ function api_settings_update(): void
     }
 
     api_settings_show();
+}
+
+/**
+ * Registration, on its own - not folded into the generic settings
+ * schema above. The real shape here (four modes including invite,
+ * a three-way approval, a rotatable secret URL that is a computed
+ * value rather than a stored one) doesn't fit that schema's own
+ * select/bool/secret vocabulary without either lying about the type
+ * or leaving invite mode unreachable, so this is a dedicated pair of
+ * endpoints instead, the same way auth methods and hardware sync
+ * already got their own rather than being squeezed into something
+ * more generic that doesn't actually describe them.
+ */
+function api_registration_show(): void
+{
+    api_require_admin();
+    $mode = registration_mode();
+    api_ok([
+        'mode'               => $mode,
+        'approval'           => registration_approval(),
+        'mail_enabled'       => mail_enabled(),
+        'mail_verified'      => mail_verified(),
+        'secret_url'         => $mode === 'secret' ? registration_secret_url() : null,
+    ]);
+}
+
+function api_registration_update(): void
+{
+    api_require_admin();
+    $in = api_body();
+
+    if (!empty($in['rotate_secret'])) {
+        // Its own action, not a side effect of a mode/approval save -
+        // the same reasoning the real app's own settings page gives:
+        // a secret that changes every time somebody saves the page is
+        // a secret nobody can hand out.
+        registration_secret_rotate();
+        api_ok(['mode' => registration_mode(), 'approval' => registration_approval(),
+                'mail_enabled' => mail_enabled(), 'mail_verified' => mail_verified(),
+                'secret_url' => registration_secret_url()]);
+        return;
+    }
+
+    $mode = (string) ($in['mode'] ?? registration_mode());
+    if (!in_array($mode, REGISTRATION_MODES, true)) {
+        api_error('validation_failed', 'That is not a real registration mode.', 422, ['mode' => 'Must be closed, public, secret, or invite.']);
+    }
+    // A mode that cannot work is not a mode - invitations go out by
+    // email, so choosing that without a relay working would be a
+    // sign-up route nobody can ever reach, refused here rather than
+    // discovered by the first person who tries to invite somebody.
+    $blocked = registration_mode_blocked($mode);
+    if ($blocked !== null) {
+        api_error('validation_failed', $blocked, 422, ['mode' => $blocked]);
+    }
+    set_setting('registration_mode', $mode);
+
+    $approval = (string) ($in['approval'] ?? registration_approval());
+    if (in_array($approval, ['auto', 'email', 'admin'], true)) {
+        set_setting('registration_approval', $approval);
+    }
+
+    api_ok([
+        'mode'          => registration_mode(),
+        'approval'      => registration_approval(),
+        'mail_enabled'  => mail_enabled(),
+        'mail_verified' => mail_verified(),
+        'secret_url'    => registration_mode() === 'secret' ? registration_secret_url() : null,
+    ]);
 }
 
 // ---------------------------------------------------------------------------
