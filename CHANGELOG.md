@@ -1,5 +1,145 @@
 # Changelog
 
+**Amiga 2000's Zorro slot code fixed - a real, separate data bug from last round's PCI/interface
+one - and a genuine correction to last round's own Sound Blaster 16 change, which turned out to
+be wrong.**
+
+Prompted by a report that Zorro slots should be named "zorro": the Amiga 2000's own slot list in
+`structure/hardware_machines.json` declared `"code": "z2"`, which matches nothing in the
+vocabulary - the file only ever defined a single, generic `zorro` entry, not `z2`/`z3` variants.
+Corrected the machine's own slot code to `zorro` to match what the vocabulary actually offers.
+Searched the rest of the structure files directly for any `z3` or similar and found none; if one
+exists on a live, deployed instance it isn't in this checkout to find.
+
+**The correction**: last round changed the Sound Blaster 16's own `interface` from `isa` to
+`isa16`, reasoning that `isa` didn't exist in the vocabulary. That reasoning was built on an
+incomplete search - `structure/hardware_specifications.json` genuinely has *two* separate `isa`
+entries, one for Amiga and a distinct one for PC, which an earlier filter missed entirely. The
+original `isa` value was already correct; last round's own fix introduced a new mismatch rather
+than closing the real one. Reverted directly, verified by reading the actual database row
+afterward rather than trusting the file alone.
+
+The one gap that was genuinely real and is now genuinely fixed, unchanged from last round: `pci`
+never existed in the vocabulary for PC at all, and the 3dfx Voodoo2 declares it as its own
+interface. That addition stands correctly.
+
+Proved live: read the real database rows directly for both the Amiga 2000's own slots and the
+two PC peripherals' own interfaces, confirming Zorro and PCI now resolve to real vocabulary
+entries and ISA resolves to the entry it always should have. Full suite: back to 1 of 25, the
+single known baseline - confirmed after the correction, not before it.
+
+This package is **build 56**.
+
+**Simplified the more specific bus/slot variants in the structure template data, matching a real
+suggestion rather than last round's own more conservative fix - `zorro` in place of separate
+Zorro II and III entries, `isa` in place of `isa16`, on the reasoning that a card cataloguer
+usually wants to say which bus a card uses, not which exact generation of it.**
+
+Checked what would actually be affected before simplifying anything: only two real peripherals in
+the whole template set reference these codes at all - the two Zorro-slot cards use `z2`, and the
+Sound Blaster 16 used the just-corrected `isa16`. Zorro III (`z3`) was declared in the vocabulary
+but never referenced by a single real card, so removing it loses nothing that was ever reachable.
+
+Worth naming honestly: Zorro II and Zorro III are genuinely, physically different buses -
+Zorro III is a real superset with different signalling, and a card built for one won't
+necessarily work in the other's slot. Collapsing them into one `zorro` entry is a real,
+acknowledged simplification, not a technical correction the way last round's `pci`/`isa16` fix
+was. Made because it was asked for directly, not because the distinction was wrong to draw.
+
+Proved live: confirmed the template's own hardware_vocab rows carry the new `zorro`/`isa` codes
+correctly, scoped to the right platforms; confirmed both Zorro peripherals and the Sound Blaster
+16 now declare the simplified codes and match the vocabulary with nothing left mismatched.
+
+A genuine infrastructure interruption during this round's own testing, unrelated to any of the
+above: the local database process was reaped between separate tool invocations partway through
+verification, understood and worked around rather than mistaken for a code problem - confirmed
+by checking the process table and the connection error directly rather than guessing, then
+restarting cleanly and re-running the full suite atomically in one call.
+
+Full suite: back to 1 of 25, the single known pre-existing metadata baseline - confirmed after
+the clean restart, not assumed from the earlier interrupted run.
+
+This package is **build 56**.
+
+**The open test failure from several rounds back, finally traced to its actual cause and fixed -
+a genuine, pre-existing data bug in the structure template files themselves, unrelated to any
+code touched this session.**
+
+Investigated properly this time rather than leaving it flagged: read the exact two hardware
+models the failing assertion named - a 3dfx Voodoo2 and a Sound Blaster 16, both real PC
+expansion cards in `structure/hardware_peripherals.json` - and checked their own declared
+`interface` values directly against what `structure/hardware_specifications.json`, the
+vocabulary those values are supposed to match, actually defines for the PC platform. It defines
+`isa16` and `vlb`. The Sound Blaster 16 declared `isa` - close, but not the same string - and the
+Voodoo2 declared `pci`, which didn't exist in the vocabulary at all.
+
+Two real, narrow fixes: added `pci` as a genuine new PC bus type in
+`hardware_specifications.json`, and corrected the Sound Blaster 16's own `interface` from `isa`
+to `isa16` to match the bus type that already existed. Nothing invented - the Voodoo2 is a real
+PCI card and the vocabulary simply never had an entry for the bus it uses; the Sound Blaster 16
+is a real ISA card and the existing `isa16` entry already named the bus correctly, just under a
+name the peripheral's own record didn't match.
+
+This also explains why the failure never surfaced consistently in this session's own many
+earlier baseline runs: it was always there, waiting on both of these two specific hardware
+examples actually being seeded in the same run before it would show up.
+
+Proved live: full suite back to 1 of 25, the single known pre-existing metadata baseline -
+confirmed directly, not assumed from the size of the fix.
+
+This package is **build 55**.
+
+**`seed_library_software_models()` - the packaging templates the example software titles have
+been looking for by slug since they were first written, never created anywhere.** Checked the
+existing example function directly rather than assuming what was missing: it already does
+`SELECT id FROM software_models WHERE ... slug = ?` for five real slugs -
+amiga-boxed-game-disk, pc-dos-floppy-bigbox, pc-win9x-cdrom-jewel, c64-cassette-game,
+amiga-boxed-application - and has been matching against nothing since the video and music
+examples were added, every title going in with a null model_id nobody had reason to notice.
+
+The structure template file for this - `structure/software_models.json` - genuinely exists and
+is genuinely empty; there was never a template set to copy from the way hardware has one. Five
+small, hand-written models instead, matching exactly what the existing examples already ask for
+by name.
+
+Deliberately not counted toward `seed_library_examples()`'s own return value: these are starter
+structure, the same category `seed_library_hardware()` already occupies outside that count, not
+"example entries" in their own right. Counting them would have quietly inflated "14 example
+entries" to 19 for adding five packaging templates nobody asked to see as entries.
+
+`category_id` left null on every one, on purpose - the schema's own comment on that column
+already gives the reason: a packaging shape like "PC floppy, big box" describes several genres
+at once, not one leaf of the tree.
+
+Proved live: confirmed software_models was genuinely empty before, five models present after;
+confirmed all six example titles now point at a real model rather than null, including Doom and
+Blake Stone correctly sharing the same "PC DOS, big box, floppy" model rather than each getting
+their own; confirmed running the seed again is safe - no duplicate models, same count.
+
+Full suite: the same two known failures as last round, unchanged.
+
+This package is **build 54**.
+
+**`kind` and `kind_label` added to `GET /items` and `GET /items/{id}` - a small, additive field
+neither response carried, needed for the client's own table column headers to show what the
+real app's own table already shows: game, application, machine, or peripheral, derived the same
+way the real page's own item_kind_label() already derives it.**
+
+Checked what the response already carried before adding anything: category and its role were
+already queryable in the underlying view, just never surfaced as a client-facing field of their
+own. Genuinely additive - nothing that reads this response today changes.
+
+Proved live: confirmed real software examples report correctly as "Game" or "Software" (the
+label this application uses for an application, distinct from the domain of the same name), and
+real hardware examples correctly as "Machine" or "Peripheral" - checked against the actual seeded
+data, not asserted from the code alone.
+
+`docs/openapi.yaml` updated in the same round. Full suite: the same two known failures as last
+round, unchanged - the pre-existing metadata baseline, and the still-open hardware interface
+question, neither touched by this round's work.
+
+This package is **build 53**.
+
 **A real regression from last round's own work, fixed and verified - and one separate, unresolved
 question flagged honestly rather than glossed over.**
 

@@ -1,15 +1,9 @@
 [
   {
-    "slug": "z2",
-    "name": "Zorro II",
+    "slug": "zorro",
+    "name": "Zorro",
     "platform": "amiga",
     "sort_order": 20
-  },
-  {
-    "slug": "z3",
-    "name": "Zorro III",
-    "platform": "amiga",
-    "sort_order": 30
   },
   {
     "slug": "vid",
@@ -90,8 +84,14 @@
     "sort_order": 110
   },
   {
-    "slug": "isa16",
-    "name": "ISA, 16-bit",
+    "slug": "pci",
+    "name": "PCI",
+    "platform": "pc",
+    "sort_order": 60
+  },
+  {
+    "slug": "isa",
+    "name": "ISA",
     "platform": "pc",
     "sort_order": 20
   },

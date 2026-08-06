@@ -509,6 +509,14 @@ function item_to_api(array $r, bool $withImages = false): array
             'name' => $r['category_name'],
             'slug' => $r['category_slug'],
         ],
+        // What kind of thing this is - a game, an application, a
+        // machine, a peripheral - the same real distinction the table
+        // view's own Kind column needs, not otherwise derivable from
+        // what this response already carries: it depends on the
+        // category's own role, inherited up the tree when a leaf
+        // hasn't declared one itself.
+        'kind'       => item_kind_label($r),
+        'kind_label' => ucfirst(item_kind_label($r)),
         // No 'genre' key. A genre is a category - "Games > Racing" is a leaf like any
         // other - so it is reported once, under 'category', with its full path.
         'developer' => $r['developer_id'] === null ? null : [

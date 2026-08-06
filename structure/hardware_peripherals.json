@@ -6,7 +6,7 @@
     "platform": "amiga",
     "type": "memory",
     "year": 1992,
-    "interface": "z2",
+    "interface": "zorro",
     "sort_order": 30,
     "notes": "Zorro II memory card. Autoconfiguring, so it works in any Zorro machine rather than one model - which is why it is here as the example of a card that fits several. The 2008 is a model number, not a year.",
     "compatible_models": [
@@ -45,7 +45,7 @@
     "type": "graphics-card",
     "year": 2019,
     "fits": "Zorro II and Zorro III machines; A500 via the ZZ9500CX adapter",
-    "interface": "z2",
+    "interface": "zorro",
     "notes": "Graphics, Ethernet and USB on one Zorro card, built on a Xilinx Zynq XC7Z020 \u2014 an FPGA and two ARM cores rather than a fixed graphics chip, so what it does is decided by firmware. Successor to the VA2000. Still made and still supported, which makes it an odd thing to find in a retro catalogue and exactly the kind of card a working Amiga has in it.",
     "sort_order": 70,
     "compatible_models": [

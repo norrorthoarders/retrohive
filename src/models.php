@@ -2476,6 +2476,12 @@ function seed_library_examples(int $libraryId): int
     // satisfied here by construction - one host, same platform, same library, and
     // a card cannot be its own parent.
     // The software side too, so a fresh install has both halves.
+    // Not counted toward $made: these are starter structure, the same
+    // category seed_library_hardware() already occupies outside this
+    // count, not "example entries" in their own right. Counting them
+    // here would have inflated "14 example entries" to 19 for adding
+    // five packaging templates nobody asked to see as entries.
+    seed_library_software_models($libraryId);
     $made += seed_library_software_examples($libraryId);
     $made += seed_library_video_examples($libraryId);
     $made += seed_library_music_examples($libraryId);
@@ -2508,6 +2514,48 @@ function seed_library_examples(int $libraryId): int
  *
  * Additive by title name, so a resync never produces a second Superfrog.
  */
+/**
+ * The software packaging templates the example titles themselves
+ * already look for by slug - amiga-boxed-game-disk, pc-dos-floppy-
+ * bigbox, and so on - never created anywhere. The starter structure
+ * copies these in for real libraries when structure.json has entries
+ * to offer; it never has for software, so seed_library_software_
+ * examples() has been quietly matching against nothing since it was
+ * written, and every title it makes has gone in with a null model_id.
+ * category_id is left null on purpose: a packaging shape like "PC
+ * floppy, big box" describes several genres at once, not one leaf of
+ * the tree, the same reasoning the schema's own comment on the column
+ * already gives.
+ */
+function seed_library_software_models(int $libraryId): int
+{
+    $made = 0;
+    foreach ([
+        ['slug' => 'amiga-boxed-game-disk',   'name' => 'Amiga, boxed, disk',      'platform' => 'amiga', 'media' => '3.5-inch disk'],
+        ['slug' => 'amiga-boxed-application', 'name' => 'Amiga, boxed, disk (application)', 'platform' => 'amiga', 'media' => '3.5-inch disk'],
+        ['slug' => 'pc-dos-floppy-bigbox',    'name' => 'PC DOS, big box, floppy', 'platform' => 'pc',    'media' => '3.5-inch disk'],
+        ['slug' => 'pc-win9x-cdrom-jewel',    'name' => 'PC Windows, jewel case, CD-ROM', 'platform' => 'pc', 'media' => 'CD-ROM'],
+        ['slug' => 'c64-cassette-game',       'name' => 'C64, cassette',           'platform' => 'c64',   'media' => 'cassette'],
+    ] as $m) {
+        if (one('SELECT id FROM software_models WHERE library_id = ? AND slug = ?', [$libraryId, $m['slug']]) !== null) {
+            continue;
+        }
+        $plat = one('SELECT id FROM platforms WHERE library_id = ? AND slug = ?', [$libraryId, $m['platform']]);
+        if ($plat === null) {
+            continue;
+        }
+        insert_row('software_models', [
+            'library_id'  => $libraryId,
+            'platform_id' => (int) $plat['id'],
+            'name'        => $m['name'],
+            'slug'        => $m['slug'],
+            'media'       => $m['media'],
+        ]);
+        $made++;
+    }
+    return $made;
+}
+
 function seed_library_software_examples(int $libraryId): int
 {
     $made = 0;

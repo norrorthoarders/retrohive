@@ -2826,6 +2826,13 @@ components:
         sort_title: { type: [string, "null"] }
         library: { $ref: "#/components/schemas/Library" }
         category: { $ref: "#/components/schemas/Ref" }
+        kind:
+          type: string
+          description: >-
+            game, software (meaning application), machine, or peripheral -
+            the category's own declared or inherited role. Empty string
+            when nothing above the leaf has ever said.
+        kind_label: { type: string, description: kind, capitalised - what a table column header shows. }
         genre: { oneOf: [{ $ref: "#/components/schemas/Ref" }, { type: "null" }] }
         developer: { oneOf: [{ $ref: "#/components/schemas/Ref" }, { type: "null" }] }
         publisher: { oneOf: [{ $ref: "#/components/schemas/Ref" }, { type: "null" }] }
