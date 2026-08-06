@@ -1580,9 +1580,16 @@ paths:
             per 2xx/3xx/4xx/5xx, by_source as [{source, count}] where
             source is a token's own declared platform or "web" for a
             session-based call, top_routes as the ten busiest
-            method+route pairs with call count and average time,
-            timeline as one zero-filled entry per hour for the last 24
-            real hours with requests and errors counted, and recent -
+            method+route pairs with call count, average time, and
+            max_ms (the single slowest call folded into the window -
+            an average alone can hide it), slow_routes as up to ten
+            method+route pairs sorted by average time descending
+            rather than call count, restricted to routes with at least
+            5 calls in the window so a single slow outlier can't
+            crowd out a route that's consistently slow, same shape as
+            top_routes, timeline as one zero-filled entry per hour for
+            the last 24 real hours with requests and errors counted,
+            and recent -
             window_minutes (180), bucket_minutes (5), sources (every
             source seen in the window), and timeline as one zero-filled
             entry per 5-minute bucket for the last 3 real hours, each

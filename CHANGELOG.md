@@ -1,5 +1,40 @@
 # Changelog
 
+**Two of the metrics an industry guide on API monitoring names as the ones aggregate-only stats
+hide - max latency alongside average, and a separate "slowest" view distinct from "busiest" -
+added to the request tracking built up over the last few rounds.**
+
+Checked what was actually applicable before adding anything: most of what a platform-team guide
+covers doesn't fit a single self-hosted instance with a handful of accounts - uptime SLAs, top
+customers by revenue, SDK version adoption, none of that describes this. Two genuinely did:
+"problematic slow endpoints may be hidden when looking only at aggregate latency" is a real gap
+this had - `top_routes` only ever reported an average, which hides a route that's fast 99 times
+and catastrophic once.
+
+`max_ms` added to `api_request_stats` - migration 004, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
+per this repo's own migration convention, tested against both a fresh install and a properly
+simulated existing instance missing it. The write path now tracks the slowest single call folded
+into each bucket via `GREATEST()` on the same upsert that already tracked the sum, at no added
+cost. `top_routes` reports it now; a new `slow_routes` array sorts by average time descending
+instead of call count, restricted to routes with at least 5 calls in the window specifically so
+one slow outlier can't crowd out a route that's consistently slow - the same "top customers"
+reasoning the guide gives for volume, applied here to latency instead.
+
+The second link sent alongside this - Eurostat's own API documentation - is genuinely about how
+to *query* their statistical data API, not about metrics an operator should track. Worth being
+direct about rather than pretending it informed anything here.
+
+Proved live: real traffic generated real, plausible max_ms values (checked directly against the
+average in the same row, confirming max is never less than average); confirmed a low-volume but
+genuinely slow call is correctly excluded from slow_routes by the 5-call floor; confirmed the
+full migration path - `doctor` catches a missing column on a properly simulated old instance,
+`up` genuinely applies it, `doctor` reports clean afterward - not just that the SQL runs, but
+that the tool's own status commands agree with reality before and after.
+
+`docs/openapi.yaml` updated. Full suite: still 1 of 25, unchanged.
+
+This package is **build 60**.
+
 **Five-minute request tracking, built on top of the hourly table already there - a new
 `api_request_stats_5m` table, written on every real request, and a `requests.recent` section
 added to `GET /admin/system-status`: a 36-bucket, 3-hour timeline at 5-minute resolution.**

@@ -1998,6 +1998,12 @@ CREATE TABLE IF NOT EXISTS api_request_stats (
   source        VARCHAR(20)  NOT NULL DEFAULT 'unknown',
   request_count INT UNSIGNED NOT NULL DEFAULT 0,
   total_ms      INT UNSIGNED NOT NULL DEFAULT 0,
+  -- The slowest single call folded into this bucket, not just the sum
+  -- averaging can hide - a bucket that's fast on average because 99
+  -- calls were instant and one took four seconds looks identical to a
+  -- bucket where all 100 took forty milliseconds, unless this is kept
+  -- alongside the total.
+  max_ms        INT UNSIGNED NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
   UNIQUE KEY uq_api_request_stats (bucket_hour, method, route, status_class, source),
   KEY idx_api_request_stats_hour (bucket_hour)

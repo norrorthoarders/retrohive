@@ -4498,9 +4498,23 @@ function api_admin_system_status(): void
     );
 
     $topRoutes = all(
-        'SELECT method, route, SUM(request_count) AS n, SUM(total_ms) AS total_ms
+        'SELECT method, route, SUM(request_count) AS n, SUM(total_ms) AS total_ms, MAX(max_ms) AS max_ms
            FROM api_request_stats WHERE bucket_hour >= ?
        GROUP BY method, route ORDER BY n DESC LIMIT 10', [$since]
+    );
+
+    // The busiest routes above answer "what does most of the traffic
+    // hit" - this answers a genuinely different question, "what's slow
+    // when it runs at all." A route with only a handful of calls but a
+    // real average worth knowing about would never surface in the
+    // volume-sorted list above; min_calls exists so one single slow
+    // outlier call doesn't crowd out routes that are consistently slow
+    // rather than occasionally spiked.
+    $slowRoutes = all(
+        'SELECT method, route, SUM(request_count) AS n, SUM(total_ms) AS total_ms, MAX(max_ms) AS max_ms
+           FROM api_request_stats WHERE bucket_hour >= ?
+       GROUP BY method, route HAVING SUM(request_count) >= 5
+       ORDER BY (SUM(total_ms) / SUM(request_count)) DESC LIMIT 10', [$since]
     );
 
     // One row per hour for the last 24, zero-filled where nothing was
@@ -4612,7 +4626,13 @@ function api_admin_system_status(): void
             'top_routes' => array_map(fn($r) => [
                 'method' => $r['method'], 'route' => $r['route'], 'count' => (int) $r['n'],
                 'avg_ms' => round((int) $r['total_ms'] / max(1, (int) $r['n']), 1),
+                'max_ms' => (int) $r['max_ms'],
             ], $topRoutes),
+            'slow_routes' => array_map(fn($r) => [
+                'method' => $r['method'], 'route' => $r['route'], 'count' => (int) $r['n'],
+                'avg_ms' => round((int) $r['total_ms'] / max(1, (int) $r['n']), 1),
+                'max_ms' => (int) $r['max_ms'],
+            ], $slowRoutes),
             'timeline' => $timeline,
             'recent' => [
                 // Not a general-purpose window like the one above -

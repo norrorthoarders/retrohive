@@ -1042,10 +1042,12 @@ function api_record_request_stat(string $method, string $pattern, int $statusCod
     $bucket = date('Y-m-d H:00:00');
 
     try {
-        q('INSERT INTO api_request_stats (bucket_hour, method, route, status_class, source, request_count, total_ms)
-           VALUES (?, ?, ?, ?, ?, 1, ?)
-           ON DUPLICATE KEY UPDATE request_count = request_count + 1, total_ms = total_ms + VALUES(total_ms)',
-          [$bucket, $method, mb_substr($route, 0, 120), $statusClass, $source, (int) round($durationMs)]);
+        q('INSERT INTO api_request_stats (bucket_hour, method, route, status_class, source, request_count, total_ms, max_ms)
+           VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+           ON DUPLICATE KEY UPDATE request_count = request_count + 1, total_ms = total_ms + VALUES(total_ms),
+                                   max_ms = GREATEST(max_ms, VALUES(max_ms))',
+          [$bucket, $method, mb_substr($route, 0, 120), $statusClass, $source,
+           (int) round($durationMs), (int) round($durationMs)]);
     } catch (\Throwable $e) {
         // Never let a stats write take an actual request down with it -
         // a table that isn't there yet on an instance mid-upgrade, or a
