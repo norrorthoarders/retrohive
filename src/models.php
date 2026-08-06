@@ -2845,12 +2845,10 @@ function seed_library_music_examples(int $libraryId): int
 }
 
 /**
- * A second, shared library, so a fresh install shows what more than one looks like.
- *
- * The personal library gets the Amigas. This one gets machines that are not in there,
- * because two libraries holding the same four entries demonstrates nothing: the point
- * being made is that each library has its own makers, platforms and models, and that
- * is only visible when they differ.
+ * A second, shared library - the place examples live, so the personal
+ * library a fresh install creates stays genuinely empty and waiting for
+ * somebody's own collection, not pre-filled with entries that are not
+ * theirs before they have added a single real one.
  *
  * Returns the new library's id, or 0 if there was already a shared one - this runs
  * from the installer and must not add a second on a re-run.
@@ -2892,29 +2890,16 @@ function seed_shared_example_library(int $ownerId): int
       [$libraryId, $ownerId, ACCESS_OWNER, $ownerId]);
     $GLOBALS['__membership_cache'] = [];
 
-    // Its own copies of everything, like any library.
+    // The same cross-domain examples the personal library used to get
+    // instead - hardware, software, video, and music, not the three
+    // hand-picked machines this used to seed on its own. Examples belong
+    // somewhere that plainly says "this is somebody else's, edit or
+    // delete freely" rather than the one shelf a person is promised as
+    // their own; this library exists to be that place, so it is where
+    // they go now, not scattered across both.
     seed_library_hardware($libraryId);
+    seed_library_examples($libraryId);
 
-    // Machines the personal library does not have, so the two shelves plainly differ.
-    $wanted = ['sms-console' => 'Sega Master System', 'game-boy-dmg' => 'Game Boy',
-               'pc-486' => 'Generic 486 PC'];
-    $made = 0;
-    foreach ($wanted as $slug => $title) {
-        $model = one('SELECT id, platform_id, category_id FROM hardware_models
-                       WHERE library_id = ? AND slug = ?', [$libraryId, $slug]);
-        if ($model === null || $model['platform_id'] === null) {
-            continue;
-        }
-        insert_row('items', [
-            'library_id'  => $libraryId,
-            'platform_id' => (int) $model['platform_id'],
-            'category_id' => (int) $model['category_id'],
-            'model_id'    => (int) $model['id'],
-            'title'       => $title,
-            'status'      => 'owned',
-        ]);
-        $made++;
-    }
     return $libraryId;
 }
 

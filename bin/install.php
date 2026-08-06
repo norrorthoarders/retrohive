@@ -641,8 +641,15 @@ if ($a['install']['deploy'] !== 'keep') {
         $copied = seed_library_hardware($libId);
         say(sprintf('Copied into the library: %d machines', $copied));
         if ($a['install']['examples']) {
-            seed_library_examples($libId);
-            say('Example entries added');
+            // A second, shared library, not the personal one - the same
+            // move the web installer already makes: somebody's own shelf
+            // should be waiting for their own collection, not pre-filled
+            // with entries that are not theirs.
+            $sharedId = seed_shared_example_library((int) $user['id']);
+            if ($sharedId > 0) {
+                say(sprintf('Shared example library created with %d entries of its own',
+                    (int) scalar('SELECT COUNT(*) FROM items WHERE library_id = ?', [$sharedId])));
+            }
         }
     }
 }

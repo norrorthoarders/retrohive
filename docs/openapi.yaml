@@ -1065,6 +1065,73 @@ paths:
       summary: Same as PATCH
       responses: { "200": { description: Saved } }
 
+  /libraries/{id}/structure-status:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Libraries]
+      summary: What this library holds, against what there is to copy
+      description: >-
+        The same per-file comparison the real edit page's own resync panel
+        shows - available count, this library's own count, and whether it
+        is behind.
+      responses:
+        "200": { description: OK }
+        "403": { description: Only an owner can change that library }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/example-library:
+    post:
+      tags: [Admin]
+      summary: Create a shared example library
+      description: >-
+        A client for the same seed_shared_example_library() both installers
+        already call at install time, made reachable afterward for an
+        instance that never had one. Never touches a personal library - a
+        real, separate library called "The club shelf" is created instead,
+        with examples across hardware, software, video, and music.
+        Idempotent by design, matching both installers' own reliance on
+        it: an instance that already has any shared library is told so
+        rather than getting a second one.
+      responses:
+        "201": { description: Created }
+        "422": { description: A shared library already exists on this instance }
+
+  /libraries/{id}/populate:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Libraries]
+      summary: Add starter structure and/or examples to a library that already exists
+      description: >-
+        A client for the same library_populate() /libraries already calls at
+        creation, made reachable for a library that started out empty, and
+        carrying the same range of choices the real edit page's own resync
+        panel offers: which parts specifically (makers, platforms,
+        categories, hardware models, software models, environments,
+        locations - unticked by default, since a shelf layout is a guess
+        about somebody's house rather than reference data), whether to
+        refresh the templates from the repository first, and whether to
+        overwrite rows this library already edited rather than only add
+        what is missing. Already-added examples are not duplicated by
+        asking again.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh: { type: boolean }
+                with_structure: { type: boolean }
+                with_examples: { type: boolean }
+                overwrite: { type: boolean }
+                parts:
+                  type: array
+                  items: { type: string, enum: [makers, credit_roles, platforms, categories, hardware_models, software_models, environments, locations] }
+      responses:
+        "200": { description: "meta.note describes what was actually done" }
+        "403": { description: Only an owner can change that library }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { description: Nothing was asked for - no refresh, structure, or examples }
+
   /libraries/{id}/members:
     parameters: [{ $ref: "#/components/parameters/Id" }]
     get:
@@ -1302,6 +1369,30 @@ paths:
       responses:
         "204": { description: Removed }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/update:
+    get:
+      tags: [Admin]
+      summary: Software update status
+      description: >-
+        Derived, read-only status against a real release feed - not a
+        stored setting, so not part of /admin/settings. Auto-checks at
+        most once a day on request, the same staleness rule the real
+        settings page's own "updates" tab already applies on load.
+      responses:
+        "200":
+          description: >-
+            current_version, latest_version (null if never successfully
+            checked), update_available, release_url, checked_at, and
+            error (the reason the last check failed, if it did).
+
+  /admin/update/check:
+    post:
+      tags: [Admin]
+      summary: Check for an update right now
+      description: Forces a real check against the release feed, ignoring the daily staleness rule.
+      responses:
+        "200": { description: Same shape as GET /admin/update, reflecting the fresh check }
 
   /platforms:
     get:

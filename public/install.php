@@ -1839,22 +1839,12 @@ if ($running) {
                             $switched);
                     }
 
-                    // A couple of example entries, so the first page somebody
-                    // sees is not empty. Only where they asked for structure data:
-                    // "start empty" means empty.
-                    // Asked for separately. Reference data is scaffolding you want on
-                    // any instance; examples are somebody else's collection, and the
-                    // only way to decline them used to be declining the platforms too.
+                    // Examples go to a second, shared library rather than the
+                    // personal one - somebody's first sight of their own shelf
+                    // should be the shelf, waiting for their own collection,
+                    // not entries that are not theirs. "start empty" for that
+                    // one covers both structure and examples together.
                     if ($want !== 'none' && !empty($plan['examples'])) {
-                        $ex = seed_library_examples($libId);
-                        if ($ex > 0) {
-                            $log[] = sprintf('%d example entries added, to edit or delete', $ex);
-                        }
-
-                        // And a second, shared one. A single library shows nothing
-                        // about what a library is for; two, holding different
-                        // machines, show that each has its own makers, platforms and
-                        // models.
                         $sharedId = seed_shared_example_library($adminId);
                         if ($sharedId > 0) {
                             $log[] = sprintf(

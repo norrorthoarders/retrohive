@@ -3508,6 +3508,134 @@ function api_libraries_update(int $id): void
 }
 
 /**
+ * Add starter structure and/or examples to a library that already
+ * exists - a client for the same library_populate() /libraries already
+ * calls at creation, made reachable for a library that started out
+ * empty. An install that answered "no" to examples, or one made before
+ * this client's own create screen offered the choice at all, had no way
+ * back to that decision short of reinstalling. This is that way back.
+ */
+/**
+ * What this library holds against what there is to copy - the same
+ * comparison the real edit page's own resync panel shows, read here
+ * rather than assumed from the counts alone: a client offering the
+ * choice needs to say what each part is worth ticking, not just that it
+ * exists.
+ */
+function api_libraries_structure_status(int $id): void
+{
+    api_require_write();
+    if (!can_own_library($id)) {
+        api_error('forbidden', 'Only an owner can change that library.', 403);
+    }
+    if (one('SELECT id FROM libraries WHERE id = ?', [$id]) === null) {
+        api_error('not_found', 'No library with that id.', 404);
+    }
+
+    $available = structure_row_counts();
+    $mine      = structure_row_counts($id);
+    $mineByFile = [];
+    foreach ($mine as $r) {
+        $mineByFile[$r['file']] = (int) $r['n'];
+    }
+
+    api_ok(array_map(static function (array $r) use ($mineByFile): array {
+        $n = $mineByFile[$r['file']] ?? 0;
+        return [
+            'key'       => $r['file'],
+            'holds'     => $r['holds'],
+            'available' => (int) $r['n'],
+            'mine'      => $n,
+            'behind'    => $n < (int) $r['n'],
+        ];
+    }, $available));
+}
+
+/**
+ * Add starter structure and/or examples to a library that already
+ * exists - a client for the same library_populate() /libraries already
+ * calls at creation, made reachable for a library that started out
+ * empty, and now carrying the full range of choices the real edit
+ * page's own resync panel offers rather than the simpler all-or-nothing
+ * version this endpoint first shipped with: which parts specifically
+ * (makers, platforms, categories, hardware models, software models,
+ * environments, locations - a location layout is a guess about
+ * somebody's house and stays unticked by default, same as the real
+ * form), whether to refresh from the repository first, and whether to
+ * overwrite rows this library already edited rather than only add what
+ * is missing.
+ */
+function api_libraries_populate(int $id): void
+{
+    api_require_write();
+    if (!can_own_library($id)) {
+        api_error('forbidden', 'Only an owner can change that library.', 403);
+    }
+    if (one('SELECT id FROM libraries WHERE id = ?', [$id]) === null) {
+        api_error('not_found', 'No library with that id.', 404);
+    }
+
+    $in = api_body();
+    $wantStructure = !empty($in['with_structure']);
+    $wantExamples  = !empty($in['with_examples']);
+    $wantRefresh   = !empty($in['refresh']);
+    if (!$wantStructure && !$wantExamples && !$wantRefresh) {
+        api_error('validation_failed', 'Ask for a refresh, structure, examples, or some mix.', 422);
+    }
+
+    $parts = null;
+    if (isset($in['parts']) && is_array($in['parts'])) {
+        $known = array_keys(seed_parts_all());
+        $parts = array_fill_keys($known, false);
+        foreach ($in['parts'] as $key) {
+            if (in_array((string) $key, $known, true)) {
+                $parts[(string) $key] = true;
+            }
+        }
+    }
+
+    $note = library_populate($id, [
+        'refresh'   => $wantRefresh,
+        'structure' => $wantStructure,
+        'examples'  => $wantExamples,
+        'overwrite' => !empty($in['overwrite']),
+        'parts'     => $parts,
+    ]);
+
+    $row = one('SELECT l.*, 0 AS n FROM libraries l WHERE l.id = ?', [$id]);
+    api_ok(library_to_api($row), ['note' => $note]);
+}
+
+/**
+ * A shared example library - a client for the same
+ * seed_shared_example_library() both installers already call, made
+ * reachable after installation for an instance that started without
+ * one, whether because the person answered no, used an older installer
+ * that never asked, or is bringing up a client against an instance
+ * install.php cannot be re-run on. Never touches a personal library:
+ * that is the whole reason this exists rather than pointing somebody
+ * at the populate endpoint instead. Idempotent, the same way the
+ * installers rely on it being: an instance that already has a shared
+ * library gets told so rather than a second one.
+ */
+function api_admin_example_library_create(): void
+{
+    [$me] = api_require_admin();
+
+    if ((int) scalar("SELECT COUNT(*) FROM libraries WHERE kind = 'shared'") > 0) {
+        api_error('validation_failed', 'A shared library already exists on this instance.', 422);
+    }
+
+    $libId = seed_shared_example_library((int) $me['id']);
+    if ($libId <= 0) {
+        api_error('validation_failed', 'Could not create it - a shared library already exists.', 422);
+    }
+
+    $row = one('SELECT l.*, 0 AS n FROM libraries l WHERE l.id = ?', [$libId]);
+    api_ok(library_to_api($row), null, 201);
+}
+
+/**
  * Members - a client for the same three actions the real edit page's own
  * save handler already offers (invite, change access, uninvite), not new
  * ones. Owner or Library Admin, not owner alone: managing who is on the
@@ -4014,6 +4142,48 @@ function api_auth_group_maps_delete(int $methodId, int $mapId): void
     }
     delete_row('auth_group_map', $mapId);
     api_no_content();
+}
+
+/**
+ * Software updates - not a stored setting, so not part of
+ * settings_schema(): this is derived, read-only status, checked against
+ * a real release feed rather than kept as configuration. Auto-checked
+ * once a day, the same staleness rule the real settings page's own
+ * "updates" tab already applies on load, so a client asking for this
+ * does not have to know that rule itself.
+ */
+function api_admin_update_show(): void
+{
+    api_require_admin();
+
+    $lastCheck = (string) setting('update_checked_at', '');
+    if ($lastCheck === '' || strtotime($lastCheck) < time() - 86400) {
+        check_for_update();
+    }
+
+    api_admin_update_status();
+}
+
+/** Force a check right now, regardless of the daily staleness rule. */
+function api_admin_update_check(): void
+{
+    api_require_admin();
+    check_for_update();
+    api_admin_update_status();
+}
+
+function api_admin_update_status(): void
+{
+    $latest = setting('update_latest', '');
+    api_ok([
+        'current_version' => APP_VERSION,
+        'latest_version'  => $latest !== '' ? $latest : null,
+        'update_available' => $latest !== '' && version_compare($latest, APP_VERSION, '>'),
+        'release_url'     => setting('update_url', '') ?: null,
+        'checked_at'      => setting('update_checked_at', '') !== ''
+            ? api_datetime(setting('update_checked_at', '')) : null,
+        'error'           => setting('update_error', '') ?: null,
+    ]);
 }
 
 /**

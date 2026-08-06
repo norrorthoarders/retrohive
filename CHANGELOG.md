@@ -1,5 +1,123 @@
 # Changelog
 
+**`POST /admin/example-library` - a client for the same `seed_shared_example_library()` both
+installers already call, made reachable after installation.**
+
+**A correction first, not just a feature**: the previous exchange claimed a real inconsistency
+between the two installers - the CLI one putting examples directly into a person's own library,
+the web one keeping them separate. That claim was wrong. Checked the actual current state of
+both files directly rather than trusting an earlier grep from several rounds back, and
+`bin/install.php` already calls `seed_shared_example_library()`, the same as the web installer -
+a personal library never gets examples at install time from either one. There was nothing to fix
+there, and saying otherwise would have meant "fixing" working code. What was genuinely missing
+was a way to create that separate library *after* installation, for an instance that answered no
+at the time, used an older installer that never asked, or is being administered by a client that
+cannot re-run install.php at all.
+
+Never touches a personal library - that's the entire reason this exists as its own endpoint
+rather than a checkbox on `/libraries/{id}/populate`, which does operate on whatever library id
+is handed to it. Idempotent, the same way both installers already rely on it being: a second call
+is told a shared library already exists rather than creating a duplicate.
+
+Proved live: confirmed no shared library existed first; created one and confirmed the personal
+library's own item count stayed at zero throughout; confirmed the new library carries real
+examples across all four domains, the same 14 entries used everywhere else this session; confirmed
+a second attempt is correctly refused rather than producing a second library.
+
+`docs/openapi.yaml` updated in the same round. Full suite: still 1 of 25, unchanged.
+
+This package is **build 46**.
+
+**`GET /libraries/{id}/structure-status` and a rebuilt `POST /libraries/{id}/populate` - the full
+resync feature the real edit page has always offered, not the simplified version this API shipped
+with two rounds ago.** Checked against the real template directly rather than assumed complete:
+the original version offered exactly two switches, structure and examples. The real page offers
+seven separate parts (makers, platforms, category trees, hardware models, software models,
+environments, locations), a live refresh from the repository first, and an overwrite option for
+replacing rows the library already edited - none of which the simplified version could ask for at
+all.
+
+The new status endpoint surfaces the same per-file comparison the real page's own table shows -
+available count, this library's own count, whether it's behind - so a client can show the same
+picture before asking what to copy.
+
+**A real bug caught immediately, not shipped**: the first draft of the status endpoint assumed
+`structure_row_counts()` returned plain numeric tuples: it returns associative rows keyed `file`/
+`holds`/`n`. Caught by testing the endpoint directly and reading the actual PHP warnings it threw
+rather than trusting the code once it passed lint - fixed before this ever reached the client.
+
+Proved live: the comparison table returns clean, correctly-labelled data with the right counts and
+behind-flags; a sync naming only specific parts copied exactly those and genuinely skipped
+locations, left unticked by default the same way the real form leaves it; the refresh-only path
+made a real attempt against the actual repository, confirmed by its own flash message rather than
+assumed to have run.
+
+`docs/openapi.yaml` updated in the same round. Full suite: still 1 of 25, unchanged.
+
+This package is **build 45**.
+
+**Examples now go only to a second, shared library - never into the personal one a fresh
+install creates.** A real design change, not a bug fix: the personal library a new account is
+promised as their own used to arrive pre-filled with entries that were never theirs, before
+they'd added a single real one of their own. `seed_shared_example_library()` - already built,
+already used by the web installer for exactly this purpose - now calls the same
+`seed_library_examples()` that used to run on the personal library instead of its own narrower,
+three-machine hardcoded set: the full cross-domain examples (hardware, software, video, music)
+live in "The club shelf" now, not scattered across both libraries at once the way the web
+installer used to leave them.
+
+The CLI installer (`bin/install.php`) never had the shared-library concept at all - only the web
+installer did. Brought the two into parity: the same move, the same function call, so an
+unattended install and an interactive one now leave an instance in the same shape.
+
+Proved live, replicating each installer's own real sequence rather than a synthetic one: personal
+library structure-only, zero items, confirmed for both the web and CLI paths; the shared library
+holding the full four-domain example set each time; the shared library still correctly
+unpublished, the existing safety default untouched by any of this.
+
+Full suite: still 1 of 25 - including the suite that calls `seed_shared_example_library()`
+directly, still passing against its new behaviour.
+
+This package is **build 45**.
+
+**`POST /libraries/{id}/populate` - the way back to a choice an install already made, without
+reinstalling.** Investigated a report of empty browse pages properly rather than assumed: the
+installer genuinely, correctly respects an explicit "add examples?" choice at install time -
+this was never a bug, and an install that answered no, or was made before that question existed,
+correctly ended up with an empty library. What was missing was any way back to that decision
+afterward. A client for the same `library_populate()` `/libraries` already calls at creation,
+made reachable for a library that already exists rather than only the moment it's made.
+Already-added examples aren't duplicated by asking twice - the same additive-by-name rule
+`seed_library_examples()` has always had.
+
+Proved live against the exact reported scenario: confirmed a real personal library was genuinely
+empty first, called the new endpoint with both flags, confirmed all four domains landed in that
+same library with no reinstall involved, then called it again and confirmed the second call
+correctly did nothing further rather than duplicating anything.
+
+`docs/openapi.yaml` updated in the same round. Full suite: still 1 of 25, unchanged.
+
+This package is **build 44**.
+
+**`GET /admin/update` and `POST /admin/update/check` - real, derived status against the release
+feed, requested directly rather than assumed missing.** Not a stored setting, so not part of
+`settings_schema()` - the reason the real settings page's own "updates" tab was never covered by
+the earlier schema-driven client work. Auto-checks at most once a day on a plain GET, the same
+staleness rule the real page's own load-time check already applied; a dedicated POST forces a
+fresh check regardless.
+
+Proved live against the real feed, not a mock: the first request genuinely called GitHub's API
+and hit its own rate limit, which the engine's own `check_for_update()` correctly reported as a
+real, readable error rather than a raw HTTP failure - the error path proven with an actual
+response, not simulated.
+
+**Shipped without a matching `docs/openapi.yaml` entry, caught by this repo's own suite the same
+way the same class of gap has been caught several times this session, and fixed within the same
+round.** Full suite: back to 1 of 25, the one pre-existing metadata failure unrelated to any of
+this.
+
+This package is **build 43**.
+
 **Directory authentication configuration and group mapping - the piece flagged as "genuinely
 needs a real LDAP server," reconsidered and built where it turned out to be wrong.** Reading the
 real save handler properly, rather than assuming from its size, showed something metadata
