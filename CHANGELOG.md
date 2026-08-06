@@ -1,5 +1,115 @@
 # Changelog
 
+**Five-minute request tracking, built on top of the hourly table already there - a new
+`api_request_stats_5m` table, written on every real request, and a `requests.recent` section
+added to `GET /admin/system-status`: a 36-bucket, 3-hour timeline at 5-minute resolution.**
+
+By source rather than by route on purpose: at this resolution a route-and-status breakdown would
+be mostly empty cells across most buckets, where "how much traffic, from where, right now" is a
+question five minutes can answer well. Which endpoint stays the hourly timeline's own question,
+where an hour's worth of calls per route is enough to mean something. Kept for six hours rather
+than the hourly table's thirty days, on purpose - a bucket a 3-hour chart could never show again
+is a row with nothing left to answer.
+
+**A real bug caught before shipping, not after**: `floor()` in PHP returns a float, and this
+codebase's own strict typing means `date()`'s second argument has to be `int|null`. That crashed
+the very first live test - right after a successful login, the stats-recording code (which runs
+after the response is already built) threw a fatal error, in all three places the same rounding
+pattern had been written. Found from the actual crash trace rather than guessed at, fixed in all
+three places, confirmed in isolation before re-running the full live test and watching real
+traffic land correctly with the right source breakdown.
+
+**A real, separate gap closed along the way**: `api_prune_request_stats()`, the hourly table's own
+prune function, existed since the round the table was built and was never called from anywhere -
+found while wiring up the new 5-minute one's own prune. Both are now a real maintenance job,
+`stale_request_stats`, matching the existing check/repair pattern this file already uses
+throughout, confirmed present on the real maintenance page.
+
+`docs/openapi.yaml` updated with the new `requests.recent` shape. Full suite: still 1 of 25,
+unchanged.
+
+This package is **build 59**.
+
+**`table_counts` added to `GET /admin/system-status`'s own database section - a row count for
+the ten tables that actually grow with real use, rather than all 54 an instance has.**
+
+Prompted by a request for more database usage stats: rather than adding a heavier, separate
+endpoint, extended what system-status already returns with the one thing it was missing - which
+tables are actually holding data, and how much. items, users, libraries, item_images, titles,
+hardware_models, software_models, companies, api_tokens, and logs - the ones whose size says
+something about how an instance is actually being used, not the structure tables that stay close
+to whatever size the starter set left them.
+
+Also investigated while looking into this, and worth being direct about: the request-per-hour
+tracking a graph would need - `api_request_stats`, with its own write path already wired into
+the real request dispatcher and a full read side in this same endpoint (totals, by-status,
+by-source, top routes, a 24-hour timeline) - already existed and was already working, from
+earlier in this session. Nothing new needed there; it's real, accumulated data.
+
+`docs/openapi.yaml` updated. Full suite: still 1 of 25, unchanged.
+
+This package is **build 58**.
+
+**Full user management API: `PATCH /admin/users/{id}` gained a real password field and a real
+`auth_method_id` field, and `DELETE /admin/users/{id}` is genuinely new.** Checked the real app's
+own account controller directly first rather than assuming what was missing: password reset and
+account deletion are both real, existing actions there. Directory reassignment is not - searched
+every use of `auth_method_id` across the whole codebase and found it only ever read or counted,
+never written by an administrator choosing to move an account between directories. That part is
+genuinely new, not a port.
+
+A real, self-caught bug along the way: the first version treated `null` as meaning "move to the
+local database" and tried to write it directly. `users.auth_method_id` is `NOT NULL DEFAULT 1` -
+there is no null state for it at all, "local" is simply whichever row `is_protected` marks as the
+one always there. Caught by the database's own constraint error on the very first live test,
+not assumed correct from the code, and fixed to resolve the protected method's real id instead.
+
+`api_user_row()` also gained a real `auth_method_id` field alongside the existing, deliberately
+named-not-numbered `signs_in_via` - added rather than replacing it, since a picker choosing which
+directory to reassign to needs a real value to submit, not just something to read.
+
+Proved live: created a real account and reset its password through the API, confirming the old
+password stopped working and the new one signed in successfully; reassigned it to a real
+directory and back to local again, the second direction only working correctly after the
+NOT NULL fix; attempted reassignment to a directory that doesn't exist and confirmed it was
+refused; deleted the account and confirmed it was genuinely gone from the database; confirmed an
+administrator still can't delete their own account, and the last active administrator still can't
+be removed by anyone.
+
+`docs/openapi.yaml` updated in the same round. Full suite: still 1 of 25, unchanged.
+
+This package is **build 57**.
+
+**The last item on the original outstanding list - admin-force library actions - built. Four new
+endpoints: disable, enable, force ownership, and purge, clients for the real app's own
+library_admin_save() actions of the same names, none of which had an API until now.**
+
+Checked the real handler directly for its exact permission logic rather than assuming owner-level
+access covers it: disabling is reachable by a library's own owner as well as an administrator -
+what an owner gets instead of deleting, when the instance doesn't allow that - while enabling,
+forcing ownership, and purging all stay administrator-only, deliberately separate from the
+owner-level `PATCH /libraries/{id}` this API already has, since an administrator acting on a
+library they may not even belong to needs different permission logic than an owner editing their
+own.
+
+Force ownership sets `owner_id` directly rather than offering and waiting for acceptance - right
+for two members handling a normal handover, wrong for an administrator untangling a library whose
+owner has already left, which would otherwise mean inviting an account and waiting on an
+acceptance that will never come just to fix one row. Purge requires the library's own name sent
+back exactly, ignores the instance's own libraries.deletable switch and whether the library still
+holds anything - the same "I know, delete it anyway" the real app's own admin delete offers,
+genuinely irreversible, the one action here that cannot be walked back.
+
+Proved live: created a real shared library and disabled, enabled, force-transferred its ownership
+to a real second account, and purged it entirely, each step through a real HTTP call, each result
+confirmed by reading the actual database row afterward rather than trusting a 200 status alone -
+including confirming a wrong confirmation name is genuinely refused before the correct one is
+proven to genuinely delete.
+
+`docs/openapi.yaml` updated in the same round. Full suite: still 1 of 25, unchanged.
+
+This package is **build 57**.
+
 **Amiga 2000's Zorro slot code fixed - a real, separate data bug from last round's PCI/interface
 one - and a genuine correction to last round's own Sound Blaster 16 change, which turned out to
 be wrong.**

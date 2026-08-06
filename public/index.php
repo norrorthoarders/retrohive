@@ -258,6 +258,7 @@ if (str_starts_with($path, '/api/')) {
         ['GET',    '#^/api/v1/admin/users$#',             fn() => api_users_index()],
         ['POST',   '#^/api/v1/admin/users$#',             fn() => api_users_create()],
         ['PATCH',  '#^/api/v1/admin/users/(\d+)$#',        fn($id) => api_users_update((int) $id)],
+        ['DELETE', '#^/api/v1/admin/users/(\d+)$#',        fn($id) => api_users_delete((int) $id)],
         ['GET',    '#^/api/v1/admin/users/(\d+)/access$#', fn($id) => api_user_access_show((int) $id)],
         ['PUT',    '#^/api/v1/admin/users/(\d+)/access$#', fn($id) => api_user_access_update((int) $id)],
         ['PATCH',  '#^/api/v1/admin/users/(\d+)/access$#', fn($id) => api_user_access_update((int) $id)],
@@ -295,6 +296,10 @@ if (str_starts_with($path, '/api/')) {
         ['GET',    '#^/api/v1/libraries/(\d+)/structure-status$#',
                                                             fn($id) => api_libraries_structure_status((int) $id)],
         ['POST',   '#^/api/v1/libraries/(\d+)/populate$#', fn($id) => api_libraries_populate((int) $id)],
+        ['POST',   '#^/api/v1/admin/libraries/(\d+)/disable$#', fn($id) => api_libraries_disable((int) $id)],
+        ['POST',   '#^/api/v1/admin/libraries/(\d+)/enable$#',  fn($id) => api_libraries_enable((int) $id)],
+        ['POST',   '#^/api/v1/admin/libraries/(\d+)/owner$#',   fn($id) => api_libraries_force_owner((int) $id)],
+        ['POST',   '#^/api/v1/admin/libraries/(\d+)/purge$#',   fn($id) => api_libraries_purge((int) $id)],
         ['POST',   '#^/api/v1/admin/example-library$#',    fn() => api_admin_example_library_create()],
         ['GET',    '#^/api/v1/libraries/(\d+)/members$#',  fn($id) => api_library_members_index((int) $id)],
         ['POST',   '#^/api/v1/libraries/(\d+)/members$#',  fn($id) => api_library_members_invite((int) $id)],
@@ -412,6 +417,24 @@ if (str_starts_with($path, '/api/')) {
         ['GET',    '#^/api/v1/sync$#',                    fn() => api_sync()],
     ];
 
+    // A shutdown function, not a wrapper around the handler call below:
+    // api_error() and api_ok() both end in exit(), so anything written
+    // to run *after* $handler(...$m) here would never run for an error
+    // response - which is most of what's worth counting. A shutdown
+    // function runs regardless of how the script ends, normal return or
+    // exit() alike, so http_response_code() is read once, correctly,
+    // no matter which path got there.
+    $requestStart = microtime(true);
+    $matchedPattern = null;
+    register_shutdown_function(function () use (&$matchedPattern, $method, $requestStart) {
+        if ($matchedPattern === null) {
+            return;
+        }
+        $status = http_response_code();
+        api_record_request_stat($method, $matchedPattern, $status === false ? 200 : $status,
+                                 (microtime(true) - $requestStart) * 1000);
+    });
+
     $pathMatched = [];
     foreach ($apiRoutes as [$verb, $pattern, $handler]) {
         if (preg_match($pattern, $path, $m)) {
@@ -419,6 +442,7 @@ if (str_starts_with($path, '/api/')) {
             if ($verb !== $method) {
                 continue;
             }
+            $matchedPattern = $pattern;
             array_shift($m);
             $handler(...$m);
             exit;

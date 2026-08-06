@@ -3579,6 +3579,132 @@ function api_libraries_update(int $id): void
  * choice needs to say what each part is worth ticking, not just that it
  * exists.
  */
+
+/**
+ * Admin-force library actions - disable/enable, forcing ownership onto
+ * another account, and purging one entirely. A client for the real
+ * library_admin_save()'s own four actions of that name, none of which
+ * had an API before now. Deliberately separate from the owner-level
+ * PATCH /libraries/{id} this client already uses: an administrator
+ * acting on a library they may not even be a member of needs different
+ * permission logic than an owner editing their own.
+ */
+function api_libraries_disable(int $id): void
+{
+    [$user] = api_require_write();
+    $lib = one('SELECT * FROM libraries WHERE id = ?', [$id]);
+    if ($lib === null) {
+        api_error('not_found', 'No such library.', 404);
+    }
+    if ((int) ($lib['is_personal'] ?? 0) === 1) {
+        api_error('forbidden', 'A personal shelf is not managed from here.', 403);
+    }
+    // Disabling is the owner's to do as well - what they get instead of
+    // deleting when the instance does not allow that. Enabling stays
+    // administrator-only: coming back is somebody else's decision,
+    // which is what makes disabling safe to offer an owner at all.
+    if (!is_library_owner($user, $id)) {
+        api_require_admin();
+    }
+    update_row('libraries', $id, ['is_active' => 0]);
+    log_security('library.disabled', sprintf('Library "%s" disabled', (string) $lib['name']),
+                 LOG_WARNING, ['library' => (string) $lib['slug']]);
+    api_ok(['id' => $id, 'is_active' => false]);
+}
+
+function api_libraries_enable(int $id): void
+{
+    api_require_admin();
+    $lib = one('SELECT * FROM libraries WHERE id = ?', [$id]);
+    if ($lib === null) {
+        api_error('not_found', 'No such library.', 404);
+    }
+    update_row('libraries', $id, ['is_active' => 1]);
+    log_security('library.enabled', sprintf('Library "%s" enabled', (string) $lib['name']),
+                 LOG_WARNING, ['library' => (string) $lib['slug']]);
+    api_ok(['id' => $id, 'is_active' => true]);
+}
+
+/**
+ * Hand a library to somebody, without asking them. The owner's own
+ * route to this is an offer that waits for acceptance; that is right
+ * between two members, and wrong for an administrator sorting out a
+ * library whose owner has left, waiting on an acceptance that will
+ * never come from an account that has to be invited and accept first.
+ * This sets owner_id directly and clears any offer in flight.
+ */
+function api_libraries_force_owner(int $id): void
+{
+    [$admin] = api_require_admin();
+    $lib = one('SELECT * FROM libraries WHERE id = ?', [$id]);
+    if ($lib === null) {
+        api_error('not_found', 'No such library.', 404);
+    }
+    if ((int) ($lib['is_personal'] ?? 0) === 1) {
+        api_error('forbidden', 'A personal shelf is not managed from here.', 403);
+    }
+
+    $in = api_body();
+    $newOwnerId = isset($in['user_id']) ? (int) $in['user_id'] : 0;
+    $account = $newOwnerId > 0 ? one('SELECT * FROM users WHERE id = ? AND is_active = 1', [$newOwnerId]) : null;
+    if ($account === null) {
+        api_error('validation_failed', 'Pick an active account to own it.', 422, ['user_id' => 'Required, must be active.']);
+    }
+
+    update_row('libraries', $id, [
+        'owner_id'         => (int) $account['id'],
+        'pending_owner_id' => null,
+        'pending_owner_at' => null,
+    ]);
+    q("INSERT INTO library_members (library_id, user_id, access, status, granted_by, granted_at)
+            VALUES (?, ?, 'owner', 'accepted', ?, NOW())
+       ON DUPLICATE KEY UPDATE access = 'owner', status = 'accepted'",
+      [$id, (int) $account['id'], (int) $admin['id']]);
+    $GLOBALS['__membership_cache'] = [];
+
+    log_security('library.owner_forced', sprintf('Library "%s" owner set to %s by an administrator',
+                 (string) $lib['name'], (string) $account['username']), LOG_WARNING, ['library' => (string) $lib['slug']]);
+
+    api_ok(['id' => $id, 'owner_id' => (int) $account['id'], 'owner_username' => $account['username']]);
+}
+
+/**
+ * Delete, forced - the administrator's version of the same button an
+ * owner has, ignoring the instance's own libraries.deletable switch and
+ * ignoring whether the library still holds anything. The library's own
+ * name has to be typed to confirm it, the one action here that cannot
+ * be walked back.
+ */
+function api_libraries_purge(int $id): void
+{
+    api_require_admin();
+    $lib = one('SELECT * FROM libraries WHERE id = ?', [$id]);
+    if ($lib === null) {
+        api_error('not_found', 'No such library.', 404);
+    }
+
+    $in = api_body();
+    $typed = trim((string) ($in['confirm_name'] ?? ''));
+    if ($typed !== (string) $lib['name']) {
+        api_error('validation_failed',
+                  'Send confirm_name matching the library\'s own name exactly. Nothing was changed.',
+                  422, ['confirm_name' => 'Must match the library name exactly.']);
+    }
+
+    $name = (string) $lib['name'];
+    $slug = (string) $lib['slug'];
+    [$ok, $message, $gone] = library_purge($id);
+    if (!$ok) {
+        api_error('forbidden', $message, 403);
+    }
+
+    log_security('library.purged', sprintf('Library "%s" deleted with %d entries, %d images and %d files',
+                 $name, $gone['entries'] ?? 0, $gone['images'] ?? 0, $gone['files'] ?? 0),
+                 LOG_WARNING, ['library' => $slug]);
+
+    api_ok(['name' => $name, 'gone' => $gone]);
+}
+
 function api_libraries_structure_status(int $id): void
 {
     api_require_write();
@@ -4332,6 +4458,16 @@ function api_admin_system_status(): void
            FROM information_schema.tables WHERE table_schema = DATABASE()"
     ) ?? [];
 
+    // A handful of the tables somebody administering an instance would
+    // actually want a count for, not all 54 - the ones that grow with
+    // real use rather than staying at the size the starter structure
+    // left them.
+    $tableCounts = [];
+    foreach (['items', 'users', 'libraries', 'item_images', 'titles', 'hardware_models',
+              'software_models', 'companies', 'logs', 'api_tokens'] as $t) {
+        $tableCounts[$t] = (int) scalar("SELECT COUNT(*) FROM `$t`");
+    }
+
     $diskPath  = APP_ROOT;
     $diskFree  = @disk_free_space($diskPath);
     $diskTotal = @disk_total_space($diskPath);
@@ -4339,6 +4475,90 @@ function api_admin_system_status(): void
     $load = function_exists('sys_getloadavg') ? sys_getloadavg() : null;
 
     $opcache = function_exists('opcache_get_status') ? @opcache_get_status(false) : false;
+
+    // Last 24 real hours of bucketed request data. Summed and grouped
+    // here rather than handed over as raw buckets, so a client draws a
+    // chart from numbers already shaped for one rather than reimplementing
+    // the same aggregation queries a second time.
+    $since = date('Y-m-d H:00:00', strtotime('-23 hours'));
+
+    $totals = one(
+        'SELECT SUM(request_count) AS total, SUM(total_ms) AS total_ms,
+                SUM(CASE WHEN status_class = "2xx" THEN request_count ELSE 0 END) AS ok2xx,
+                SUM(CASE WHEN status_class = "3xx" THEN request_count ELSE 0 END) AS ok3xx,
+                SUM(CASE WHEN status_class = "4xx" THEN request_count ELSE 0 END) AS err4xx,
+                SUM(CASE WHEN status_class = "5xx" THEN request_count ELSE 0 END) AS err5xx
+           FROM api_request_stats WHERE bucket_hour >= ?', [$since]
+    ) ?? [];
+    $totalRequests = (int) ($totals['total'] ?? 0);
+
+    $bySource = all(
+        'SELECT source, SUM(request_count) AS n FROM api_request_stats
+          WHERE bucket_hour >= ? GROUP BY source ORDER BY n DESC', [$since]
+    );
+
+    $topRoutes = all(
+        'SELECT method, route, SUM(request_count) AS n, SUM(total_ms) AS total_ms
+           FROM api_request_stats WHERE bucket_hour >= ?
+       GROUP BY method, route ORDER BY n DESC LIMIT 10', [$since]
+    );
+
+    // One row per hour for the last 24, zero-filled where nothing was
+    // recorded - a chart with a gap in it looks like the data went
+    // missing rather than that nothing happened that hour.
+    $hourly = [];
+    foreach (all(
+        'SELECT bucket_hour, SUM(request_count) AS n,
+                SUM(CASE WHEN status_class IN ("4xx","5xx") THEN request_count ELSE 0 END) AS errors
+           FROM api_request_stats WHERE bucket_hour >= ? GROUP BY bucket_hour', [$since]
+    ) as $row) {
+        $hourly[$row['bucket_hour']] = ['requests' => (int) $row['n'], 'errors' => (int) $row['errors']];
+    }
+    $timeline = [];
+    for ($h = 23; $h >= 0; $h--) {
+        $bucket = date('Y-m-d H:00:00', strtotime("-$h hours"));
+        $timeline[] = [
+            'hour'     => api_datetime($bucket),
+            'requests' => $hourly[$bucket]['requests'] ?? 0,
+            'errors'   => $hourly[$bucket]['errors'] ?? 0,
+        ];
+    }
+
+    // The last 3 real hours, five minutes at a time - close enough to
+    // watch traffic move rather than only ever seeing it a full hour
+    // after it happened. By source rather than by route: the question
+    // this resolution answers well is "how much traffic, from where,
+    // right now" - which endpoint stays the hourly timeline's own
+    // question, where an hour's worth of calls is enough per route to
+    // mean something.
+    $since5m = date('Y-m-d H:i:00', (int) (floor((strtotime('now') - 3 * 3600) / 300) * 300));
+    $recentRows = all(
+        'SELECT bucket_5m, source, status_class, SUM(request_count) AS n
+           FROM api_request_stats_5m WHERE bucket_5m >= ? GROUP BY bucket_5m, source, status_class',
+        [$since5m]
+    );
+    $recentBuckets = [];
+    $sourcesSeen = [];
+    foreach ($recentRows as $r) {
+        $b = $r['bucket_5m'];
+        $recentBuckets[$b]['total'] = ($recentBuckets[$b]['total'] ?? 0) + (int) $r['n'];
+        if (in_array($r['status_class'], ['4xx', '5xx'], true)) {
+            $recentBuckets[$b]['errors'] = ($recentBuckets[$b]['errors'] ?? 0) + (int) $r['n'];
+        }
+        $recentBuckets[$b]['by_source'][$r['source']] = ($recentBuckets[$b]['by_source'][$r['source']] ?? 0) + (int) $r['n'];
+        $sourcesSeen[$r['source']] = true;
+    }
+    $recentTimeline = [];
+    for ($m = 35; $m >= 0; $m--) {
+        $bucket = date('Y-m-d H:i:00', (int) (floor((strtotime('now') - $m * 300) / 300) * 300));
+        $row = $recentBuckets[$bucket] ?? ['total' => 0, 'errors' => 0, 'by_source' => []];
+        $recentTimeline[] = [
+            'bucket'    => api_datetime($bucket),
+            'requests'  => (int) $row['total'],
+            'errors'    => (int) ($row['errors'] ?? 0),
+            'by_source' => $row['by_source'] ?? [],
+        ];
+    }
 
     api_ok([
         'php' => [
@@ -4364,6 +4584,7 @@ function api_admin_system_status(): void
             'size_mb'    => isset($dbInfo['bytes']) && $dbInfo['bytes'] !== null ? round((float) $dbInfo['bytes'] / 1048576, 2) : null,
             'tables'     => isset($dbInfo['tables']) ? (int) $dbInfo['tables'] : null,
             'item_count' => $itemCount,
+            'table_counts' => $tableCounts,
         ],
         'request' => [
             // From PHP's own start (as close to "the request arrived" as
@@ -4375,6 +4596,37 @@ function api_admin_system_status(): void
         ],
         'app_version' => APP_VERSION,
         'server_time' => api_datetime(date('Y-m-d H:i:s')),
+        'requests' => [
+            // The last real 24 hours, not calendar-day buckets - "today"
+            // means something different at 1am than at 11pm, and a
+            // rolling window is the same answer regardless of when the
+            // page happens to be opened.
+            'window_hours'   => 24,
+            'total'          => $totalRequests,
+            'avg_ms'         => $totalRequests > 0 ? round(((int) ($totals['total_ms'] ?? 0)) / $totalRequests, 1) : null,
+            'by_status' => [
+                '2xx' => (int) ($totals['ok2xx'] ?? 0), '3xx' => (int) ($totals['ok3xx'] ?? 0),
+                '4xx' => (int) ($totals['err4xx'] ?? 0), '5xx' => (int) ($totals['err5xx'] ?? 0),
+            ],
+            'by_source' => array_map(fn($r) => ['source' => $r['source'], 'count' => (int) $r['n']], $bySource),
+            'top_routes' => array_map(fn($r) => [
+                'method' => $r['method'], 'route' => $r['route'], 'count' => (int) $r['n'],
+                'avg_ms' => round((int) $r['total_ms'] / max(1, (int) $r['n']), 1),
+            ], $topRoutes),
+            'timeline' => $timeline,
+            'recent' => [
+                // Not a general-purpose window like the one above -
+                // fixed at the last 3 hours, 5-minute buckets, because
+                // that is exactly what api_request_stats_5m is pruned
+                // down to keep, and this endpoint has never claimed to
+                // show a client more than the data behind it actually
+                // holds.
+                'window_minutes' => 180,
+                'bucket_minutes' => 5,
+                'sources'        => array_keys($sourcesSeen),
+                'timeline'       => $recentTimeline,
+            ],
+        ],
     ]);
 }
 

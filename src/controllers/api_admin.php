@@ -478,8 +478,12 @@ function api_user_row(array $u): array
         'email'        => $u['email'] ?? null,
         'role'         => (string) $u['role'],
         'is_active'    => (bool) $u['is_active'],
-        // Named, not an id: "auth method 3" means nothing on a phone.
-        'signs_in_via' => $u['auth_name'] ?? null,
+        // Named, not just an id: "auth method 3" means nothing on a
+        // phone. The id rides along too now, additive - a picker
+        // choosing which directory to reassign to needs a real value
+        // to submit, not just something to display.
+        'signs_in_via'    => $u['auth_name'] ?? null,
+        'auth_method_id'  => isset($u['auth_method_id']) ? (int) $u['auth_method_id'] : null,
         'last_login_at' => api_datetime($u['last_login_at'] ?? null),
         'created_at'    => api_datetime($u['created_at'] ?? null),
     ];
@@ -580,6 +584,40 @@ function api_users_update(int $id): void
         }
     }
 
+    // Blank means "don't change it" - the same rule a credential field
+    // has followed everywhere else in this application, so setting a
+    // password is never forced just because other fields were sent
+    // in the same call.
+    if (!empty($in['password'])) {
+        $password = (string) $in['password'];
+        if (strlen($password) < 10) {
+            $errors['password'] = 'At least 10 characters.';
+        } else {
+            $changes['password_hash'] = password_hash($password, PASSWORD_DEFAULT);
+        }
+    }
+
+    // Which directory this account signs in through - the protected
+    // local method's own id for the local database, or a real
+    // directory's id. auth_method_id is NOT NULL DEFAULT 1 in the
+    // schema itself, so "local" is never a null - it's whichever row
+    // is_protected marks as the one always there. Genuinely new: the
+    // real app has never offered a way to move an account between
+    // directories once created, only to read which one it already
+    // uses.
+    if (array_key_exists('auth_method_id', $in)) {
+        $wantLocal = $in['auth_method_id'] === null;
+        $newMethodId = $wantLocal
+            ? (int) (scalar("SELECT id FROM auth_methods WHERE is_protected = 1") ?? 1)
+            : (int) $in['auth_method_id'];
+        $method = one('SELECT id FROM auth_methods WHERE id = ?', [$newMethodId]);
+        if ($method === null) {
+            $errors['auth_method_id'] = 'No such directory.';
+        } else {
+            $changes['auth_method_id'] = $newMethodId;
+        }
+    }
+
     // The last administrator, checked against what the change would leave rather
     // than what is there now - demoting and deactivating both get here.
     $losingAdmin = ((($changes['role'] ?? $user['role']) !== 'admin')
@@ -604,15 +642,55 @@ function api_users_update(int $id): void
 
     update_row('users', $id, $changes);
 
+    // What actually changed, in words rather than raw column names -
+    // a credential is never named or shown, only that one was set.
+    $changeWords = array_map(
+        static fn(string $k): string => $k === 'password_hash' ? 'password set' : $k,
+        array_keys($changes)
+    );
     log_security('user.changed',
-                 sprintf('Changed %s: %s', $user['username'],
-                         implode(', ', array_keys($changes))),
+                 sprintf('Changed %s: %s', $user['username'], implode(', ', $changeWords)),
                  LOG_NOTICE, ['subject_type' => 'user', 'subject_id' => $id]);
 
     $fresh = one("SELECT u.*, am.name AS auth_name FROM users u
                     LEFT JOIN auth_methods am ON am.id = u.auth_method_id
                    WHERE u.id = ?", [$id]);
     api_ok(api_user_row($fresh));
+}
+
+/**
+ * Remove an account outright - a client for the same guard the real
+ * page's own delete action already enforces: never your own account,
+ * and never the last administrator who can still sign in, since either
+ * one leaves an instance with no way back short of the database
+ * itself.
+ */
+function api_users_delete(int $id): void
+{
+    [$me] = api_require_admin();
+
+    $target = one('SELECT id, username, role, is_active FROM users WHERE id = ?', [$id]);
+    if ($target === null) {
+        api_error('not_found', 'No account with that id.', 404);
+    }
+    if ($id === (int) $me['id']) {
+        api_error('forbidden', 'You cannot delete the account you are signed in with.', 403);
+    }
+
+    $adminsLeft = (int) scalar(
+        "SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = 1 AND id <> ?", [$id]);
+    if ((string) $target['role'] === 'admin' && (int) $target['is_active'] === 1 && $adminsLeft === 0) {
+        api_error('forbidden', sprintf(
+            '%s is the only administrator who can sign in, so it cannot be removed. '
+            . 'Make another account an administrator first, or disable this one instead.',
+            (string) $target['username']
+        ), 403);
+    }
+
+    delete_row('users', $id);
+    log_security('account.deleted', sprintf('Account "%s" removed', (string) $target['username']),
+                 LOG_WARNING, ['username' => (string) $target['username'], 'role' => (string) $target['role']]);
+    api_no_content();
 }
 
 /**

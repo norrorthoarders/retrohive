@@ -123,6 +123,19 @@ function maintenance_jobs(): array
             'repair' => 'maintenance_repair_expired_tokens',
             'repair_label' => 'Delete them',
         ],
+        'stale_request_stats' => [
+            'label'  => 'API request statistics past retention',
+            'scope'  => 'instance',
+            'access' => 'admin',
+            'blurb'  => 'The hourly and five-minute buckets behind the System status page\'s '
+                      . 'own charts, past the window either chart could ever show again - '
+                      . '30 days for the hourly table, six hours for the five-minute one. '
+                      . 'Neither chart loses anything by this running; both only ever look '
+                      . 'back that far to begin with.',
+            'check'  => 'maintenance_check_stale_request_stats',
+            'repair' => 'maintenance_repair_stale_request_stats',
+            'repair_label' => 'Prune them',
+        ],
 
         'php_limits' => [
             'label'  => 'What PHP will accept',
@@ -450,6 +463,31 @@ function maintenance_repair_expired_tokens(): array
     $st = q("DELETE FROM api_tokens
               WHERE (expires_at IS NOT NULL AND expires_at < NOW()) OR revoked_at IS NOT NULL");
     return ['done' => true, 'message' => $st->rowCount() . ' token(s) deleted.'];
+}
+
+/**
+ * API request statistics past their own retention window - the hourly
+ * table kept 30 days, the 5-minute one kept 6 hours, both because they
+ * fuel charts with a fixed window: a bucket a chart could never show
+ * again is a row with nothing left to answer. api_prune_request_stats()
+ * and its 5-minute sibling existed from the round each table was built,
+ * unreachable from anywhere until this job gave them one.
+ */
+function maintenance_check_stale_request_stats(): array
+{
+    $stale = (int) scalar('SELECT COUNT(*) FROM api_request_stats WHERE bucket_hour < DATE_SUB(NOW(), INTERVAL 30 DAY)');
+    $stale5m = (int) scalar('SELECT COUNT(*) FROM api_request_stats_5m WHERE bucket_5m < DATE_SUB(NOW(), INTERVAL 6 HOUR)');
+    $total = $stale + $stale5m;
+    return maintenance_result($total,
+        $total > 0 ? [['what' => 'Hourly buckets', 'detail' => number_format($stale) . ' past 30 days'],
+                      ['what' => '5-minute buckets', 'detail' => number_format($stale5m) . ' past 6 hours']] : [],
+        $total === 0 ? 'Nothing past its own retention window.' : '');
+}
+
+function maintenance_repair_stale_request_stats(): array
+{
+    $gone = api_prune_request_stats(30) + api_prune_request_stats_5m(6);
+    return ['done' => true, 'message' => number_format($gone) . ' stale bucket(s) removed.'];
 }
 
 /**

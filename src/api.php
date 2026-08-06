@@ -993,3 +993,98 @@ function api_apply_item_lists(int $itemId, array $in): array
 
     return $errors;
 }
+
+/**
+ * One request, folded into its own hour's bucket rather than kept as a
+ * row of its own - a busy instance answers thousands of these a day,
+ * and no question this table exists to answer needs more than an hour's
+ * granularity to answer it.
+ *
+ * The route is the pattern that matched, not the path that was asked
+ * for: "/items/482" and "/items/9091" are the same question asked
+ * twice, and counting them as two different routes would mean the
+ * table never stops growing new rows as ids climb.
+ */
+function api_record_request_stat(string $method, string $pattern, int $statusCode, float $durationMs): void
+{
+    // #^/api/v1/items/(\d+)$# -> /items/{id}. Anchors, delimiters, and
+    // the version prefix stripped because every route shares them and
+    // they add nothing a reader doesn't already know; capture groups
+    // collapsed to {id} because every one of them is an identifier in
+    // practice, never a value worth breaking out on its own.
+    $route = trim($pattern, '#');
+    $route = ltrim($route, '^');
+    $route = rtrim($route, '$');
+    $route = preg_replace('#^/api/v1#', '', $route);
+    $route = preg_replace('/\([^)]*\)/', '{id}', (string) $route);
+    if ($route === '' || $route === null) {
+        $route = '/';
+    }
+
+    $statusClass = match (true) {
+        $statusCode >= 500 => '5xx',
+        $statusCode >= 400 => '4xx',
+        $statusCode >= 300 => '3xx',
+        default             => '2xx',
+    };
+
+    $source = 'unknown';
+    $plain = bearer_token();
+    if ($plain !== null) {
+        $token = one('SELECT platform FROM api_tokens WHERE token_hash = ?', [token_hash($plain)]);
+        if ($token !== null) {
+            $source = trim((string) ($token['platform'] ?? '')) !== '' ? (string) $token['platform'] : 'token';
+        }
+    } elseif (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['user_id'])) {
+        $source = 'web';
+    }
+
+    $bucket = date('Y-m-d H:00:00');
+
+    try {
+        q('INSERT INTO api_request_stats (bucket_hour, method, route, status_class, source, request_count, total_ms)
+           VALUES (?, ?, ?, ?, ?, 1, ?)
+           ON DUPLICATE KEY UPDATE request_count = request_count + 1, total_ms = total_ms + VALUES(total_ms)',
+          [$bucket, $method, mb_substr($route, 0, 120), $statusClass, $source, (int) round($durationMs)]);
+    } catch (\Throwable $e) {
+        // Never let a stats write take an actual request down with it -
+        // a table that isn't there yet on an instance mid-upgrade, or a
+        // lock timeout under real load, costs a data point, not a
+        // response.
+    }
+
+    // The same write, rounded to the nearest five minutes rather than
+    // the hour, and by source and status only - no route, no method:
+    // "how much traffic, from where, was any of it failing" is a
+    // question this resolution can answer well; "which endpoint" stays
+    // the hourly table's own to answer, where a route breaking down by
+    // the hour still has enough calls in each bucket to mean something.
+    $bucket5m = date('Y-m-d H:i:00', (int) (floor(strtotime('now') / 300) * 300));
+    try {
+        q('INSERT INTO api_request_stats_5m (bucket_5m, source, status_class, request_count, total_ms)
+           VALUES (?, ?, ?, 1, ?)
+           ON DUPLICATE KEY UPDATE request_count = request_count + 1, total_ms = total_ms + VALUES(total_ms)',
+          [$bucket5m, $source, $statusClass, (int) round($durationMs)]);
+    } catch (\Throwable $e) {
+        // Same reasoning as the hourly write above: a stats table
+        // problem is never a reason to fail the actual request.
+    }
+}
+
+/** Old buckets, cleared - kept for a fixed window rather than forever. */
+function api_prune_request_stats(int $keepDays = 30): int
+{
+    return (int) q('DELETE FROM api_request_stats WHERE bucket_hour < DATE_SUB(NOW(), INTERVAL ? DAY)', [$keepDays])->rowCount();
+}
+
+/**
+ * The 5-minute table's own prune, on a much shorter leash than the
+ * hourly one - kept only long enough for the "recent activity" chart
+ * that reads it, a handful of hours rather than a month. Nothing past
+ * that window is ever shown at this resolution, so nothing past it is
+ * worth keeping at this resolution either.
+ */
+function api_prune_request_stats_5m(int $keepHours = 6): int
+{
+    return (int) q('DELETE FROM api_request_stats_5m WHERE bucket_5m < DATE_SUB(NOW(), INTERVAL ? HOUR)', [$keepHours])->rowCount();
+}

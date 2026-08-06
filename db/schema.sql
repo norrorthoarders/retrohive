@@ -1974,3 +1974,52 @@ LEFT JOIN categories c  ON c.id  = t.category_id
 LEFT JOIN sections    s  ON s.id  = c.section_id
 LEFT JOIN companies  d  ON d.id  = t.developer_id
 LEFT JOIN companies  pb ON pb.id = t.publisher_id;
+
+-- ---------------------------------------------------------------------------
+-- API request statistics - bucketed by hour, not one row per request, which
+-- would grow unbounded fast on a busy instance and answer no question a
+-- bucket doesn't already answer just as well. Powers the System status
+-- page's own request-volume figures: which endpoints get hit, how often,
+-- by what kind of caller, and how they're trending, without keeping a full
+-- request log anywhere.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS api_request_stats (
+  id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  bucket_hour   DATETIME     NOT NULL,
+  method        VARCHAR(10)  NOT NULL,
+  -- The route's own pattern, not the raw path - "/items/{id}" rather than
+  -- "/items/482", so ten thousand different item ids bucket into one row
+  -- instead of ten thousand different ones.
+  route         VARCHAR(120) NOT NULL,
+  status_class  ENUM('2xx','3xx','4xx','5xx') NOT NULL,
+  -- Where the call came from: a token's own declared platform (ios,
+  -- android, macos, other), or 'web' for this client's own session-based
+  -- calls, or 'unknown' for a bare request with no token and no session.
+  source        VARCHAR(20)  NOT NULL DEFAULT 'unknown',
+  request_count INT UNSIGNED NOT NULL DEFAULT 0,
+  total_ms      INT UNSIGNED NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_api_request_stats (bucket_hour, method, route, status_class, source),
+  KEY idx_api_request_stats_hour (bucket_hour)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The same idea as api_request_stats, five minutes at a time instead of
+-- one hour - close enough to watch traffic move in something closer to
+-- real time, source rather than route, since a route-and-status
+-- breakdown at this resolution would be mostly empty cells: "recent
+-- activity by kind of caller" is the question this answers, "which
+-- endpoint" stays the hourly table's own to answer. Kept for hours
+-- rather than days on purpose - api_prune_request_stats_5m() removes
+-- what a 24-hour chart could never have shown anyway, so the table
+-- never grows into something the hourly one already exists to be.
+CREATE TABLE IF NOT EXISTS api_request_stats_5m (
+  id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  bucket_5m     DATETIME     NOT NULL,
+  source        VARCHAR(20)  NOT NULL DEFAULT 'unknown',
+  status_class  ENUM('2xx','3xx','4xx','5xx') NOT NULL,
+  request_count INT UNSIGNED NOT NULL DEFAULT 0,
+  total_ms      INT UNSIGNED NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_api_request_stats_5m (bucket_5m, source, status_class),
+  KEY idx_api_request_stats_5m_bucket (bucket_5m)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

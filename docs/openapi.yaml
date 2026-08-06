@@ -387,11 +387,38 @@ paths:
                 is_active: { type: boolean }
                 display_name: { type: string }
                 email: { type: string }
+                password:
+                  type: string
+                  description: Blank or omitted means "don't change it". At least 10 characters when set.
+                auth_method_id:
+                  type: [integer, "null"]
+                  description: >-
+                    Which directory this account signs in through. null moves
+                    it to the local database - resolved server-side to the
+                    protected local method's own row, since the column itself
+                    is NOT NULL. A real directory's id moves it there instead.
       responses:
         "200": { description: OK }
         "403": { description: Administrator access is required }
         "404": { description: No account with that id }
-        "422": { description: An unknown role, the last administrator, or your own role }
+        "422": { description: An unknown role, an unknown directory, a password under 10 characters, the last administrator, or your own role }
+
+    delete:
+      tags: [Admin]
+      summary: Remove an account outright
+      description: >-
+        Refused for your own account, and for the last administrator who can
+        still sign in - either leaves the instance with no way back short of
+        the database itself.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204": { description: Removed }
+        "403": { description: Your own account, or the last administrator who can sign in }
+        "404": { description: No account with that id }
 
   /admin/libraries:
     get:
@@ -1089,6 +1116,80 @@ paths:
       summary: Same as PATCH
       responses: { "200": { description: Saved } }
 
+  /admin/libraries/{id}/disable:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Admin]
+      summary: Take a library out of circulation
+      description: >-
+        Reachable by the library's own owner as well as an administrator -
+        what an owner gets instead of deleting, when the instance does not
+        allow that. Never a personal library.
+      responses:
+        "200": { description: OK }
+        "403": { description: A personal library, or neither the owner nor an administrator }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/libraries/{id}/enable:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Admin]
+      summary: Bring a library back into circulation
+      description: Administrator-only - coming back is a decision the owner alone doesn't get to make unilaterally.
+      responses:
+        "200": { description: OK }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /admin/libraries/{id}/owner:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Admin]
+      summary: Hand a library to another account directly, without an offer to accept
+      description: >-
+        The owner's own route to a handover is an offer that waits for
+        acceptance - right between two members, wrong for an administrator
+        sorting out a library whose owner has left. Sets owner_id directly
+        and clears any offer in flight.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: integer, description: Must be an existing, active account. }
+      responses:
+        "200": { description: OK }
+        "403": { description: A personal library }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { description: user_id missing, or not an active account }
+
+  /admin/libraries/{id}/purge:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Admin]
+      summary: Delete a library and everything in it, permanently
+      description: >-
+        Ignores the instance's own libraries.deletable switch and ignores
+        whether the library still holds anything - the administrator's own
+        version of the delete button, for "I know, delete it anyway." The
+        library's own name has to be sent exactly as confirm_name; this is
+        the one action here that cannot be walked back.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm_name]
+              properties:
+                confirm_name: { type: string, description: Must match the library's own name exactly. }
+      responses:
+        "200": { description: "name and gone (a count per kind of thing removed)" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { description: confirm_name did not match }
+
   /libraries/{id}/structure-status:
     parameters: [{ $ref: "#/components/parameters/Id" }]
     get:
@@ -1451,22 +1552,44 @@ paths:
       summary: Instance-wide performance and capacity
       description: >-
         PHP memory and opcache status, system load average, disk space,
-        database size, and one genuine timing sample from the request
-        that fetched it. Performance and capacity, not collection
-        content - administrator-only, since disk paths, memory figures,
-        and database size describe the server itself rather than
-        anything a library member has a reason to see. The request
-        timing is a single real sample, not an average or a trend -
-        there is no request log behind it, so it says nothing about any
-        call before or after it.
+        database size, one genuine timing sample from the request that
+        fetched it, and real, accumulated request statistics from the
+        last 24 hours. Performance and capacity, not collection content -
+        administrator-only, since disk paths, memory figures, and
+        database size describe the server itself rather than anything a
+        library member has a reason to see. The single-sample timing
+        figure is exactly that - one call, not an average - but the
+        request statistics section is a genuine rolling total, built
+        from every real API call this instance answers, counted per
+        hour rather than logged one row per call so it never grows
+        unbounded.
       responses:
         "200":
           description: >-
             php (version, memory_used_mb, memory_peak_mb, memory_limit,
             opcache_enabled), system (load_average or null on platforms
             without one, disk_free_gb, disk_total_gb, disk_used_pct),
-            database (size_mb, tables, item_count), request
-            (sampled_at_ms, query_ms), app_version, server_time.
+            database (size_mb, tables, item_count, table_counts - a
+            row count per table for the handful that grow with real
+            use: items, users, libraries, item_images, titles,
+            hardware_models, software_models, companies, api_tokens,
+            logs), request
+            (sampled_at_ms, query_ms - a single sample, not the
+            requests section below), app_version, server_time, and
+            requests (window_hours, total, avg_ms, by_status as counts
+            per 2xx/3xx/4xx/5xx, by_source as [{source, count}] where
+            source is a token's own declared platform or "web" for a
+            session-based call, top_routes as the ten busiest
+            method+route pairs with call count and average time,
+            timeline as one zero-filled entry per hour for the last 24
+            real hours with requests and errors counted, and recent -
+            window_minutes (180), bucket_minutes (5), sources (every
+            source seen in the window), and timeline as one zero-filled
+            entry per 5-minute bucket for the last 3 real hours, each
+            with requests, errors, and by_source as {source: count} -
+            closer to real time than the hourly timeline above, kept
+            for a much shorter window on purpose since that is all the
+            table behind it is pruned down to hold).
         "403": { description: That area is for administrators }
 
   /platforms:
