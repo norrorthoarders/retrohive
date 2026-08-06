@@ -1,5 +1,14 @@
 # Changelog
 
+**A second, smaller fix to `api_import_run()`: `library_id`, `commit`, and `create_titles` now
+read from the query string as well as the POST body.** The client's own multipart upload helper
+sends one file field and nothing else - the same shape item photo uploads already needed, and
+the same fix already applied there: everything but the file itself travels as a query parameter
+on the URL, so the endpoint needs to look in both places rather than only the one a raw
+`curl -F` command would use.
+
+This package is **build 34**.
+
 **A real, working CSV import API - a client for the engine's own `import_parse()`/
 `import_commit()`, not a reimplementation.** Dry run by default: nothing is written unless
 `commit=1` is sent, matching the real web form's own two governing rules exactly - the whole file

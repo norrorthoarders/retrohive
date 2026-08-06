@@ -2586,7 +2586,7 @@ function api_import_run(): void
 {
     api_require_write();
 
-    $libraryId = isset($_POST['library_id']) ? (int) $_POST['library_id'] : 0;
+    $libraryId = isset($_POST['library_id']) ? (int) $_POST['library_id'] : (isset($_GET['library_id']) ? (int) $_GET['library_id'] : 0);
     if ($libraryId <= 0 || !can_add_to_library($libraryId)) {
         api_error('validation_failed', 'Some fields need attention.', 422,
                    ['library_id' => 'Choose a library you can write to.']);
@@ -2600,8 +2600,12 @@ function api_import_run(): void
         api_error('validation_failed', 'That was not an upload.', 422, ['csv' => 'Not a real upload.']);
     }
 
-    $commit       = ($_POST['commit'] ?? '') === '1';
-    $createTitles = ($_POST['create_titles'] ?? '') === '1';
+    // Multipart uploads carry one file field plus a query string for
+    // everything else - the same pattern item photo uploads already use,
+    // since a multipart body built by a single-file helper has nowhere
+    // else to put them.
+    $commit       = (($_POST['commit'] ?? $_GET['commit'] ?? '')) === '1';
+    $createTitles = (($_POST['create_titles'] ?? $_GET['create_titles'] ?? '')) === '1';
 
     $report = import_parse((string) $file['tmp_name'], $libraryId, $createTitles);
 
