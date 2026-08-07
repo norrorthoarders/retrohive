@@ -1,5 +1,99 @@
 # Changelog
 
+**Proving that mail arrives is an API now, not just a form handler.**
+
+`send_smtp_confirmation()` and `confirm_smtp_code()` have existed throughout and
+were reachable only from the engine's own settings form, so no other client could
+offer the one step that matters: saving relay settings proves nothing, because a
+relay will happily accept a message and drop it. The only evidence is somebody
+holding a number that was sent to them.
+
+- `GET /admin/mail` - enabled, verified, when, and whether a code is waiting
+- `POST /admin/mail/send-code`
+- `POST /admin/mail/confirm-code`
+
+`code_pending` is false once the relay settings change, not merely once the code
+expires. A code is stored against the fingerprint of the settings it was sent
+under and cannot be redeemed after the host moves - reporting it as pending would
+have somebody typing a number that cannot work.
+
+`code_expires_in` comes with it, so a client can say what is actually left rather
+than repeating a flat "good for half an hour" to somebody twenty-nine minutes in.
+
+A refusal is 422 rather than 500: almost every failure here is a setting somebody
+typed - a sender the server will not accept, a host that does not answer - and
+the engine's own message names which, which is far more use than "could not
+send".
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 117**.
+
+**The `signin` settings section becomes `security`, and grows the two switches
+that had been filed under General for want of anywhere better.**
+
+`search_indexing` governs whether this instance can be found from outside;
+`libraries_deletable` governs whether data can be destroyed. Neither is a general
+preference. Sign-in was a section of one field with a name too narrow to hold
+them.
+
+The keys are unchanged, so nothing stored moves - a section is where a field is
+*shown*, and settings are keyed by their own name. The two places that name
+`signin` both key on the field rather than the section and are unaffected.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 116**.
+
+**A hard drive picture, closing the last gap in the hardware catalogue.**
+
+All five branches under Storage now name a picture of their own - hard, floppy,
+optical, Zip and tape. Nothing under Storage inherits the generic expansion card
+any more.
+
+42 pictures across 84 files, 6 MB. 33 of the 35 hardware branches name one; the
+two that do not are Storage itself and Peripherals, which is right - both are
+headings whose children answer for them.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 115**.
+
+**Thirty categories came out of a fresh install with truncated paths, because the
+two functions that rebuild them disagreed about how deep the tree goes.**
+
+`rebuild_category_paths()` looped four times, under a comment saying "four
+levels, which is what the tree allows". `category_rebuild_paths()` beside it
+looped eight. Which one ran decided whether a deep branch came out right, and the
+installer calls the one that said four.
+
+Four was true of the tree it was written for. It stopped being true when the
+shipped hardware feed grew Storage controller and I/O card: a library's tree is
+two levels deeper than the template it is copied from - the platform is the root
+and the section sits under it - so a template branch three deep lands at five.
+The fifth level was never visited. Five slugs across six platforms is exactly the
+thirty rows the consistency check reported.
+
+Both now use `CATEGORY_MAX_DEPTH`, written once, set to twelve. Locations use it
+too: nobody nests a shelf twelve deep, but the category tree did not look like it
+would outgrow four either.
+
+**Worth being blunt about the failure mode, because it is quiet.** A wrong path is
+not a wrong row - the tree still draws correctly, since that follows `parent_id` -
+so nothing looks broken. What breaks is everything reading `path` as a prefix: the
+subtree filter behind `category=`, the non-empty check behind `non_empty=1`, and
+the ancestry walk deciding which metadata sources a branch gets. A SCSI controller
+with a truncated path is filed correctly and found by none of them. The only sign
+was the check on Instance Status, which is what it is for.
+
+An instance already carrying this does not need reinstalling: **Instance Status →
+Filing tree consistency → Rebuild the paths** now repairs it, having been the one
+report that could see the problem and the one repair too shallow to fix it.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 114**.
+
 **An optical drive, and a Storage branch for it.**
 
     Storage

@@ -2526,6 +2526,57 @@ paths:
         "403": { description: Curator access on this library is required }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /admin/mail:
+    get:
+      tags: [Account]
+      summary: Whether mail has been proved to arrive
+      description: >-
+        Saving relay settings proves nothing - a relay will accept a message and
+        drop it. The only evidence is somebody holding a code that was sent to
+        them. `code_pending` is false once the relay settings change, because a
+        code is only redeemable against the settings it was sent under.
+      responses:
+        "200":
+          description: enabled, verified, verified_at, code_to, code_pending, code_expires_in
+
+  /admin/mail/send-code:
+    post:
+      tags: [Account]
+      summary: Send a confirmation code to an address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to: { type: string, format: email }
+      responses:
+        "200": { description: Sent }
+        "422":
+          description: >-
+            A bad address, or the relay refused it. The message names the actual
+            failure - a sender the server will not accept, a host that does not
+            answer - which is more use than a generic error.
+
+  /admin/mail/confirm-code:
+    post:
+      tags: [Account]
+      summary: Redeem the code from that email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, example: "123456" }
+      responses:
+        "200": { description: Confirmed }
+        "422": { description: Wrong, expired, or sent under different relay settings }
+
   /prefs:
     get:
       tags: [Account]

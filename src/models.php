@@ -9,6 +9,23 @@ declare(strict_types=1);
 // second caller.
 require_once __DIR__ . '/rules.php';
 
+/**
+ * How deep the filing tree is allowed to go, and so how many times a path
+ * rebuild has to iterate.
+ *
+ * A library's tree is two levels deeper than the template it is copied from: the
+ * platform is the root and the section sits under it, so a template branch three
+ * deep - Peripherals > Adapters > Storage controller > SCSI controller - lands at
+ * five. Twelve leaves room to grow without anybody having to remember this
+ * exists again, and a rebuild of a shallow tree simply runs a few statements
+ * that match nothing.
+ *
+ * Written once because it was written twice: the two rebuild functions had four
+ * and eight in them, and thirty rows came out of a fresh install with truncated
+ * paths because the installer happened to call the one that said four.
+ */
+const CATEGORY_MAX_DEPTH = 12;
+
 /** Every platform, regardless of access. Use readable_libraries() for pickers. */
 /**
  * Platforms this account can use.
@@ -379,8 +396,25 @@ function can_edit_platform(array $platform): bool
 /**
  * Recompute the materialised path on every category.
  *
- * Four levels, which is what the tree allows. Cheap enough to do wholesale
- * rather than work out which rows moved.
+ * Cheap enough to do wholesale rather than work out which rows moved.
+ *
+ * The level count is CATEGORY_MAX_DEPTH, not a number written here. This looped
+ * four times and said "four levels, which is what the tree allows" - which was
+ * true of the tree it was written for and stopped being true the moment the
+ * shipped hardware feed grew Storage controller and I/O card. In a library the
+ * tree gains two levels above the template root, a platform and a section, so a
+ * template branch three deep is five deep once copied. The fifth level was never
+ * visited: thirty rows came out of a fresh install with the path their parent
+ * would have had, and the only sign was the consistency check on Instance
+ * Status finding them.
+ *
+ * Worth being blunt about the failure mode, because it is quiet. A wrong path is
+ * not a wrong row - the tree still draws correctly, since that follows
+ * parent_id - so nothing looks broken. What breaks is everything that reads
+ * `path` as a prefix: the subtree filter behind `category=`, the non-empty check
+ * behind `non_empty=1`, and the ancestry walk that decides which metadata
+ * sources a branch gets. A SCSI controller with a truncated path is filed
+ * correctly and found by none of them.
  */
 function rebuild_category_paths(?int $libraryId = null): void
 {
@@ -393,7 +427,7 @@ function rebuild_category_paths(?int $libraryId = null): void
     q("UPDATE categories SET path = CONCAT('/', id, '/'), depth = 0
         WHERE parent_id IS NULL" . $where, $args);
 
-    for ($level = 1; $level <= 4; $level++) {
+    for ($level = 1; $level <= CATEGORY_MAX_DEPTH; $level++) {
         q("UPDATE categories c JOIN categories p ON p.id = c.parent_id
               SET c.path = CONCAT(p.path, c.id, '/'), c.depth = p.depth + 1
             WHERE p.depth = ?"
@@ -1372,9 +1406,12 @@ function category_breadcrumb(int $categoryId, string $separator = ' › '): stri
 function category_rebuild_paths(): void
 {
     q("UPDATE categories SET path = CONCAT('/', id, '/'), depth = 0 WHERE parent_id IS NULL");
-    // Deep enough for any sane taxonomy, and it stops rather than looping if
-    // somebody has managed to make a cycle.
-    for ($level = 1; $level <= 8; $level++) {
+    // The same limit as rebuild_category_paths() beside it, from the same
+    // constant. These two do the same job and had different numbers in them -
+    // eight here, four there - so which one ran decided whether a deep branch
+    // came out right. A tree with a cycle in it still stops rather than looping,
+    // because the count is fixed either way.
+    for ($level = 1; $level <= CATEGORY_MAX_DEPTH; $level++) {
         q("UPDATE categories c JOIN categories p ON p.id = c.parent_id
               SET c.path = CONCAT(p.path, c.id, '/'), c.depth = p.depth + 1
             WHERE p.depth = ? AND c.parent_id IS NOT NULL", [$level - 1]);
@@ -4551,9 +4588,12 @@ function location_name_taken(int $libraryId, ?int $parentId, string $name, ?int 
 function location_rebuild_paths(): void
 {
     q("UPDATE locations SET path = CONCAT('/', id, '/'), depth = 0 WHERE parent_id IS NULL");
-    // Deep enough for any room anyone actually has, and it stops rather than
-    // looping if somebody has managed to make a cycle.
-    for ($level = 1; $level <= 8; $level++) {
+    // The same constant the category rebuilds use, for the same reason. Nobody
+    // nests a shelf twelve deep, but the category tree did not look like it
+    // would outgrow four either - and a truncated path here would fail the same
+    // silent way: the tree still draws, and everything that reads the path as a
+    // prefix quietly stops finding things.
+    for ($level = 1; $level <= CATEGORY_MAX_DEPTH; $level++) {
         q("UPDATE locations l JOIN locations p ON p.id = l.parent_id
               SET l.path = CONCAT(p.path, l.id, '/'), l.depth = p.depth + 1
             WHERE p.depth = ? AND l.parent_id IS NOT NULL", [$level - 1]);

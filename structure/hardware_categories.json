@@ -260,7 +260,8 @@
     "role": "peripheral",
     "parent": "storage",
     "classes": "computer",
-    "sort_order": 10
+    "sort_order": 10,
+    "stock_image": "hardware_peripheral_drive_hard_disk"
   },
   {
     "slug": "floppy-drive",

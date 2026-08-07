@@ -578,6 +578,67 @@ function api_user_row(array $u): array
 }
 
 /**
+ * Where mail confirmation stands, and the two steps that move it along.
+ *
+ * A relay will happily accept a message and drop it, so "the settings saved" is
+ * no evidence that mail arrives. The only evidence is somebody holding a number
+ * that was sent to them - which is why this is a code typed back rather than a
+ * "we sent something" button.
+ *
+ * The engine's own screen has had this throughout; it lived in a form handler
+ * and had no endpoint, so no other client could offer it.
+ */
+function api_mail_status(): void
+{
+    api_require_admin();
+
+    $sentAt  = (string) setting('smtp_code_sent', '');
+    // A code is only good against the settings it was sent under, so a pending
+    // code stops being pending the moment the host changes - saying otherwise
+    // would have somebody typing a number that cannot work.
+    $pending = $sentAt !== ''
+        && (string) setting('smtp_code_for', '') === smtp_fingerprint()
+        && (time() - (int) $sentAt) < 1800;
+
+    api_ok([
+        'enabled'     => mail_enabled(),
+        'verified'    => mail_verified(),
+        'verified_at' => api_datetime(setting('smtp_verified_at', '') ?: null),
+        'code_to'     => (string) setting('smtp_code_to', ''),
+        'code_pending' => $pending,
+        // Half an hour from sending, and what is left of it - a screen saying
+        // "good for half an hour" beside a code sent twenty-nine minutes ago is
+        // telling somebody the wrong thing.
+        'code_expires_in' => $pending ? max(0, 1800 - (time() - (int) $sentAt)) : null,
+    ]);
+}
+
+function api_mail_send_code(): void
+{
+    api_require_admin();
+    $to = trim((string) (api_body()['to'] ?? ''));
+    [$ok, $message] = send_smtp_confirmation($to);
+    if (!$ok) {
+        // 422 rather than 500: almost every failure here is a setting somebody
+        // typed - a wrong host, a refused sender - and the message says which.
+        api_error('mail_failed', $message, 422);
+    }
+    log_security('smtp.code_sent', 'Mail confirmation code sent to ' . $to, LOG_INFO);
+    api_ok(['sent_to' => $to], ['message' => $message]);
+}
+
+function api_mail_confirm_code(): void
+{
+    api_require_admin();
+    [$ok, $message] = confirm_smtp_code((string) (api_body()['code'] ?? ''));
+    if (!$ok) {
+        api_error('validation_failed', $message, 422, ['code' => $message]);
+    }
+    log_security('smtp.confirmed', 'Mail delivery confirmed', LOG_INFO);
+    api_ok(['verified' => mail_verified()], ['message' => $message]);
+}
+
+/**
  * Yes or no to somebody's new profile picture.
  *
  * Administrators only, which is the same gate the rest of this file uses. An

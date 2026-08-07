@@ -367,6 +367,10 @@ if (str_starts_with($path, '/api/')) {
         ['GET',    '#^/api/v1/libraries/(\d+)/pending-images$#',   fn($id) => api_library_pending_images((int) $id)],
         ['POST',   '#^/api/v1/images/(\d+)/approve$#',             fn($id) => api_image_decide((int) $id, true)],
         ['POST',   '#^/api/v1/images/(\d+)/reject$#',              fn($id) => api_image_decide((int) $id, false)],
+        // Proving that mail actually arrives, which saving the settings does not.
+        ['GET',    '#^/api/v1/admin/mail$#',              fn() => api_mail_status()],
+        ['POST',   '#^/api/v1/admin/mail/send-code$#',    fn() => api_mail_send_code()],
+        ['POST',   '#^/api/v1/admin/mail/confirm-code$#', fn() => api_mail_confirm_code()],
         ['GET',    '#^/api/v1/prefs$#',                   fn() => api_prefs_index()],
         ['PATCH',  '#^/api/v1/prefs$#',                   fn() => api_prefs_update()],
         ['POST',   '#^/api/v1/prefs$#',                   fn() => api_prefs_update()],

@@ -51,21 +51,6 @@ function settings_schema(): array
                     'help'  => 'Used to build links in mail and notifications. Without it they point nowhere.',
                     'max'   => 255,
                 ],
-                'search_indexing' => [
-                    'kind'    => 'select',
-                    'label'   => 'Search engines',
-                    'default' => 'discourage',
-                    'options' => [
-                        'allow'      => 'May index this instance',
-                        'discourage' => 'Asked not to',
-                    ],
-                ],
-                'libraries_deletable' => [
-                    'kind'    => 'bool',
-                    'label'   => 'Libraries may be deleted',
-                    'help'    => 'Off means a library can only be emptied, not removed.',
-                    'default' => '',
-                ],
                 'structure_source' => [
                     'kind'    => 'url',
                     'label'   => 'Structure source',
@@ -85,14 +70,40 @@ function settings_schema(): array
             ],
         ],
 
-        'signin' => [
-            'label' => 'Sign-in',
-            'help'  => 'Security rules that apply once an account already exists, regardless of how it was made.',
+        // Renamed from 'signin', and widened to what the name now claims.
+        //
+        // Search engines and library deletion sat under General, which is where
+        // things go when nobody has decided where they belong: one governs who
+        // can see this instance from outside and the other governs whether data
+        // can be destroyed. Neither is a general preference. Sign-in was a
+        // section of one field with a name too narrow to put them in.
+        //
+        // The keys are unchanged, so nothing stored has to move - a section is
+        // where a field is *shown*, and settings are keyed by their own name.
+        'security' => [
+            'label' => 'Security',
+            'help'  => 'Who can reach this instance, who can sign in, and what can be destroyed.',
             'fields' => [
                 'require_email_verification' => [
                     'kind'    => 'bool',
                     'label'   => 'Require a confirmed email address to sign in',
                     'help'    => 'Needs a relay that has answered a test message, or this locks out everybody, including whoever ticks it.',
+                    'default' => '',
+                ],
+                'search_indexing' => [
+                    'kind'    => 'select',
+                    'label'   => 'Search engines',
+                    'help'    => 'The registration pages say noindex either way - a way in has no business in a search result.',
+                    'default' => 'discourage',
+                    'options' => [
+                        'allow'      => 'May index this instance',
+                        'discourage' => 'Asked not to',
+                    ],
+                ],
+                'libraries_deletable' => [
+                    'kind'    => 'bool',
+                    'label'   => 'Owners may permanently delete their own libraries',
+                    'help'    => 'Off means a library can only be emptied, not removed.',
                     'default' => '',
                 ],
             ],

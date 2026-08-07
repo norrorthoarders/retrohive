@@ -226,6 +226,10 @@ function stock_images(): array
             'label' => 'Zip drive',
             'note'  => 'The dark external cartridge drive.',
         ],
+        'hardware_peripheral_drive_hard_disk' => [
+            'label' => 'Hard drive',
+            'note'  => 'A bare 3.5-inch mechanism, lid and connectors showing.',
+        ],
         'hardware_peripheral_drive_optical' => [
             'label' => 'Optical drive',
             'note'  => 'A tray-loading drive box. A CD-ROM, a DVD-ROM and a writer are the same object from the front.',
