@@ -18,9 +18,10 @@
     "slug": "expansions",
     "name": "Expansions",
     "role": "peripheral",
-    "sort_order": 30,
+    "sort_order": 50,
     "classes": "computer",
-    "stock_image": "hardware_peripheral"
+    "stock_image": "hardware_peripheral",
+    "parent": "peripherals"
   },
   {
     "slug": "memory",
@@ -60,7 +61,7 @@
     "name": "Adapters",
     "role": "other",
     "parent": "peripherals",
-    "sort_order": 21,
+    "sort_order": 40,
     "classes": "computer"
   },
   {
@@ -77,7 +78,7 @@
     "name": "Storage",
     "role": "other",
     "parent": "peripherals",
-    "sort_order": 23,
+    "sort_order": 30,
     "classes": "computer"
   },
   {
@@ -85,7 +86,7 @@
     "name": "Displays",
     "role": "other",
     "parent": "peripherals",
-    "sort_order": 25,
+    "sort_order": 20,
     "classes": "computer"
   },
   {

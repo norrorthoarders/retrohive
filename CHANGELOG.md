@@ -1,5 +1,50 @@
 # Changelog
 
+**Expansions moves under Peripherals rather than beside it, and Packaging models
+moves to Global.**
+
+## Expansions is a kind of peripheral, not a rival to one
+
+Both branches carried `role = peripheral`, sat at the same level, and differed
+only in `classes` - so the tree offered two top-level answers to "where does a
+card go", with nothing on screen to say which. Expansions is now a child of
+Peripherals, and Peripherals' children are ordered outside-in: Input devices,
+Displays, Storage, Adapters, Expansions, Modifications.
+
+Not merged flat, which is what a first reading of the complaint suggests. That
+would give Peripherals eleven direct children with a mouse beside a RAID
+controller and no grouping left at all - the two top-level branches were
+confusing, but the distinction they drew is real and worth keeping one level
+down. Nesting removes the ambiguity without losing it.
+
+`classes` still gates per row, so a Game Boy is offered Gamepad and Joystick and
+none of the cards, exactly as before - the gate is on each branch and not
+inherited from where it sits.
+
+The branch keeps the name "Expansions" rather than gaining a clarifying
+parenthetical. `category_repair_roles()` matches the shipped hardware tree by
+lower-cased *name* when repairing an instance whose feed predates the kinds, and
+renaming it would have quietly broken that path for a cosmetic gain.
+
+## Packaging models is global
+
+It sat under Software and never only meant software. The shipped set has always
+carried VHS clamshells, vinyl sleeves and CD jewel cases beside boxed Amiga
+disks, and the category picker on its own form deliberately offers all four
+sections. Filing it under Software said something untrue about it, in the same
+way listing Platforms under Hardware did before it was moved to Global for the
+same reason.
+
+The table is still `software_models`. Renaming it is a migration for no gain, and
+the screen has said "Packaging models" throughout.
+
+Software now holds Environments alone, which is right: what a machine can run is
+a fact about software and about nothing else here.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 96**.
+
 **Seventeen more hardware pictures, and - more usefully - the taxonomy can now
 say which picture a branch's things get, so the next one is a line of JSON
 rather than a case in PHP.**

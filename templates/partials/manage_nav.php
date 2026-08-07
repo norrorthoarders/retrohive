@@ -34,25 +34,26 @@ $groups = [
         // The separate flat Categories screen is gone with it - both edited the
         // same table, and only the tree can express Games > Platformer.
         'tree'       => ['Categories',       '/manage/tree',       false],
+        // Same move, same reason as Platforms above it. A packaging model has
+        // never only meant software: the shipped set carries VHS clamshells,
+        // vinyl sleeves and CD jewel cases beside boxed Amiga disks, and the
+        // category picker on its form offers every section. Under Software it
+        // read as a software-only thing, which is what sent people looking for a
+        // separate one for films.
+        'swmodels'   => ['Packaging models', '/manage/software-models', true],
     ],
     'Hardware' => [
         'models'     => ['Machine models',    '/manage/models',    true],
         'parts'      => ['Peripheral models', '/manage/parts',     true],
     ],
-    // The software side of the same idea.
+    // What is genuinely software-only, which is one thing.
     //
-    // A title is to a boxed copy what a machine model is to the machine on your shelf:
-    // what the thing *is*, recorded once, so a second copy does not mean retyping the
-    // year, the developer and what the box should contain. It had screens all along and
-    // simply was not listed here, which made it look like hardware had a model editor
-    // and software did not.
+    // No Titles here. A title is a property of the software you catalogue, not a
+    // thing to manage alongside platforms and makers - it is reached from the
+    // software browser, which is where you are when you care about one.
+    // Environments: what each machine can run, which is a fact about software and
+    // about nothing else in the catalogue.
     'Software' => [
-        'swmodels'   => ['Software models',   '/manage/software-models', true],
-        // No Titles here. A title is a property of the software you catalogue, not a
-        // thing to manage alongside platforms and makers - it is reached from the
-        // software browser, which is where you are when you care about one.
-        // Environments: what each machine can run, which is a fact about a platform
-        // and belongs with the other per-platform structure.
         'environments' => ['Environments',    '/manage/environments', true],
     ],
 ];
