@@ -40,7 +40,7 @@ function current_user(bool $forget = false): ?array
     if ($id === null) {
         return null;
     }
-    $user = one('SELECT id, username, display_name, avatar_filename, email, role, auth_method_id, is_active FROM users WHERE id = ? AND is_active = 1', [(int) $id]);
+    $user = one('SELECT id, username, display_name, avatar_filename, avatar_pending_filename, email, role, auth_method_id, is_active FROM users WHERE id = ? AND is_active = 1', [(int) $id]);
     if ($user === null) {
         unset($_SESSION['user_id']);
     }

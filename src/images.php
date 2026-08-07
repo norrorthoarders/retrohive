@@ -168,6 +168,48 @@ function delete_company_logo(int $companyId): void
  * Store a profile picture, replacing any previous one.
  * Returns [filename, error].
  */
+/**
+ * Whether this account's next avatar waits for an administrator.
+ *
+ * Off unless the instance says otherwise, and never for an administrator - they
+ * are the ones who would be approving it, and a queue you approve your own
+ * entries in is a formality rather than a check.
+ */
+function avatar_approval_required(?array $user = null): bool
+{
+    $user = $user ?? acting_user();
+    if ($user === null || is_admin_user($user)) {
+        return false;
+    }
+    try {
+        return setting('avatar_approval', '') !== '';
+    } catch (Throwable $e) {
+        // Before the settings table exists - an installer, a CLI tool against a
+        // half-built database - the answer is the permissive one.
+        return false;
+    }
+}
+
+/**
+ * Whether a photograph uploaded to this library waits for somebody to approve
+ * it.
+ *
+ * Off unless the library says otherwise. Exempt: an instance administrator, and
+ * anybody who curates the library itself - again, the people who would be
+ * approving it. A contributor or an ordinary member is who this is for.
+ */
+function library_photo_approval_required(int $libraryId, ?array $user = null): bool
+{
+    $user = $user ?? acting_user();
+    if ($user === null || is_admin_user($user)) {
+        return false;
+    }
+    if ((int) scalar('SELECT photo_approval FROM libraries WHERE id = ?', [$libraryId]) !== 1) {
+        return false;
+    }
+    return !can_structure_library($libraryId);
+}
+
 function store_user_avatar(int $userId, string $field): array
 {
     if (!isset($_FILES[$field]) || (int) ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
@@ -202,10 +244,64 @@ function store_user_avatar(int $userId, string $field): array
     // Only the small variant is worth keeping; avatars are never shown large.
     resize_image($target, uploads_dir() . '/thumb_' . $basename, (string) $info['mime'], (int) config('uploads.thumb_px'));
 
+    if (avatar_approval_required(one('SELECT id, role FROM users WHERE id = ?', [$userId]))) {
+        // The picture that is up stays up.
+        //
+        // What is pending is the change, not the removal - somebody waiting a
+        // day for an administrator should not spend that day as a set of
+        // initials, and reverting them to one would be a second change nobody
+        // asked for. Only a previous *pending* picture is cleared, since two
+        // waiting at once is one too many and the newer is the one meant.
+        delete_user_pending_avatar($userId);
+        update_row('users', $userId, [
+            'avatar_pending_filename' => $basename,
+            'avatar_pending_at'       => date('Y-m-d H:i:s'),
+        ]);
+        return [$basename, null];
+    }
+
     delete_user_avatar($userId);
     update_row('users', $userId, ['avatar_filename' => $basename]);
 
     return [$basename, null];
+}
+
+/** The waiting picture's files, and the columns naming it. */
+function delete_user_pending_avatar(int $userId): void
+{
+    $row = one('SELECT avatar_pending_filename FROM users WHERE id = ?', [$userId]);
+    if ($row === null || empty($row['avatar_pending_filename'])) {
+        return;
+    }
+    foreach (['', 'thumb_'] as $prefix) {
+        $path = uploads_dir() . '/' . $prefix . $row['avatar_pending_filename'];
+        if (is_file($path)) {
+            @unlink($path);
+        }
+    }
+    update_row('users', $userId, [
+        'avatar_pending_filename' => null,
+        'avatar_pending_at'       => null,
+    ]);
+}
+
+/** Yes: the waiting picture becomes the avatar, and the old one's files go. */
+function approve_user_avatar(int $userId): bool
+{
+    $row = one('SELECT avatar_pending_filename FROM users WHERE id = ?', [$userId]);
+    if ($row === null || empty($row['avatar_pending_filename'])) {
+        return false;
+    }
+    $pending = (string) $row['avatar_pending_filename'];
+    // The old files, not the pending ones - delete_user_avatar() reads the
+    // avatar_filename column, which still names the picture being replaced.
+    delete_user_avatar($userId);
+    update_row('users', $userId, [
+        'avatar_filename'         => $pending,
+        'avatar_pending_filename' => null,
+        'avatar_pending_at'       => null,
+    ]);
+    return true;
 }
 
 function delete_user_avatar(int $userId): void
@@ -591,9 +687,23 @@ function set_primary_image(int $itemId, int $imageId): void
 /** If nothing is flagged as the cover, promote the first photo. */
 function ensure_primary_image(int $itemId): void
 {
-    $has = scalar('SELECT COUNT(*) FROM item_images WHERE item_id = ? AND is_primary = 1', [$itemId]);
+    // A picture waiting for approval must never become the cover.
+    //
+    // The cover is the one place an unapproved picture would be seen by
+    // everybody without anybody opening the entry - it is on the card, in the
+    // list, in the API. Both halves have to say approved: the count, or the
+    // first pending upload onto an entry with no photographs would satisfy it
+    // and stop anything else being chosen; and the pick, obviously.
+    $has = scalar("SELECT COUNT(*) FROM item_images
+                    WHERE item_id = ? AND is_primary = 1 AND approval_state = 'approved'", [$itemId]);
     if ((int) $has === 0) {
-        $first = one('SELECT id FROM item_images WHERE item_id = ? ORDER BY sort_order, id LIMIT 1', [$itemId]);
+        // Any stale primary flag on a pending row is cleared on the way, or the
+        // unique-ish assumption "one primary per item" quietly stops holding.
+        q("UPDATE item_images SET is_primary = 0
+            WHERE item_id = ? AND approval_state <> 'approved'", [$itemId]);
+        $first = one("SELECT id FROM item_images
+                       WHERE item_id = ? AND approval_state = 'approved'
+                    ORDER BY sort_order, id LIMIT 1", [$itemId]);
         if ($first !== null) {
             q('UPDATE item_images SET is_primary = 1 WHERE id = ?', [(int) $first['id']]);
         }
@@ -611,12 +721,23 @@ function ensure_primary_image(int $itemId): void
  */
 function sync_item_image_columns(int $itemId): void
 {
+    // Approved only, in both the cover and the count.
+    //
+    // These two columns are what v_items reads, so they are how a picture
+    // reaches a card, a list and the API without anybody opening the entry. A
+    // pending one counted here would show as the cover on the shelf - the exact
+    // thing the feature prevents - and "3 photos" on an entry showing two is a
+    // smaller version of the same lie.
     $cover = one(
-        'SELECT id FROM item_images WHERE item_id = ?
-          ORDER BY is_primary DESC, sort_order ASC, id ASC LIMIT 1',
+        "SELECT id FROM item_images
+          WHERE item_id = ? AND approval_state = 'approved'
+       ORDER BY is_primary DESC, sort_order ASC, id ASC LIMIT 1",
         [$itemId]
     );
-    q('UPDATE items SET cover_image_id = ?, image_count = (SELECT COUNT(*) FROM item_images WHERE item_id = ?) WHERE id = ?',
+    q("UPDATE items SET cover_image_id = ?,
+                        image_count = (SELECT COUNT(*) FROM item_images
+                                        WHERE item_id = ? AND approval_state = 'approved')
+        WHERE id = ?",
       [$cover === null ? null : (int) $cover['id'], $itemId, $itemId]);
 }
 

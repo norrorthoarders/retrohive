@@ -604,9 +604,34 @@ function find_item(int $id): ?array
     return one('SELECT * FROM v_items WHERE id = ?', [$id]);
 }
 
-function item_images(int $itemId): array
+/**
+ * An entry's pictures.
+ *
+ * Approved ones only, unless the caller says otherwise. This is what every
+ * gallery, every cover and every API read goes through, so defaulting to
+ * approved is what makes "a pending picture is not shown" true everywhere at
+ * once rather than in each of the places somebody remembered.
+ *
+ * A library that has never switched approval on has no pending rows at all - the
+ * column defaults to approved - so this changes nothing for almost every
+ * instance and costs one comparison on an already-indexed column.
+ */
+function item_images(int $itemId, bool $includePending = false): array
 {
-    return all('SELECT * FROM item_images WHERE item_id = ? ORDER BY is_primary DESC, sort_order, id', [$itemId]);
+    $where = $includePending ? '' : " AND approval_state = 'approved'";
+    return all("SELECT * FROM item_images WHERE item_id = ?$where
+                 ORDER BY is_primary DESC, sort_order, id", [$itemId]);
+}
+
+/** What is waiting on one library, newest first. */
+function library_pending_images(int $libraryId): array
+{
+    return all("SELECT img.*, i.title AS item_title, i.library_id, u.display_name, u.username
+                  FROM item_images img
+                  JOIN items i ON i.id = img.item_id AND i.deleted_at IS NULL
+             LEFT JOIN users u ON u.id = img.uploaded_by
+                 WHERE img.approval_state = 'pending' AND i.library_id = ?
+              ORDER BY img.created_at DESC, img.id DESC", [$libraryId]);
 }
 
 function item_tags(int $itemId): array

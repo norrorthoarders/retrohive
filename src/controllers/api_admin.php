@@ -567,7 +567,52 @@ function api_user_row(array $u): array
         'auth_method_id'  => isset($u['auth_method_id']) ? (int) $u['auth_method_id'] : null,
         'last_login_at' => api_datetime($u['last_login_at'] ?? null),
         'created_at'    => api_datetime($u['created_at'] ?? null),
+        // The picture in use, and the one waiting for a decision. Both, because
+        // this screen's whole job when a picture is pending is to show them side
+        // by side - "is this an improvement on that" is the question being
+        // asked, and it cannot be answered with one of them.
+        'avatar'         => absolute_url(image_url($u['avatar_filename'] ?? null, 'thumb')),
+        'avatar_pending' => absolute_url(image_url($u['avatar_pending_filename'] ?? null, 'thumb')),
+        'avatar_pending_at' => api_datetime($u['avatar_pending_at'] ?? null),
     ];
+}
+
+/**
+ * Yes or no to somebody's new profile picture.
+ *
+ * Administrators only, which is the same gate the rest of this file uses. An
+ * administrator's own picture never arrives here - avatar_approval_required()
+ * exempts them - so there is no case of approving your own.
+ */
+function api_avatar_decide(int $userId, bool $approve): void
+{
+    api_require_admin();
+
+    $row = one('SELECT id, username, avatar_pending_filename FROM users WHERE id = ?', [$userId]);
+    if ($row === null) {
+        api_error('not_found', 'No such account.', 404);
+    }
+    if (empty($row['avatar_pending_filename'])) {
+        api_error('validation_failed', 'That account has no picture waiting.', 422);
+    }
+
+    if ($approve) {
+        approve_user_avatar($userId);
+        log_event('security', 'avatar.approved',
+                  'Profile picture approved for "' . $row['username'] . '"');
+    } else {
+        // The files go with the decision. A refused picture kept on disk is a
+        // refused picture somebody can still reach by guessing a URL.
+        delete_user_pending_avatar($userId);
+        log_event('security', 'avatar.rejected',
+                  'Profile picture refused for "' . $row['username'] . '"');
+    }
+
+    $after = one("SELECT u.*, am.name AS auth_name
+                    FROM users u
+               LEFT JOIN auth_methods am ON am.id = u.auth_method_id
+                   WHERE u.id = ?", [$userId]);
+    api_ok(api_user_row($after));
 }
 
 /**
@@ -1095,10 +1140,21 @@ function api_profile_avatar_upload(): void
         api_error('validation_failed', 'No picture arrived.', 422);
     }
 
-    log_security('profile.avatar', 'Avatar changed', LOG_INFO,
+    // Whether it is in use or waiting, said plainly rather than left for the
+    // client to work out from a picture that did not change.
+    $pending = avatar_approval_required($user);
+    log_security('profile.avatar',
+                 $pending ? 'Avatar submitted for approval' : 'Avatar changed', LOG_INFO,
                  ['subject_type' => 'user', 'subject_id' => (int) $user['id']]);
 
-    api_ok(['avatar' => absolute_url(image_url($name, 'thumb'))]);
+    api_ok(
+        ['avatar' => absolute_url(image_url($name, 'thumb'))],
+        $pending ? [
+            'pending' => true,
+            'message' => 'An administrator has to approve it before it is shown. '
+                       . 'The picture already in use stays up until then.',
+        ] : null
+    );
 }
 
 /** Back to initials on a coloured circle, which is what no avatar looks like. */

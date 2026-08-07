@@ -271,7 +271,7 @@ function api_identify(?string &$why = null): ?array
                  . date('j M Y', (int) strtotime((string) $token['expires_at'])) . '.';
             return null;
         }
-        $user = one('SELECT id, username, display_name, avatar_filename, email, role, auth_method_id, is_active FROM users WHERE id = ? AND is_active = 1', [(int) $token['user_id']]);
+        $user = one('SELECT id, username, display_name, avatar_filename, avatar_pending_filename, email, role, auth_method_id, is_active FROM users WHERE id = ? AND is_active = 1', [(int) $token['user_id']]);
         if ($user === null) {
             $why = 'The account that token belongs to is closed or disabled.';
             return null;
@@ -460,6 +460,11 @@ function image_to_api(array $row): array
         // photograph somebody took of their own shelf - and those answer
         // different questions.
         'provenance'    => $row['provenance'] ?? 'personal',
+        // Whether anybody but a curator can see it yet. 'approved' on every row
+        // of a library that has never switched approval on, which is the column
+        // default, so a client that ignores this key is right by default.
+        'approval_state' => $row['approval_state'] ?? 'approved',
+        'uploaded_by'   => ($row['uploaded_by'] ?? null) === null ? null : (int) $row['uploaded_by'],
         'caption'       => $row['caption'],
         'is_primary'    => (bool) (int) $row['is_primary'],
         'sort_order'    => (int) $row['sort_order'],
@@ -795,6 +800,16 @@ function library_to_api(array $r): array
         'kind'         => $r['kind'],
         'public_read'  => (bool) (int) ($r['public_read'] ?? 0),
         'public_write' => (bool) (int) ($r['public_write'] ?? 0),
+        // Whether a photograph uploaded here waits for a decision, and how many
+        // are waiting now. The count only for somebody who could act on it -
+        // for anybody else it is a number about pictures they cannot see.
+        'photo_approval' => (bool) (int) ($r['photo_approval'] ?? 0),
+        'pending_images' => can_structure_library((int) $r['id'])
+            ? (int) scalar("SELECT COUNT(*) FROM item_images img
+                              JOIN items i ON i.id = img.item_id AND i.deleted_at IS NULL
+                             WHERE i.library_id = ? AND img.approval_state = 'pending'",
+                           [(int) $r['id']])
+            : null,
         'is_personal' => (bool) (int) ($r['is_personal'] ?? 0),
         'sort_order'  => (int) $r['sort_order'],
         'item_count'  => isset($r['n']) ? (int) $r['n'] : null,
@@ -1103,6 +1118,10 @@ function user_to_api(array $u): array
         'display_name' => $u['display_name'],
         'email'        => $u['email'] ?? null,
         'avatar'       => absolute_url(image_url($u['avatar_filename'] ?? null, 'thumb')),
+        // A new picture waiting for an administrator. The one above is
+        // unaffected and stays what is shown: what is pending is the change,
+        // not the removal.
+        'avatar_pending' => absolute_url(image_url($u['avatar_pending_filename'] ?? null, 'thumb')),
         'role'         => $u['role'],
         'can_edit'     => can_edit_anything(),
         'is_admin'     => $u['role'] === 'admin',

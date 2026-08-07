@@ -950,7 +950,10 @@ function api_item_images_upload(int $itemId): void
     // photograph for the publisher's artwork misrepresents it, and the reverse
     // merely under-claims.
     $provenance = $_POST['provenance'] ?? $_GET['provenance'] ?? 'personal';
-    $before = array_column(item_images($itemId), 'id');
+    // Every row, pending included - the ids added by this request are worked out
+    // by difference, and a pending one missing from the "before" set would be
+    // counted as new on the next upload.
+    $before = array_column(item_images($itemId, true), 'id');
 
     $stored = 0;
     $errors = [];
@@ -980,12 +983,123 @@ function api_item_images_upload(int $itemId): void
         api_error('upload_failed', $errors[0] ?? 'Nothing was stored.', 422, ['errors' => $errors]);
     }
 
+    // Everything this request added, whichever of the two paths stored it - one
+    // place rather than one per path, so a third path added later cannot be the
+    // one that forgets.
     $new = array_values(array_filter(
-        item_images($itemId),
+        item_images($itemId, true),
         fn($img) => !in_array($img['id'], $before, true)
     ));
 
-    api_ok(array_map('image_to_api', $new), $errors === [] ? null : ['warnings' => $errors], 201);
+    $held = api_hold_new_images($item, $new);
+    if ($held > 0) {
+        // Re-read, because the rows now say something different from the copies
+        // in hand and a client showing "approved" on a picture nobody can see
+        // would be worse than saying nothing.
+        $newIds = array_column($new, 'id');
+        $new = array_values(array_filter(
+            item_images($itemId, true),
+            fn($img) => in_array($img['id'], $newIds, true)
+        ));
+    }
+
+    $meta = $errors === [] ? [] : ['warnings' => $errors];
+    if ($held > 0) {
+        $meta['pending'] = $held;
+        $meta['message'] = $held === 1
+            ? 'The picture is waiting for somebody who curates this library to approve it.'
+            : 'The pictures are waiting for somebody who curates this library to approve them.';
+    }
+    api_ok(array_map('image_to_api', $new), $meta === [] ? null : $meta, 201);
+}
+
+/**
+ * Hold back what this upload added, when the library asks for that.
+ *
+ * Records who uploaded each one either way. That is worth having even on a
+ * library that never asks: a photograph on a shared shelf with no name against
+ * it is a photograph nobody can ask about.
+ *
+ * @return int how many were held
+ */
+function api_hold_new_images(array $item, array $new): int
+{
+    if ($new === []) {
+        return 0;
+    }
+    $user   = acting_user();
+    $userId = $user === null ? null : (int) $user['id'];
+    $ids    = array_map('intval', array_column($new, 'id'));
+    $in     = implode(',', array_fill(0, count($ids), '?'));
+
+    q("UPDATE item_images SET uploaded_by = ? WHERE id IN ($in)", array_merge([$userId], $ids));
+
+    if (!library_photo_approval_required((int) $item['library_id'], $user)) {
+        return 0;
+    }
+    q("UPDATE item_images SET approval_state = 'pending' WHERE id IN ($in)", $ids);
+    // The cover and the count are columns, written by this - and one of the rows
+    // it counted a moment ago has just stopped being visible.
+    ensure_primary_image((int) $item['id']);
+    return count($ids);
+}
+
+/**
+ * What is waiting on one library, for whoever curates it.
+ *
+ * Curator, not viewer: this shows pictures that have deliberately not been shown
+ * to everybody, so the list of them is the same secret as the pictures.
+ */
+function api_library_pending_images(int $libraryId): void
+{
+    api_require_curates_library($libraryId);
+    $rows = library_pending_images($libraryId);
+    api_ok(array_map(static function (array $r): array {
+        $out = image_to_api($r);
+        $out['item'] = ['id' => (int) $r['item_id'], 'title' => (string) $r['item_title']];
+        $out['uploaded_by_name'] = $r['display_name'] ?: ($r['username'] ?? null);
+        return $out;
+    }, $rows));
+}
+
+/**
+ * Yes or no to one photograph.
+ *
+ * The library is read from the picture rather than taken from the caller, so
+ * there is no request that can approve a picture into a library it is not in.
+ */
+function api_image_decide(int $imageId, bool $approve): void
+{
+    $row = one('SELECT img.*, i.library_id, i.id AS the_item_id
+                  FROM item_images img
+                  JOIN items i ON i.id = img.item_id
+                 WHERE img.id = ?', [$imageId]);
+    if ($row === null) {
+        api_error('not_found', 'No such photo.', 404);
+    }
+    [$user] = api_require_curates_library((int) $row['library_id']);
+
+    if (($row['approval_state'] ?? 'approved') !== 'pending') {
+        api_error('validation_failed', 'That photo is not waiting for a decision.', 422);
+    }
+
+    if ($approve) {
+        q("UPDATE item_images SET approval_state = 'approved', approved_by = ?, approved_at = NOW()
+            WHERE id = ?", [(int) $user['id'], $imageId]);
+        // It may be the only picture the entry has, and the cover is a column.
+        ensure_primary_image((int) $row['the_item_id']);
+        api_ok(image_to_api(one('SELECT * FROM item_images WHERE id = ?', [$imageId])));
+    }
+
+    // Refused: the row and the files both go, through the same delete_image()
+    // every other removal uses rather than a second path that would have to be
+    // kept in step with it. A refused picture left on disk is one somebody can
+    // still reach by guessing a URL, and a row kept as 'rejected' would be a
+    // queue that only ever grows.
+    delete_image($imageId);
+    record_tombstone('item_images', $imageId, (int) $row['library_id']);
+    ensure_primary_image((int) $row['the_item_id']);
+    api_ok(['id' => $imageId, 'deleted' => true]);
 }
 
 /** Decode and store a base64 photo. Returns [storedCount, errors]. */
@@ -4657,6 +4771,12 @@ function api_libraries_update(int $id): void
         'kind'         => $kind,
         'public_read'  => $publicRead,
         'public_write' => $publicWrite,
+        // Whether a photograph uploaded here waits for a decision. Absent leaves
+        // it alone, so a PATCH of the name does not silently switch review off
+        // on a shelf that had asked for it.
+        'photo_approval' => array_key_exists('photo_approval', $in)
+            ? (!empty($in['photo_approval']) ? 1 : 0)
+            : (int) ($library['photo_approval'] ?? 0),
         'accent_color' => $colour,
     ]);
 

@@ -73,6 +73,15 @@ function settings_schema(): array
                     'default' => 'https://raw.githubusercontent.com/norrorthoarders/retrohive/main/structure',
                     'max'     => 255,
                 ],
+                'avatar_approval' => [
+                    'kind'    => 'bool',
+                    'label'   => 'An administrator approves a new profile picture',
+                    'help'    => 'Off, a picture appears the moment somebody uploads it. On, it waits '
+                               . 'in Instance Users until an administrator says yes, and the picture '
+                               . 'already there stays up meanwhile - what is pending is the change, '
+                               . 'not the removal. Administrators are exempt from their own switch.',
+                    'default' => '',
+                ],
             ],
         ],
 

@@ -52,6 +52,16 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) DEFAULT NULL,
   display_name  VARCHAR(120) DEFAULT NULL,
   avatar_filename VARCHAR(255) DEFAULT NULL,
+  -- A new avatar waiting for an administrator, when the instance asks for that.
+  --
+  -- A second column rather than a state on the one above, because that one *is*
+  -- what is shown. Holding a pending picture there would mean either showing it -
+  -- the thing being prevented - or teaching every reader of avatar_filename to
+  -- check a flag, and there are readers in the API, this application's own
+  -- screens and two clients. One column stays "the avatar" and nothing that
+  -- draws a face has to know this feature exists.
+  avatar_pending_filename VARCHAR(255) DEFAULT NULL,
+  avatar_pending_at DATETIME DEFAULT NULL,
   -- Required when an account is registered, and nullable here on purpose:
   -- directory accounts are provisioned rather than registered, and a directory
   -- without a mail attribute would otherwise be unable to sign anybody in.
@@ -843,6 +853,13 @@ CREATE TABLE IF NOT EXISTS libraries (
   -- only letting invited members add to it.
   public_read  TINYINT(1)   NOT NULL DEFAULT 0,
   public_write TINYINT(1)   NOT NULL DEFAULT 0,
+  -- Whether a photograph uploaded here waits for somebody to approve it.
+  --
+  -- Per library, because one shared shelf with contributors wanting review and
+  -- one private shelf wanting none is the ordinary arrangement rather than an
+  -- exotic one. Off by default. Anybody who curates the library is exempt from
+  -- their own switch: they are the ones who would be approving it.
+  photo_approval TINYINT(1) NOT NULL DEFAULT 0,
   -- Optional: set it and the library only accepts entries for that machine.
   restrict_to_platform_id INT UNSIGNED DEFAULT NULL,
   accent_color CHAR(7)      NOT NULL DEFAULT '#cba6f7',
@@ -1359,6 +1376,18 @@ CREATE TABLE IF NOT EXISTS item_images (
   -- whether it is the publisher's artwork or a photograph of somebody's own
   -- copy - which is what decides whether a scraper may write here.
   provenance    ENUM('official','personal') NOT NULL DEFAULT 'personal',
+  -- Whether anybody but its uploader may see it yet.
+  --
+  -- A state on the row here, unlike an avatar: an entry has many pictures, and a
+  -- pending one is a new row rather than a replacement for an existing one.
+  -- 'approved' by default, so every picture already on an instance stays
+  -- visible - and so does every picture a metadata agent writes, which is
+  -- correct: an agent is not a person and its artwork is not somebody's
+  -- snapshot.
+  approval_state ENUM('approved','pending') NOT NULL DEFAULT 'approved',
+  uploaded_by   INT UNSIGNED DEFAULT NULL,
+  approved_by   INT UNSIGNED DEFAULT NULL,
+  approved_at   DATETIME     DEFAULT NULL,
   -- The address an imported picture was taken from, so a review screen can say
   -- "already here" before anything is fetched. Null for uploads.
   source_url    VARCHAR(500) DEFAULT NULL,
@@ -1372,6 +1401,8 @@ CREATE TABLE IF NOT EXISTS item_images (
   PRIMARY KEY (id),
   KEY idx_images_item (item_id, sort_order),
   KEY idx_images_primary (item_id, is_primary),
+  -- Asked as "what is waiting on this library": one library's pending rows.
+  KEY idx_images_approval (approval_state, item_id),
   UNIQUE KEY uq_images_item_hash (item_id, content_hash),
   CONSTRAINT fk_images_item FOREIGN KEY (item_id)
     REFERENCES items (id) ON DELETE CASCADE ON UPDATE CASCADE

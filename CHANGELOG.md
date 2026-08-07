@@ -1,5 +1,83 @@
 # Changelog
 
+**Pictures can be made to wait for somebody's approval - profile pictures across
+the instance, photographs per library.**
+
+Two features with one shape, and one rule each about who is exempt. Both switches
+are off, both new columns default to the permissive value, and an instance that
+turns neither on behaves exactly as it did.
+
+## Profile pictures
+
+New `avatar_approval` setting. On, a picture uploaded by anybody but an
+administrator waits in Instance Users until one says yes.
+
+**The picture already in use stays up meanwhile.** What is pending is the change,
+not the removal - somebody waiting a day should not spend that day as a set of
+initials, and reverting them would be a second change nobody asked for. That is
+why this is a second column, `avatar_pending_filename`, rather than a state on
+the first: the first *is* what is shown, and holding a pending picture there
+would mean either showing it or teaching every reader of `avatar_filename` to
+check a flag. There are readers in the API, this application's own screens and
+two clients. None of them has to know the feature exists.
+
+Administrators are exempt from their own switch - a queue you approve your own
+entries in is a formality rather than a check.
+
+## Library photographs
+
+New per-library `photo_approval`. On, a photograph uploaded by anybody who does
+not curate that library waits until somebody who does says yes. Per library
+because one shared shelf wanting review and one private shelf wanting none is the
+ordinary arrangement.
+
+Exempt: instance administrators, and anybody who curates the library - again, the
+people who would be approving it.
+
+Here the state is on the row, unlike an avatar: an entry has many pictures, and a
+pending one is a new row rather than a replacement.
+
+## Making "not shown" actually true
+
+A pending picture would have leaked in three separate places, and each had to be
+closed on its own:
+
+- `item_images()` returns approved only unless asked otherwise. This is what
+  every gallery, cover and API read goes through, so one default covers all of
+  them rather than each place somebody remembered.
+- `ensure_primary_image()` will not make a pending picture the cover, and clears
+  any stale primary flag on a pending row. Both halves needed it: the count, or
+  the first pending upload onto an entry with no photographs would satisfy it and
+  stop anything else being chosen.
+- `sync_item_image_columns()` excludes pending from `cover_image_id` **and**
+  `image_count`. These are the columns `v_items` reads, so this is the one that
+  mattered most - a pending picture would otherwise have appeared as the cover on
+  a shelf card without anybody opening the entry.
+
+Metadata agents are unaffected: the column defaults to approved, and an agent is
+not a person whose artwork needs vouching for. Every picture already on an
+instance stays visible for the same reason.
+
+## Deciding
+
+- `POST /admin/users/{id}/avatar/approve` and `/reject`
+- `GET /libraries/{id}/pending-images`, `POST /images/{id}/approve` and `/reject`
+
+Refusal deletes the row and its files, through the same `delete_image()` every
+other removal uses. There is no rejected state: a refused picture left on disk is
+one somebody can still reach by guessing a URL, and a row kept as rejected would
+be a queue that only ever grows.
+
+`api_image_decide()` reads the library from the picture rather than from the
+caller, so no request can approve a picture into a library it is not in.
+
+`item_images.uploaded_by` is now recorded on every upload, switch or no switch. A
+photograph on a shared shelf with no name against it is one nobody can ask about.
+
+Migration 011. Full suite: still 1 of 25, unchanged.
+
+This package is **build 110**.
+
 **`GET /categories` can be asked for one library's tree, and `non_empty` now
 counts only that library's entries.**
 

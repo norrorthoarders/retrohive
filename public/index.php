@@ -360,6 +360,13 @@ if (str_starts_with($path, '/api/')) {
         ['PATCH',  '#^/api/v1/locations/(\d+)$#',          fn($id) => api_locations_update((int) $id)],
         ['PUT',    '#^/api/v1/locations/(\d+)$#',          fn($id) => api_locations_update((int) $id)],
         ['DELETE', '#^/api/v1/locations/(\d+)$#',          fn($id) => api_locations_delete((int) $id)],
+        // Pictures waiting for a decision. Avatars are an instance matter and
+        // sit under /admin; a library's photographs belong to the library.
+        ['POST',   '#^/api/v1/admin/users/(\d+)/avatar/approve$#', fn($id) => api_avatar_decide((int) $id, true)],
+        ['POST',   '#^/api/v1/admin/users/(\d+)/avatar/reject$#',  fn($id) => api_avatar_decide((int) $id, false)],
+        ['GET',    '#^/api/v1/libraries/(\d+)/pending-images$#',   fn($id) => api_library_pending_images((int) $id)],
+        ['POST',   '#^/api/v1/images/(\d+)/approve$#',             fn($id) => api_image_decide((int) $id, true)],
+        ['POST',   '#^/api/v1/images/(\d+)/reject$#',              fn($id) => api_image_decide((int) $id, false)],
         ['GET',    '#^/api/v1/prefs$#',                   fn() => api_prefs_index()],
         ['PATCH',  '#^/api/v1/prefs$#',                   fn() => api_prefs_update()],
         ['POST',   '#^/api/v1/prefs$#',                   fn() => api_prefs_update()],
