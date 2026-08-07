@@ -3475,6 +3475,28 @@ components:
           type: [integer, "null"]
           description: Set only for a kind that belongs to one specific machine.
         library_id: { type: [integer, "null"] }
+        own_image:
+          type: [object, "null"]
+          description: >-
+            Only ever a file uploaded onto this row, never inherited. A client
+            offering "remove" needs to know whether there is genuinely something
+            here to remove.
+        effective_image:
+          type: [object, "null"]
+          description: >-
+            What an entry filed here would actually show with no photograph of
+            its own, resolved in the same four steps item_to_api() takes.
+            `source` says which answered - `own` (uploaded here), `inherited`
+            (from a branch above), `branch` (a shipped picture this branch
+            declares), or `kind` (the shipped picture for this kind, which an
+            entry stating a format may improve on).
+          properties:
+            thumb:   { type: string, format: uri }
+            display: { type: string, format: uri }
+            source:  { type: string, enum: [own, inherited, branch, kind] }
+        stock_image:
+          type: [string, "null"]
+          description: The shipped picture this branch declares, by slug. Null when it declares none.
         path: { type: string, example: "Amiga › Software › Games › Action" }
         description: { type: [string, "null"] }
         sort_order: { type: integer }

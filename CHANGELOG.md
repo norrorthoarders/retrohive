@@ -1,5 +1,32 @@
 # Changelog
 
+**`effective_image` on a category told a screen "nothing" while the shelf plainly
+showed something.**
+
+It reported two of the four steps an entry actually takes: a picture uploaded
+onto the branch, and one inherited from a branch above. It knew nothing about the
+shipped pictures - so a branch relying on those, which is most of them, came back
+with no picture at all while every entry filed under it visibly had one.
+
+All four now, with `source` saying which answered:
+
+    own        uploaded onto this branch
+    inherited  from a branch above
+    branch     the shipped picture this branch declares
+    kind       the shipped picture for this kind of thing
+
+The last is named `kind` rather than passed off as the branch's answer, because
+it is the weakest: an entry that says what it comes on may well get something
+closer - a Blu-ray film gets a Blu-ray case rather than the generic one a branch
+of films would show here.
+
+`stock_image` comes with it, so a picker can show which shipped picture a branch
+currently declares rather than only offering the whole list.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 118**.
+
 **Proving that mail arrives is an API now, not just a form handler.**
 
 `send_smtp_confirmation()` and `confirm_smtp_code()` have existed throughout and

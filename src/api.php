@@ -889,14 +889,46 @@ function category_to_api(array $r): array
             'display' => absolute_url(image_url($r['default_image_filename'], 'display')),
         ],
         'effective_image' => (function () use ($r) {
+            // The same three steps an entry filed here would take, in the same
+            // order - see item_to_api(). This reported only the first two, so a
+            // branch relying on the shipped pictures came back with nothing at
+            // all while entries filed under it plainly showed one. A screen
+            // asking "what do things here look like" was told "nothing" and the
+            // shelf disagreed.
             $filename = !empty($r['default_image_filename'])
                 ? (string) $r['default_image_filename']
                 : category_effective_default_image((int) $r['id']);
+            $source = $filename === null ? null
+                : (!empty($r['default_image_filename']) ? 'own' : 'inherited');
+
+            if ($filename === null) {
+                $declared = category_effective_stock_image((int) $r['id']);
+                if ($declared !== null) {
+                    $filename = STOCK_REF_PREFIX . $declared;
+                    $source   = 'branch';
+                }
+            }
+            if ($filename === null) {
+                // Last, and only a guess: a branch has no format of its own, so
+                // this is what the kind alone would give. Named 'kind' rather
+                // than passed off as the branch's answer, because an entry that
+                // says what it comes on may well get something else.
+                $filename = stock_image_for_item(['category_id' => (int) $r['id']]);
+                $source   = $filename === null ? null : 'kind';
+            }
+
             return $filename === null ? null : [
                 'thumb'   => absolute_url(image_url($filename, 'thumb')),
                 'display' => absolute_url(image_url($filename, 'display')),
+                // Which of the four answered, so a screen can say where it came
+                // from rather than implying every picture was chosen here.
+                'source'  => $source,
             ];
         })(),
+        // What the structure feed declares for this branch, if anything - the
+        // slug, so a picker can show which of the shipped pictures is current.
+        'stock_image' => ($r['stock_image'] ?? null) === null || $r['stock_image'] === ''
+            ? null : (string) $r['stock_image'],
     ];
 }
 
