@@ -1,5 +1,76 @@
 # Changelog
 
+**A metadata source reports which kinds it answers about.**
+
+`default_for_kinds` has been known per provider throughout - it is what decides
+which branches a source is switched on for when a library is seeded - and was
+never reported. So a client listing sources could not say which side of the
+catalogue each one serves, and "which of these covers films" is the first
+question anybody has about a list of them.
+
+`kinds` and `domains` now come down with each configured source and with each
+available type.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 134**.
+
+**A metadata source is tested before it is added, which this said it could not
+do.**
+
+`api_metadata_providers_create()` demanded `skip_probe: true` and explained that
+"this API cannot make that call". It can, and always could: the installer has run
+exactly this check on every shipped source since the beginning - that is what "7
+switched on, the ones that answered" means in its output. The claim was written
+before that existed and outlived it, and the cost was a source added in a broken
+state behind a tick box asking somebody to accept that it might not work.
+
+A source that does not answer is refused. The failure carries `needs_key` and the
+parameter names, so a client can tell "fill in the key" from "the source is down"
+- which are different things to do next.
+
+**Saving a source's settings re-tests it**, and reports the result. A source added
+without a key is switched on and unable to work; the moment somebody fills the key
+in is the first chance to find out whether it was the right one, and it is exactly
+when they want to know. Not fatal - the settings save either way, because
+refusing them would mean a perfectly correct key cannot be stored during an
+outage. The answer is reported and written to `last_error`.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 133**.
+
+**A logo is trimmed and fitted when it is stored, so any size works.**
+
+A logo arrives as somebody's export: the mark in the middle of a large canvas,
+most of the file transparent or white. The one that prompted this was 1536x1024
+with the mark occupying 935x181 - **89 per cent of the file was background**.
+Scaled whole to 24 pixels tall, the mark itself came out around 4 pixels. It
+looked broken because it was being asked to share its height with an inch of
+nothing.
+
+So the margin is measured and removed first, and only then is the thing itself
+scaled. Both halves matter: trimming without scaling leaves a file far bigger
+than it needs to be, and scaling without trimming is the problem.
+
+Transparent *and* near-white count as margin. A logo exported on white is as
+common as one on transparency, and whoever uploads it thinks of both as "the
+background". An image that is entirely background is left alone rather than
+cropped to nothing, and one GD cannot read is refused with a message rather than
+stored at the wrong size.
+
+Doing it once here means every client gets a logo that is the right shape,
+instead of each of them meeting the same problem and solving it differently. It
+also means **no size needs to be demanded of anybody** - a requirement in a hint
+is a requirement somebody has to satisfy by hand in an image editor.
+
+No separate thumbnail any more: the stored file is the size it is drawn at, so a
+second copy would be a second thing to keep in step for nothing.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 132**.
+
 **An instance can carry its own marks.**
 
 `POST /admin/logo/small` and `/large`, with `DELETE` beside each. Two pictures,

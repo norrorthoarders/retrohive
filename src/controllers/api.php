@@ -5649,9 +5649,18 @@ function api_metadata_providers_index(): void
             // ordinary tuning knob like "timeout", and would show
             // both as the same bare, unlabelled text row.
             'credentials' => $def['credentials'] ?? [],
+            // What it is asked about: game, application, movie, tv_show, music,
+            // machine, peripheral. Known per provider throughout and never
+            // reported, so a client listing sources could not say which side of
+            // the catalogue each one serves - and "which of these covers films"
+            // is the first question anybody has about a list of them.
+            'kinds'       => $def['default_for_kinds'] ?? [],
+            'domains'     => $def['domains'] ?? [],
         ];
     }
-    api_ok(array_map(static function (array $r): array {
+    $byType = metadata_provider_types();
+    api_ok(array_map(static function (array $r) use ($byType): array {
+        $def = $byType[(string) $r['type']] ?? [];
         return [
             'id'         => (int) $r['id'],
             'type'       => (string) $r['type'],
@@ -5660,6 +5669,8 @@ function api_metadata_providers_index(): void
             'priority'   => (int) $r['priority'],
             'params'     => metadata_params($r),
             'last_error' => $r['last_error'] ?? null,
+            'kinds'      => $def['default_for_kinds'] ?? [],
+            'domains'    => $def['domains'] ?? [],
         ];
     }, $configured), ['types' => $types]);
 }
@@ -5695,17 +5706,39 @@ function api_metadata_providers_create(): void
         api_error('validation_failed', ($def['label'] ?? $type) . ' is already configured.', 422,
                    ['type' => 'Already configured.']);
     }
-    // The real form always tests first and offers this as the way past a
-    // failed or unreachable check; there being no way here to run that
-    // check at all, the flag is required outright rather than defaulted.
-    if (empty($in['skip_probe'])) {
-        api_error('validation_failed',
-                   'Adding a source normally tests it first. This API cannot make that call, '
-                   . 'so send skip_probe: true to add it unchecked - the same escape hatch the '
-                   . 'real form offers when a check fails.', 422, ['skip_probe' => 'Required.']);
-    }
-
     $params = api_metadata_merge_params($def['params'] ?? [], (array) ($in['params'] ?? []));
+
+    // Tested before it is added, not after.
+    //
+    // This used to demand `skip_probe: true` and say the API "cannot make that
+    // call". It can: the installer has run exactly this check on every shipped
+    // source since the beginning, which is what "7 switched on, the ones that
+    // answered" means in its output. The claim was written before that existed
+    // and outlived it, and the cost was a source added in a broken state with a
+    // tick box asking somebody to accept that it might not work.
+    //
+    // A source needing a key is expected to fail here with nothing filled in -
+    // which is why a client should send the key with the request, or configure
+    // it and try again. The message says which of the two happened.
+    if (empty($in['skip_probe'])) {
+        $probe = metadata_search(
+            ['id' => 0, 'type' => $type, 'params' => json_encode($params, JSON_UNESCAPED_SLASHES)],
+            metadata_provider_probe($type)
+        );
+        if ($probe['error'] !== null) {
+            $needsKey = !empty($def['needs_key']);
+            api_error('probe_failed',
+                sprintf('%s did not answer: %s', (string) $def['label'], (string) $probe['error']),
+                422,
+                [
+                    'probe'     => (string) $probe['error'],
+                    // So a client can tell "fill in the key" from "the source is
+                    // down", which are different things to do next.
+                    'needs_key' => $needsKey,
+                    'params'    => array_keys($def['params'] ?? []),
+                ]);
+        }
+    }
     $id = (int) insert_row('metadata_providers', [
         'type'       => $type,
         'name'       => (string) $def['label'],
@@ -5763,10 +5796,35 @@ function api_metadata_providers_update(int $id): void
 
     update_row('metadata_providers', $id, $data);
     $fresh = one('SELECT * FROM metadata_providers WHERE id = ?', [$id]);
+
+    // Tested when the settings change, and the answer recorded.
+    //
+    // A source added without a key is added switched on and unable to work; the
+    // moment somebody fills the key in, this is the first chance to find out
+    // whether it was the right one. Saving the settings is exactly when
+    // somebody wants to know.
+    //
+    // Not fatal: the settings are already saved, and refusing the save because
+    // the source is down would mean a key that is perfectly correct cannot be
+    // stored during an outage. The result is reported instead, and written to
+    // `last_error` so the list can show it.
+    $probe = null;
+    if (array_key_exists('params', $in) || array_key_exists('is_enabled', $in)) {
+        $result = metadata_search(
+            ['id' => $id, 'type' => (string) $fresh['type'], 'params' => (string) $fresh['params']],
+            metadata_provider_probe((string) $fresh['type'])
+        );
+        $probe = $result['error'] === null ? true : (string) $result['error'];
+        update_row('metadata_providers', $id, ['last_error' => $result['error']]);
+    }
+
     api_ok([
         'id' => $id, 'type' => (string) $fresh['type'], 'name' => (string) $fresh['name'],
         'is_enabled' => (bool) $fresh['is_enabled'], 'priority' => (int) $fresh['priority'],
         'params' => metadata_params($fresh),
+    ], $probe === null ? null : [
+        'probe_ok'    => $probe === true,
+        'probe_error' => $probe === true ? null : $probe,
     ]);
 }
 

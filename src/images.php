@@ -178,6 +178,90 @@ function delete_company_logo(int $companyId): void
  *
  * Returns [filename, error].
  */
+/**
+ * Cut the empty margin off a logo and set it to a usable height.
+ *
+ * A logo arrives as somebody's export: the mark in the middle of a large canvas,
+ * with most of the file being transparent or white. Scaled whole, the mark ends
+ * up a fraction of the space it was given - which is exactly what a 1512x1008
+ * PNG looked like at 24 pixels tall in a header.
+ *
+ * So the margin is measured and removed first, and only then is the thing itself
+ * scaled. Both matter: trimming without scaling leaves a file far larger than it
+ * needs to be, and scaling without trimming is the problem being fixed.
+ *
+ * Transparent *and* near-white are both treated as margin. A logo exported as a
+ * PNG on white is as common as one on transparency, and the person uploading it
+ * thinks of both as "the background".
+ *
+ * Fails soft: an image GD cannot open is left exactly as it arrived, which is
+ * the wrong size rather than no logo at all.
+ */
+function trim_and_fit_logo(string $path, string $mime, int $maxW, int $maxH): bool
+{
+    $img = match ($mime) {
+        'image/jpeg' => @imagecreatefromjpeg($path),
+        'image/png'  => @imagecreatefrompng($path),
+        'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($path) : false,
+        'image/gif'  => @imagecreatefromgif($path),
+        default      => false,
+    };
+    if ($img === false) {
+        return false;
+    }
+
+    $w = imagesx($img);
+    $h = imagesy($img);
+
+    // The bounds of everything that is not margin.
+    $minX = $w; $minY = $h; $maxX = -1; $maxY = -1;
+    for ($y = 0; $y < $h; $y++) {
+        for ($x = 0; $x < $w; $x++) {
+            $rgba = imagecolorat($img, $x, $y);
+            $a = ($rgba >> 24) & 0x7F;          // 0 opaque, 127 fully transparent
+            if ($a > 100) {
+                continue;                        // transparent enough to be margin
+            }
+            $r = ($rgba >> 16) & 0xFF;
+            $g = ($rgba >> 8) & 0xFF;
+            $b = $rgba & 0xFF;
+            if ($r > 244 && $g > 244 && $b > 244) {
+                continue;                        // near-white is margin too
+            }
+            if ($x < $minX) { $minX = $x; }
+            if ($y < $minY) { $minY = $y; }
+            if ($x > $maxX) { $maxX = $x; }
+            if ($y > $maxY) { $maxY = $y; }
+        }
+    }
+    // Nothing found - an image that is entirely background, or entirely white on
+    // white. Left alone rather than cropped to nothing.
+    if ($maxX < $minX || $maxY < $minY) {
+        $minX = 0; $minY = 0; $maxX = $w - 1; $maxY = $h - 1;
+    }
+
+    $cw = $maxX - $minX + 1;
+    $ch = $maxY - $minY + 1;
+    $scale = min(1.0, $maxW / $cw, $maxH / $ch);
+    $nw = max(1, (int) round($cw * $scale));
+    $nh = max(1, (int) round($ch * $scale));
+
+    $out = imagecreatetruecolor($nw, $nh);
+    imagealphablending($out, false);
+    imagesavealpha($out, true);
+    imagefill($out, 0, 0, imagecolorallocatealpha($out, 0, 0, 0, 127));
+    imagecopyresampled($out, $img, 0, 0, $minX, $minY, $nw, $nh, $cw, $ch);
+
+    // Written as PNG whatever arrived: transparency is the point of a logo, and
+    // a JPEG cannot keep it. The stored name keeps its original extension, which
+    // is cosmetic - every reader goes through image_url() and the browser reads
+    // the bytes, not the name.
+    $ok = imagepng($out, $path, 6);
+    imagedestroy($img);
+    imagedestroy($out);
+    return $ok;
+}
+
 function store_instance_logo(string $which, string $field): array
 {
     $which = $which === 'large' ? 'large' : 'small';
@@ -198,12 +282,25 @@ function store_instance_logo(string $which, string $field): array
     }
     @chmod($target, 0644);
 
-    // A thumbnail for the small one, which is all it is ever shown at. The large
-    // one is used at its own size on the sign-in page, so scaling it down and
-    // then displaying it big would throw away the reason somebody uploaded it.
-    if ($which === 'small') {
-        resize_image($target, uploads_dir() . '/thumb_' . $basename, (string) $info['mime'], (int) config('uploads.thumb_px'));
+    // Trimmed and fitted where it is stored, not where it is drawn.
+    //
+    // A stylesheet can constrain a picture's box; it cannot remove the empty
+    // margin inside it. Doing this once on upload means every client gets a
+    // logo that is the right shape, rather than each of them discovering the
+    // same problem and solving it differently.
+    //
+    // Twice the drawn size, for a screen that has more pixels than it admits to.
+    $ok = $which === 'small'
+        ? trim_and_fit_logo($target, (string) $info['mime'], 320, 64)
+        : trim_and_fit_logo($target, (string) $info['mime'], 880, 480);
+    if (!$ok) {
+        return [null, 'That picture could not be read. Try a PNG, JPEG or WebP.'];
     }
+
+    // No separate thumbnail: the file itself is now the size it is shown at, so
+    // a second smaller copy would be a second thing to keep in step for nothing.
+    // instance_logos() reads the original for both.
+    
 
     delete_instance_logo($which);
     set_setting('logo_' . $which, $basename);
