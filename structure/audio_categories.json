@@ -4,5 +4,124 @@
     "name": "Music",
     "role": "music",
     "sort_order": 10
+  },
+  {
+    "slug": "music-blues",
+    "name": "Blues",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 10
+  },
+  {
+    "slug": "music-classical",
+    "name": "Classical",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 20
+  },
+  {
+    "slug": "music-country",
+    "name": "Country",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 30
+  },
+  {
+    "slug": "music-dance",
+    "name": "Dance",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 40
+  },
+  {
+    "slug": "music-electronic",
+    "name": "Electronic",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 50
+  },
+  {
+    "slug": "music-folk",
+    "name": "Folk",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 60
+  },
+  {
+    "slug": "music-funk",
+    "name": "Funk",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 70
+  },
+  {
+    "slug": "music-hip-hop",
+    "name": "Hip hop",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 80
+  },
+  {
+    "slug": "music-jazz",
+    "name": "Jazz",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 90
+  },
+  {
+    "slug": "music-metal",
+    "name": "Metal",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 100
+  },
+  {
+    "slug": "music-pop",
+    "name": "Pop",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 110
+  },
+  {
+    "slug": "music-punk",
+    "name": "Punk",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 120
+  },
+  {
+    "slug": "music-rnb-soul",
+    "name": "R&B and soul",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 130
+  },
+  {
+    "slug": "music-reggae",
+    "name": "Reggae",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 140
+  },
+  {
+    "slug": "music-rock",
+    "name": "Rock",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 150
+  },
+  {
+    "slug": "music-soundtrack",
+    "name": "Soundtrack",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 160
+  },
+  {
+    "slug": "music-world",
+    "name": "World",
+    "role": "other",
+    "parent": "recordings",
+    "sort_order": 170
   }
 ]

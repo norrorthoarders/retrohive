@@ -1,5 +1,229 @@
 # Changelog
 
+**Games and Applications get real trees - 32 more branches, so a shelf of Amiga
+boxes divides into something a person would recognise.**
+
+Games had four genres, one of which was Shoot 'em up and none of which was
+Adventure. Applications had Graphics and CAD with Paint under it and nothing
+else, so a word processor and a disk utility were both filed as "Applications".
+
+    Games          Action, Adventure (Point and click, Text adventure),
+                   Beat 'em up, Board and card, Educational, Fighting, Pinball,
+                   Platformer, Puzzle, Racing, Role-playing, Shoot 'em up,
+                   Simulation, Sports, Strategy
+
+    Applications   Business and productivity (Database, Spreadsheet,
+                   Word processing), Communications, Education and reference,
+                   Emulation, Graphics and CAD (3D and rendering, CAD,
+                   Desktop publishing, Paint), Music and audio (Sampling and
+                   editing, Tracker and sequencer), Programming and development,
+                   System software, Utilities (Backup, Disk and file tools),
+                   Video
+
+Pinball and Text adventure are on the list because they divide a retro shelf in a
+way they would not divide a modern one. Point and click sits under Adventure
+rather than beside it, because that is what it is a kind of.
+
+The four rows that already existed keep their slugs and are re-placed rather than
+replaced - a slug is what `source_slug` joins a library's copy back to its
+template, and re-slugging Action would orphan every copy of it for no gain.
+
+Checked, rather than assumed, across all four feeds at once:
+
+- Every genre declares `role: other` and resolves to its branch's kind. A
+  genre resolving to nothing would be invisible to both the stock pictures and
+  the metadata sources, and silently so.
+- **No game genre is machine-class gated.** A console game is still a game, and
+  a `classes` value copied down from Applications would have hidden the whole
+  Games tree from every console in the library.
+- **Every application type stays `computer`-only**, matching Applications
+  itself, so a Game Boy is not offered Desktop publishing.
+- No branch in software, video or audio declares a stock picture. A declared
+  picture beats the format rules, and the rules already know a boxed Amiga game
+  looks different from a jewel-cased PC one.
+- All 126 template category slugs are still unique. The slug is the global key -
+  `structure_apply()` looks a category up by slug alone among the rows with no
+  library - so a collision would not error, it would silently overwrite another
+  section's branch.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 102**.
+
+**Genres for films, series and records - 49 branches the video and audio sections
+have been missing since they were added.**
+
+Software has had Action, Platformer, Shoot-em-up and Strategy under Games from
+the beginning. Video and audio had two branches and one branch respectively:
+Movies, TV Shows, Music, and nothing beneath any of them. A shelf of four hundred
+records that can only be filed as "Music" is a list, not a catalogue.
+
+    Movies      Action, Adventure, Animation, Comedy, Crime, Documentary,
+                Drama, Family, Fantasy, Horror, Musical, Mystery, Romance,
+                Science fiction, Thriller, War, Western
+    TV Shows    Animation, Children's, Comedy, Crime, Documentary, Drama,
+                Factual, Fantasy, Mystery, Reality, Science fiction, Sitcom,
+                Soap opera, Thriller, Western
+    Music       Blues, Classical, Country, Dance, Electronic, Folk, Funk,
+                Hip hop, Jazz, Metal, Pop, Punk, R&B and soul, Reggae, Rock,
+                Soundtrack, World
+
+Each carries `role: other` and inherits its kind from the branch above, which is
+the shape software's genres already use and the reason `category_effective_role()`
+walks upward. Confirmed rather than assumed: a Sitcom resolves to `tv_show`, an
+R&B record to `music`.
+
+**The slugs are prefixed - `movie-drama`, `tv-drama`, `music-rock` - because a
+template slug is the global key.** `structure_apply()` looks a category up by
+slug alone among the rows with no library, so a movie genre called `action` would
+have collided with the game genre that already exists and quietly overwritten it.
+Two of them are given explicit suffixes where slugifying the name produces
+something nobody would recognise: Science fiction is `sci-fi`, not
+`science-fiction`, and R&B and soul is `rnb-soul` rather than `randb-and-soul`.
+
+**No genre declares a stock picture, deliberately.** A declared picture beats the
+format rules, so putting one on Drama would have given a Blu-ray drama and a VHS
+drama the same image - the rules already know that a film on Blu-ray comes in a
+Blu-ray case and one on VHS in a slip. Checked both directions: no genre carries
+`stock_image`, and a film resolves by format through them.
+
+Metadata sources are unaffected. Seeding writes at the topmost branch of each
+kind and lets it inherit downward, so this adds 49 branches and no provider rows
+- Movies still covers every genre beneath it.
+
+Sorted alphabetically and spaced by ten, so a genre can be slipped between two
+later without renumbering the rest.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 101**.
+
+**Three more pictures: a monitor, a memory board and an accelerator card.**
+
+Displays, Memory and Accelerator had been inheriting the generic expansion card
+from the group above them - honest, in that they are peripherals, and wrong about
+all three. Each now declares its own.
+
+The catalogue is 37 pictures across 74 files, 5.4 MB. Storage and the four drives
+under it are still the outstanding gap: a hard drive shows a picture of a card,
+because there is no drive in the shipped set.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 100**.
+
+**Storage gains the four kinds of drive, and Input devices is just Input.**
+
+    Peripherals
+      Input              Gamepad, Joystick, Keyboard, Mouse
+      Displays
+      Storage            Hard drive, Floppy drive, Zip drive, Tape drive
+      Adapters           Network adapters
+                         Storage controller  SCSI, IDE, RAID
+                         I/O card            Serial/parallel, Multi-I/O
+                         Graphics card
+      Expansions         Memory, Accelerator, Sound card
+      Modifications      Modchip, Flash cartridge
+
+Storage now holds the drives themselves, one level below the branch, the way
+Storage controller holds SCSI, IDE and RAID. The two are worth keeping apart and
+now visibly are: a Zip *drive* is a peripheral you own, and the card it hangs off
+is filed under Adapters.
+
+**Input devices is renamed and not re-slugged.** The slug stays `input-devices`,
+because it is what `source_slug` joins a library's copy back to its template,
+what the unique key is on, and what the stock-image repair matches on - changing
+it would orphan every existing copy of the branch for the sake of tidiness. What
+anybody reads is the name.
+
+The four drives are in sentence case - "Hard drive", not "Hard Drive" - matching
+"Graphics card", "Sound card" and "Network adapters" already in the tree. Zip is
+Iomega's brand rather than an initialism, so it is not shouted.
+
+They declare no picture of their own and inherit the generic card from
+Peripherals, which is honest but not good: a hard drive is not a card, and there
+is no drive picture in the shipped set to give them. Four more images would fix
+it, and until then the fallback is at least not wrong about the kind of thing.
+
+`classes` unchanged, so the console and handheld trees are still nine branches
+apiece and see none of this. All three structure checks re-run clean.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 99**.
+
+**The cards are grouped again, this time on what the card is *for* rather than on
+where it physically sits.**
+
+Two branches under Peripherals, beside the things that were never cards:
+
+    Peripherals
+      Input devices      Gamepad, Joystick, Keyboard, Mouse
+      Displays
+      Storage
+      Adapters           Network adapters
+                         Storage controller  SCSI, IDE, RAID
+                         I/O card            Serial/parallel, Multi-I/O
+                         Graphics card
+      Expansions         Memory, Accelerator, Sound card
+      Modifications      Modchip, Flash cartridge
+
+The rule, stated so the next card has an obvious home: an **adapter** connects
+the machine to something else - a network, disks, ports, a monitor - and an
+**expansion** makes the machine itself more capable, with memory it did not have,
+a faster processor, or sound it could not previously make.
+
+Two placements are arguable and easy to flip if the rule reads differently to
+you. A **graphics card** is filed as an adapter, on the grounds that it is
+literally a display adapter and the thing it connects to is the monitor; the case
+against is that a Picasso II makes an Amiga capable of resolutions it had no way
+to produce. A **sound card** is filed as an expansion, because a Sound Blaster
+gives a PC synthesis it did not have; the case against is the row of jacks on its
+bracket. Each is one line in `structure/hardware_categories.json`.
+
+Memory, Accelerator, Displays and Storage declare no picture of their own and
+inherit the generic card from the group above them, which is checked rather than
+assumed - the walk has to pass through the new mid-level nodes without stopping
+at them, and a leaf that stopped early would show a blank card where a specific
+picture exists.
+
+`classes` still gates per row, so the console and handheld trees are unchanged at
+nine branches apiece and neither is offered any of this.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 98**.
+
+**Expansions is gone. Its branches sit directly under Peripherals, which is now
+the only place a peripheral goes.**
+
+Build 96 nested Expansions under Peripherals instead of merging it, on the
+grounds that eleven direct children with a mouse beside a RAID controller loses a
+distinction worth keeping. That was the wrong call to make unilaterally: the
+complaint was that the tree offers two answers to "where does a card go", and
+nesting still shows two branches. It now shows one.
+
+Peripherals, in order: Input devices, Displays, Storage, Adapters, Memory,
+Accelerator, Graphics card, Sound card, Storage controller, I/O card,
+Modifications. Outside the case first, then what goes inside it, then what is
+done to it. The cards that had been grouped under Expansions are still adjacent,
+which is most of what that node was doing.
+
+`classes` gates per row and is unaffected by where a row sits, so nothing
+widened. Checked by building the tree each machine class would actually receive:
+a computer gets 25 branches, a console and a handheld 9 apiece - Gamepad and
+Joystick yes, Keyboard, Sound card and SCSI controller no.
+
+`category_repair_roles()` keeps `expansions` in the list of hardware names it
+recognises, although the shipped tree no longer produces that branch. That list
+exists to repair instances whose feed predates the current shape, and one of them
+is now any instance built before this build - a name matching nothing costs a
+comparison, and removing it would strand exactly the trees it is for.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 97**.
+
 **Expansions moves under Peripherals rather than beside it, and Packaging models
 moves to Global.**
 

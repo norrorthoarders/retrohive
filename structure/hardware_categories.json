@@ -18,25 +18,35 @@
     "slug": "expansions",
     "name": "Expansions",
     "role": "peripheral",
-    "sort_order": 50,
+    "parent": "peripherals",
     "classes": "computer",
-    "stock_image": "hardware_peripheral",
-    "parent": "peripherals"
+    "sort_order": 50,
+    "stock_image": "hardware_peripheral"
   },
   {
     "slug": "memory",
     "name": "Memory",
     "role": "peripheral",
     "parent": "expansions",
-    "sort_order": 32,
-    "classes": "computer"
+    "sort_order": 10,
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_memory_card"
+  },
+  {
+    "slug": "adapters",
+    "name": "Adapters",
+    "role": "other",
+    "parent": "peripherals",
+    "sort_order": 40,
+    "classes": "computer",
+    "stock_image": "hardware_peripheral"
   },
   {
     "slug": "graphics-card",
     "name": "Graphics card",
     "role": "peripheral",
-    "parent": "expansions",
-    "sort_order": 33,
+    "parent": "adapters",
+    "sort_order": 40,
     "classes": "computer",
     "stock_image": "hardware_peripheral_pci_graphics_card"
   },
@@ -57,19 +67,11 @@
     "stock_image": "hardware_console"
   },
   {
-    "slug": "adapters",
-    "name": "Adapters",
-    "role": "other",
-    "parent": "peripherals",
-    "sort_order": 40,
-    "classes": "computer"
-  },
-  {
     "slug": "network-adapters",
     "name": "Network adapters",
     "role": "other",
     "parent": "adapters",
-    "sort_order": 22,
+    "sort_order": 10,
     "classes": "computer",
     "stock_image": "hardware_peripheral_isa_network_card"
   },
@@ -87,15 +89,17 @@
     "role": "other",
     "parent": "peripherals",
     "sort_order": 20,
-    "classes": "computer"
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_monitor"
   },
   {
     "slug": "accelerator",
     "name": "Accelerator",
     "role": "peripheral",
     "parent": "expansions",
-    "sort_order": 31,
-    "classes": "computer"
+    "sort_order": 20,
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_accelerator_card"
   },
   {
     "slug": "blank-media",
@@ -116,7 +120,7 @@
     "name": "Sound card",
     "role": "peripheral",
     "parent": "expansions",
-    "sort_order": 40,
+    "sort_order": 30,
     "classes": "computer",
     "stock_image": "hardware_peripheral_isa_sound_card"
   },
@@ -124,8 +128,8 @@
     "slug": "storage-controller",
     "name": "Storage controller",
     "role": "peripheral",
-    "parent": "expansions",
-    "sort_order": 50,
+    "parent": "adapters",
+    "sort_order": 20,
     "classes": "computer",
     "stock_image": "hardware_peripheral_isa_scsi_controller"
   },
@@ -160,8 +164,8 @@
     "slug": "io-card",
     "name": "I/O card",
     "role": "peripheral",
-    "parent": "expansions",
-    "sort_order": 60,
+    "parent": "adapters",
+    "sort_order": 30,
     "classes": "computer",
     "stock_image": "hardware_peripheral_isa_multi_io_controller"
   },
@@ -185,7 +189,7 @@
   },
   {
     "slug": "input-devices",
-    "name": "Input devices",
+    "name": "Input",
     "role": "peripheral",
     "parent": "peripherals",
     "sort_order": 10,
@@ -249,5 +253,37 @@
     "sort_order": 20,
     "classes": "console,handheld",
     "stock_image": "hardware_peripheral_console_flashcart"
+  },
+  {
+    "slug": "hard-drive",
+    "name": "Hard drive",
+    "role": "peripheral",
+    "parent": "storage",
+    "classes": "computer",
+    "sort_order": 10
+  },
+  {
+    "slug": "floppy-drive",
+    "name": "Floppy drive",
+    "role": "peripheral",
+    "parent": "storage",
+    "classes": "computer",
+    "sort_order": 20
+  },
+  {
+    "slug": "zip-drive",
+    "name": "Zip drive",
+    "role": "peripheral",
+    "parent": "storage",
+    "classes": "computer",
+    "sort_order": 30
+  },
+  {
+    "slug": "tape-drive",
+    "name": "Tape drive",
+    "role": "peripheral",
+    "parent": "storage",
+    "classes": "computer",
+    "sort_order": 40
   }
 ]

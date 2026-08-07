@@ -10,5 +10,229 @@
     "name": "TV Shows",
     "role": "tv_show",
     "sort_order": 20
+  },
+  {
+    "slug": "movie-action",
+    "name": "Action",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 10
+  },
+  {
+    "slug": "movie-adventure",
+    "name": "Adventure",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 20
+  },
+  {
+    "slug": "movie-animation",
+    "name": "Animation",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 30
+  },
+  {
+    "slug": "movie-comedy",
+    "name": "Comedy",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 40
+  },
+  {
+    "slug": "movie-crime",
+    "name": "Crime",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 50
+  },
+  {
+    "slug": "movie-documentary",
+    "name": "Documentary",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 60
+  },
+  {
+    "slug": "movie-drama",
+    "name": "Drama",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 70
+  },
+  {
+    "slug": "movie-family",
+    "name": "Family",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 80
+  },
+  {
+    "slug": "movie-fantasy",
+    "name": "Fantasy",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 90
+  },
+  {
+    "slug": "movie-horror",
+    "name": "Horror",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 100
+  },
+  {
+    "slug": "movie-musical",
+    "name": "Musical",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 110
+  },
+  {
+    "slug": "movie-mystery",
+    "name": "Mystery",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 120
+  },
+  {
+    "slug": "movie-romance",
+    "name": "Romance",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 130
+  },
+  {
+    "slug": "movie-sci-fi",
+    "name": "Science fiction",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 140
+  },
+  {
+    "slug": "movie-thriller",
+    "name": "Thriller",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 150
+  },
+  {
+    "slug": "movie-war",
+    "name": "War",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 160
+  },
+  {
+    "slug": "movie-western",
+    "name": "Western",
+    "role": "other",
+    "parent": "movies",
+    "sort_order": 170
+  },
+  {
+    "slug": "tv-animation",
+    "name": "Animation",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 10
+  },
+  {
+    "slug": "tv-childrens",
+    "name": "Children's",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 20
+  },
+  {
+    "slug": "tv-comedy",
+    "name": "Comedy",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 30
+  },
+  {
+    "slug": "tv-crime",
+    "name": "Crime",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 40
+  },
+  {
+    "slug": "tv-documentary",
+    "name": "Documentary",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 50
+  },
+  {
+    "slug": "tv-drama",
+    "name": "Drama",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 60
+  },
+  {
+    "slug": "tv-factual",
+    "name": "Factual",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 70
+  },
+  {
+    "slug": "tv-fantasy",
+    "name": "Fantasy",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 80
+  },
+  {
+    "slug": "tv-mystery",
+    "name": "Mystery",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 90
+  },
+  {
+    "slug": "tv-reality",
+    "name": "Reality",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 100
+  },
+  {
+    "slug": "tv-sci-fi",
+    "name": "Science fiction",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 110
+  },
+  {
+    "slug": "tv-sitcom",
+    "name": "Sitcom",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 120
+  },
+  {
+    "slug": "tv-soap-opera",
+    "name": "Soap opera",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 130
+  },
+  {
+    "slug": "tv-thriller",
+    "name": "Thriller",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 140
+  },
+  {
+    "slug": "tv-western",
+    "name": "Western",
+    "role": "other",
+    "parent": "tv-shows",
+    "sort_order": 150
   }
 ]

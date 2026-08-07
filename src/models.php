@@ -5307,6 +5307,11 @@ function category_declare_kinds(int $libraryId): int
     $hardware = 0;
     foreach ([
         'machine'    => ['computers', 'consoles', 'console', 'handhelds', 'handheld'],
+        // 'expansions' is kept although the shipped tree no longer has that
+        // branch - it was merged into Peripherals, and this list exists precisely
+        // to repair instances whose feed predates the current shape. An instance
+        // carrying the old two-branch tree still needs its Expansions node given
+        // a kind, and a name that matches nothing costs one comparison.
         'peripheral' => ['peripherals', 'expansions', 'cartridges'],
     ] as $role => $names) {
         $in = implode(',', array_fill(0, count($names), '?'));

@@ -205,6 +205,19 @@ function stock_images(): array
             'label' => 'Flash cartridge',
             'note'  => 'A cartridge shell with a card slot in the end.',
         ],
+        'hardware_peripheral_monitor' => [
+            'label' => 'Monitor',
+            'note'  => 'A beige CRT monitor on its stand.',
+        ],
+        'hardware_peripheral_memory_card' => [
+            'label' => 'Memory card',
+            'note'  => 'A long board densely populated with RAM chips.',
+        ],
+        'hardware_peripheral_accelerator_card' => [
+            'label' => 'Accelerator card',
+            'note'  => 'A processor board with a large chip and a heatsink.',
+        ],
+
         'hardware_peripheral_console_chipmod' => [
             'label' => 'Modchip',
             'note'  => 'A small bare board meant to be fitted inside a machine.',
