@@ -187,6 +187,47 @@ function api_me(): void
     ]);
 }
 
+/**
+ * Small per-user choices. Whoever is signed in, and only them - there is no
+ * reading anybody else's, and nothing here is worth an administrator override.
+ */
+function api_prefs_index(): void
+{
+    [$user] = api_require_auth();
+    api_ok((object) user_prefs((int) $user['id']));
+}
+
+/**
+ * Merge, not replace. A client setting one preference must not clear the ones it
+ * has never heard of - which is what a whole-object PUT would do the first time
+ * two clients disagree about the list.
+ *
+ * Sending null or an empty string forgets a key.
+ */
+function api_prefs_update(): void
+{
+    [$user] = api_require_write();
+    $in = api_body();
+    if ($in === []) {
+        api_error('validation_failed', 'Send at least one preference.', 422);
+    }
+
+    $rejected = [];
+    foreach ($in as $name => $value) {
+        if (is_array($value) || is_object($value)) {
+            $rejected[] = (string) $name;
+            continue;
+        }
+        if (!set_user_pref((int) $user['id'], (string) $name, $value === null ? '' : (string) $value)) {
+            $rejected[] = (string) $name;
+        }
+    }
+    // Named rather than swallowed: a preference that did not stick and said
+    // nothing looks exactly like one the server chose to ignore.
+    api_ok((object) user_prefs((int) $user['id']),
+           $rejected === [] ? null : ['rejected' => $rejected]);
+}
+
 // --- Token management -------------------------------------------------------
 
 function api_tokens_index(): void

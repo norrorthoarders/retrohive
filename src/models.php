@@ -1271,6 +1271,60 @@ function category_effective_stock_image(int $categoryId): ?string
     return $cache[$categoryId] = null;
 }
 
+/**
+ * Small per-user choices - which view a browser section opens in, and whatever
+ * comes after it. See the user_prefs table.
+ *
+ * Names are capped and values are capped, because both go into fixed columns and
+ * a silent truncation is a preference that reads back as something the person
+ * did not choose. Over-long names are refused rather than trimmed: a caller
+ * writing one has a bug, and trimming would make two different keys collide.
+ *
+ * @return array<string, string>
+ */
+function user_prefs(int $userId, bool $refresh = false): array
+{
+    // Cached per request because a page may read several. `$refresh` is how a
+    // write invalidates it - a second static reset function would have had no
+    // way to reach this one's scope, which is worth saying because the obvious
+    // first attempt at it does not work.
+    static $cache = [];
+    if (!$refresh && isset($cache[$userId])) {
+        return $cache[$userId];
+    }
+    $out = [];
+    foreach (all('SELECT name, value FROM user_prefs WHERE user_id = ?', [$userId]) as $r) {
+        $out[(string) $r['name']] = (string) $r['value'];
+    }
+    return $cache[$userId] = $out;
+}
+
+function user_pref(int $userId, string $name, string $default = ''): string
+{
+    return user_prefs($userId)[$name] ?? $default;
+}
+
+function set_user_pref(int $userId, string $name, string $value): bool
+{
+    $name = trim($name);
+    // Refused rather than trimmed. A caller writing an over-long name has a bug,
+    // and trimming would make two different keys collide silently.
+    if ($name === '' || mb_strlen($name) > 60) {
+        return false;
+    }
+    // Empty means "forget this", so a preference put back to its default leaves
+    // no row rather than a row repeating what the default already says.
+    if ($value === '') {
+        q('DELETE FROM user_prefs WHERE user_id = ? AND name = ?', [$userId, $name]);
+    } else {
+        q('INSERT INTO user_prefs (user_id, name, value) VALUES (?, ?, ?)
+           ON DUPLICATE KEY UPDATE value = VALUES(value)',
+          [$userId, $name, mb_substr($value, 0, 500)]);
+    }
+    user_prefs($userId, true);
+    return true;
+}
+
 /** "Peripherals › Storage", for showing where an entry sits. */
 function category_breadcrumb(int $categoryId, string $separator = ' › '): string
 {

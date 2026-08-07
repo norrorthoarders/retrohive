@@ -1763,6 +1763,29 @@ CREATE TABLE IF NOT EXISTS notification_prefs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
+-- Small per-user choices that are nobody else's business.
+--
+-- Not columns on `users`: the first of these is which view each browser section
+-- opens in, and the next will be something else, and a column apiece means a
+-- migration apiece for settings individually worth almost nothing. Same shape as
+-- notification_prefs above - a row per user per key, cascading away with the
+-- account.
+--
+-- Deliberately not the `settings` table, which holds instance configuration an
+-- administrator sets. Mixing per-user preference into it would mean every read
+-- had to say whose it was.
+CREATE TABLE IF NOT EXISTS user_prefs (
+  user_id INT UNSIGNED NOT NULL,
+  name    VARCHAR(60)  NOT NULL,
+  -- A preference needing more than this is not a preference.
+  value   VARCHAR(500) NOT NULL DEFAULT '',
+  PRIMARY KEY (user_id, name),
+  CONSTRAINT fk_userpref_user FOREIGN KEY (user_id) REFERENCES users (id)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- ---------------------------------------------------------------------------
 -- API tokens for native clients (macOS, iOS, Android).
 -- Only the SHA-256 hash is stored; the plaintext token is shown once.
 -- An invitation to join this instance.

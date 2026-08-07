@@ -1,5 +1,31 @@
 # Changelog
 
+**A per-user preference store, and the first thing kept in it.**
+
+New `user_prefs` table (migration 010) and `GET`/`PATCH /prefs`. A row per person
+per key, cascading away with the account - the shape `notification_prefs` already
+uses.
+
+Not columns on `users`: the first of these is which view each browser section
+opens in, the next will be something else, and a column apiece means a migration
+apiece for settings individually worth almost nothing. Not the `settings` table
+either, which holds instance configuration an administrator sets; mixing
+per-person preference into it would mean every read had to say whose it was.
+
+`PATCH` **merges rather than replaces**. A client setting one preference must not
+clear the ones it has never heard of, which is what a whole-object PUT would do
+the first time two clients disagree about the list. An empty value forgets a key,
+so a preference put back to its default leaves no row rather than one repeating
+what the default already says.
+
+A name over sixty characters is refused rather than trimmed - a caller writing
+one has a bug, and trimming would make two different keys collide silently - and
+anything refused is named back in `meta.rejected` rather than swallowed.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 106**.
+
 **The video and audio examples file themselves into a genre.**
 
 They landed on Movies, TV Shows and Music - the branch head, not a genre -

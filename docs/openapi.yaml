@@ -2492,6 +2492,41 @@ paths:
         "403": { description: Curator access on this library is required }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /prefs:
+    get:
+      tags: [Account]
+      summary: This account's small preferences
+      description: >-
+        Which view each browser section opens in, and whatever else is worth
+        remembering per person and is nobody else's business. Flat string pairs.
+        Only ever this account's - there is no reading another's.
+      responses:
+        "200":
+          description: An object of name/value pairs, empty for a new account
+    patch:
+      tags: [Account]
+      summary: Set or forget preferences
+      description: >-
+        Merged, not replaced. A client setting one preference must not clear the
+        ones it has never heard of, which is what a whole-object PUT would do the
+        first time two clients disagree about the list. Send null or an empty
+        string to forget a key - a preference put back to its default should
+        leave no row rather than one repeating the default. Names over 60
+        characters are refused rather than trimmed, since trimming would make two
+        keys collide silently; anything refused comes back in meta.rejected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: [string, "null"]
+              example: { "view:hardware": "table", "view:video": null }
+      responses:
+        "200": { description: The full set after the change }
+        "422": { description: An empty body }
+
   /stock-images:
     get:
       tags: [Taxonomy]
