@@ -1,5 +1,143 @@
 # Changelog
 
+**An instance can carry its own marks.**
+
+`POST /admin/logo/small` and `/large`, with `DELETE` beside each. Two pictures,
+not one scaled twice: a mark that reads at 24 pixels beside a menu is rarely the
+same drawing as one that carries a sign-in page, and making somebody use one
+image for both guarantees it is wrong at one of the two sizes.
+
+Reported by `GET /meta` rather than from behind the admin gate, because a client
+needs the large one **before anybody has signed in** - which is the whole point
+of it. Null means "draw the built-in mark", so an instance that uploads nothing
+behaves exactly as it did.
+
+## The orphan sweep would have eaten them
+
+Every other picture is referred to by a column on a row, and these two are named
+in `settings` - so `maintenance_upload_is_orphan()` read them as unreferenced,
+and the repair beside it deletes what it reports. Uploading a logo and then
+running the sweep would have restored the built-in mark with no explanation.
+
+The same check was also missing `users.avatar_pending_filename`, so a profile
+picture waiting for an administrator was an orphan too - the sweep would have
+thrown away the very picture somebody was queued up to approve. Both are covered
+now, in the maintenance job and in `bin/cleanup-uploads.php`, which keeps its own
+list.
+
+This is the third time that list has been short. It is worth reading whenever
+anything new is written to the uploads directory.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 131**.
+
+**Two kinds of library, named for what they mean - and the cap on a personal
+shelf is enforced in acl.php rather than in a dropdown.**
+
+## private and public
+
+`shared` said how a library is used; `public` says who may reach it, which is
+what the column actually decides. The pair was not really a pair either: a
+library could be `shared` and still members-only, because `public_read` was a
+separate switch beside it. Four combinations for two real arrangements, and one
+of them - private-but-public - was a contradiction the form allowed.
+
+    private   access has to be granted to each person by name
+    public    anybody signed in can find it and join it, and gets read access
+
+`public_read` follows `kind` now, and `public_write` is always 0: joining grants
+read and nothing more. A higher level is something somebody is invited to, not
+something taken by arriving.
+
+Migration 012 maps it forward. A shared library that was open becomes public; one
+that was members-only becomes private, which is what it already behaved as. The
+ENUM is widened before the rows are rewritten and narrowed afterwards - renaming
+the value in place would have made every existing row invalid for the instant
+between two statements, and MySQL resolves that by silently writing `''`.
+
+## The invitation ceiling
+
+`library_grantable_levels()` answered on `kind`: only a public library could
+grant above viewer. So a private library shared with three people could never
+make any of them an editor - backwards, since a private library is the one whose
+membership is deliberate.
+
+What caps it is `is_personal`. Somebody's own shelf - made with their account,
+impossible to delete - invites at **viewer and no higher**, so nobody but its
+owner can ever change what is on it. Every other library, private or public, goes
+up to administrator. Owner is on no list anywhere: a library has exactly one, and
+it moves by an offer that has to be accepted.
+
+**In `acl.php`, and the three callers now go through it.** A ceiling that lives in
+a dropdown is a ceiling a second client does not have.
+
+`library_to_api()` reports `invitable_levels`, so a client offers what is allowed
+rather than a list the server then refuses.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 130**.
+
+**`GET /profile/libraries` reports how many decisions are waiting.**
+
+`meta.waiting` - invitations plus offers of ownership. Two different objects and
+the same fact to somebody looking at a menu: something is waiting on them. A
+client drawing a badge should not have to fetch both lists, add them up, and
+decide for itself which of the four keys count.
+
+**Libraries open to join are deliberately not in it.** Nobody is waiting on an
+answer about those - they stand open to everybody - and counting them would put a
+badge on a menu entry permanently, which teaches people to ignore it.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 129**.
+
+**`GET /libraries/{id}/invitable` - who could be invited here, by name.**
+
+Inviting somebody needed their numeric account id, which nobody knows and which
+has to be read off a screen most people who run a library cannot open.
+
+**A search, deliberately not a list.** Anybody who administers one library would
+otherwise be handed every account on the instance - a membership directory nobody
+asked them to have, and on a shared instance somebody else's business. Two
+characters minimum, twenty results.
+
+Short queries answer with an empty list rather than a 422: an empty box is the
+ordinary state of a search, and an error under a field nobody has typed in is
+noise.
+
+Only what an invitation needs comes back - the id to send and a name to recognise.
+No email, no role, no last-seen: none is required to choose somebody, and all
+would be a fact about an account leaking to whoever runs a shelf. Inactive
+accounts, the caller, and anybody already a member or invited are left out, since
+offering them is offering an action that would be refused.
+
+Same gate as the invitation itself. A search that answers for somebody who could
+not act on the answer is a directory with extra steps.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 128**.
+
+**Credit roles are counted in the structure report.**
+
+They have been offered as a part to synchronise all along and were never counted
+by `structure_row_counts()`, so the one report that says whether a sync worked had
+nothing to say about them - somebody ticking "Credit roles" got no confirmation
+either way.
+
+**People are deliberately absent and stay absent.** There is no people file to
+sync from: a person exists because a credit named them - a director on a film, a
+composer on a record - so the list grows from the catalogue rather than from the
+structure feed. A row here reporting "0 of 0" would invite somebody to go looking
+for a sync that does not exist.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 127**.
+
 **"Can this person sign in, and as what?" is an API question now.**
 
 `ldap_inspect_user()` has existed throughout and was reachable from the engine's

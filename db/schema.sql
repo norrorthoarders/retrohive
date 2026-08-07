@@ -845,7 +845,18 @@ CREATE TABLE IF NOT EXISTS libraries (
   -- The owner can move a library between the two, except a personal one: that
   -- is the shelf every account is guaranteed to have, and guaranteeing it means
   -- guaranteeing it stays yours.
-  kind         ENUM('private','shared') NOT NULL DEFAULT 'private',
+  -- Who may reach it, which is the question this decides.
+  --
+  --   private  explicit invitation only
+  --   public   any signed-in account may join, and gets read access by doing so
+  --
+  -- This was private/shared, and `shared` said how a library is used rather than
+  -- who may reach it - a library could be shared and still members-only, because
+  -- public_read was a separate switch beside it. The two are one answer now:
+  -- public_read follows kind, and public_write is always 0 because joining
+  -- grants read and nothing more. A higher level is something somebody is
+  -- invited to, not something taken by arriving.
+  kind         ENUM('private','public') NOT NULL DEFAULT 'private',
 
   -- Only meaningful on a shared library, and forced off on a private one.
   -- Two flags rather than one setting because reading and writing are

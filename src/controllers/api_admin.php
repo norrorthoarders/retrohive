@@ -619,6 +619,44 @@ function api_user_row(array $u): array
 }
 
 /**
+ * The instance's own logos - the small one in the header, the large one over the
+ * sign-in page.
+ *
+ * Two, not one scaled twice: a mark that reads at 24 pixels beside a menu is
+ * rarely the same drawing as one that carries a sign-in page.
+ *
+ * Reported by `GET /meta` alongside the instance name, because every client
+ * needs them before anybody has signed in - which is the whole point of the
+ * large one.
+ */
+function api_instance_logo(string $which): void
+{
+    api_require_admin();
+    if (!in_array($which, ['small', 'large'], true)) {
+        api_error('not_found', 'Unknown logo.', 404);
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
+        delete_instance_logo($which);
+        api_ok(instance_logos());
+    }
+
+    $field = isset($_FILES['logo']) ? 'logo' : (isset($_FILES['file']) ? 'file' : null);
+    if ($field === null) {
+        api_error('validation_failed', 'Send the picture as a multipart field named "logo".', 422);
+    }
+    [$name, $error] = store_instance_logo($which, $field);
+    if ($error !== null) {
+        api_error('upload_failed', $error, 422);
+    }
+    if ($name === null) {
+        api_error('validation_failed', 'No picture arrived.', 422);
+    }
+    log_server('instance.logo', ucfirst($which) . ' logo replaced', LOG_INFO);
+    api_ok(instance_logos());
+}
+
+/**
  * Where mail confirmation stands, and the two steps that move it along.
  *
  * A relay will happily accept a message and drop it, so "the settings saved" is
@@ -1053,7 +1091,7 @@ function api_admin_libraries_index(): void
     );
 
     api_ok(array_map('api_admin_library_row', $rows), [
-        'kinds' => ['private' => 'Private', 'shared' => 'Shared'],
+        'kinds' => ['private' => 'Private', 'public' => 'Public'],
     ]);
 }
 
@@ -1080,7 +1118,7 @@ function api_library_input(array $in, bool $partial): array
 
     if (array_key_exists('kind', $in)) {
         $kind = (string) $in['kind'];
-        if (!in_array($kind, ['private', 'shared'], true)) {
+        if (!in_array($kind, ['private', 'public'], true)) {
             $errors['kind'] = 'Must be private or shared.';
         } else {
             $out['kind'] = $kind;

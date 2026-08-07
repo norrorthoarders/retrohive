@@ -1309,6 +1309,13 @@ paths:
         offer are the same kind of thing, something somebody else has
         proposed and nothing has happened until this account answers;
         joinable is a published shelf not yet taken on.
+
+
+        `meta.waiting` adds the first two, so a client drawing a badge does not
+        have to fetch both lists and decide for itself which of them count.
+        Joinable libraries are deliberately not in it: nobody is waiting on an
+        answer about those - they stand open to everybody - and counting them
+        would put a permanent badge on a menu entry.
       responses:
         "200": { description: mine, invites, owner_offers, joinable }
         "403": { description: Sign in first }
@@ -2657,6 +2664,30 @@ paths:
         "200": { description: found, allowed, dn, username, name, email, groups, role, access, reason }
         "422": { description: No identifier sent }
 
+  /libraries/{id}/invitable:
+    get:
+      tags: [Libraries]
+      summary: Accounts that could be invited here, matching a search
+      description: >-
+        A search, deliberately not a list. Anybody who administers one library
+        would otherwise be handed every account on the instance, which is a
+        membership directory nobody asked them to have. A query of at least two
+        characters is required - shorter answers with an empty list rather than a
+        422, because an empty box is the ordinary state of a search - and the
+        result is capped at twenty.
+
+
+        Returns only what an invitation needs: the id to send and a name to
+        recognise. No email, no role, no last-seen. Inactive accounts, the
+        caller, and anybody already a member or already invited are left out -
+        offering them is offering an action that would be refused.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: q, in: query, schema: { type: string, minLength: 2 } }
+      responses:
+        "200": { description: id, name, username }
+        "403": { description: Administering this library is required - the same gate the invitation has }
+
   /admin/logs/prune:
     post:
       tags: [Admin]
@@ -2671,6 +2702,33 @@ paths:
       responses:
         "200": { description: removed, retention_days }
         "422": { description: Retention is set to keep everything }
+
+  /admin/logo/{which}:
+    post:
+      tags: [Admin]
+      summary: Replace one of the instance's own logos
+      description: >-
+        Multipart, in a field named `logo`. `which` is `small` for the mark
+        beside the menu or `large` for the one above the sign-in form - two
+        pictures rather than one scaled twice, because a mark that reads at 24
+        pixels is rarely the same drawing as one that carries a sign-in page.
+
+
+        Both are reported by `GET /meta`, not from behind an admin gate: a client
+        needs the large one before anybody has signed in, which is the whole
+        point of it. Null there means "draw the built-in mark".
+      parameters:
+        - { name: which, in: path, required: true, schema: { type: string, enum: [small, large] } }
+      responses:
+        "200": { description: Both logo URLs }
+        "422": { description: Nothing arrived, or the file was not a usable image }
+    delete:
+      tags: [Admin]
+      summary: Remove one, restoring the built-in mark
+      parameters:
+        - { name: which, in: path, required: true, schema: { type: string, enum: [small, large] } }
+      responses:
+        "200": { description: Both logo URLs }
 
   /admin/mail:
     get:

@@ -175,7 +175,7 @@ function pending_invitations(?int $userId = null): array
 function public_library_ids(string $level = ACCESS_VIEWER): array
 {
     if (!isset($GLOBALS['__public_libraries'])) {
-        $rows = all("SELECT id, public_read, public_write FROM libraries WHERE kind = 'shared'");
+        $rows = all("SELECT id, public_read, public_write FROM libraries WHERE kind = 'public'");
         $read = [];
         $write = [];
         foreach ($rows as $row) {
@@ -467,13 +467,51 @@ function library_transfer_candidates(int $libraryId): array
     );
 }
 
-/** Published shelves this account could join, and has not. */
+/**
+ * The highest access an invitation to this library may grant.
+ *
+ * A personal library is somebody's own shelf, made for them when the account was
+ * made and impossible to delete. Sharing it is a courtesy - "come and look at
+ * what I have" - and not a handover: an invitation there grants viewer and
+ * nothing more, so nobody but its owner can ever change what is on it.
+ *
+ * Every other library, private or public, may invite at any level up to admin.
+ * Owner is never on that list anywhere: a library has exactly one, and it moves
+ * by an offer that has to be accepted rather than by an invitation.
+ *
+ * Enforced here rather than in the two screens that offer the list, because a
+ * ceiling that lives in a dropdown is a ceiling that a second client, or a
+ * crafted request, does not have.
+ */
+function library_invite_ceiling(int $libraryId): string
+{
+    $personal = (int) scalar('SELECT is_personal FROM libraries WHERE id = ?', [$libraryId]);
+    return $personal === 1 ? ACCESS_VIEWER : ACCESS_ADMIN;
+}
+
+/** The levels an invitation to this library may actually offer. */
+function library_invitable_levels(int $libraryId): array
+{
+    $ceiling = library_invite_ceiling($libraryId);
+    $out = [];
+    foreach ([ACCESS_VIEWER, ACCESS_CONTRIBUTOR, ACCESS_EDITOR, ACCESS_CURATOR, ACCESS_ADMIN] as $lvl) {
+        $out[] = $lvl;
+        if ($lvl === $ceiling) {
+            break;
+        }
+    }
+    return $out;
+}
+
+/** Public shelves this account could join, and has not. */
 function joinable_libraries(): array
 {
     $joined = joined_library_ids();
+    // `kind` alone. public_read used to be a second switch beside it, so a
+    // library could be public and not joinable - which made "public" mean
+    // nothing on its own. The two are one answer now.
     $sql    = "SELECT * FROM libraries
-                WHERE kind = 'shared' AND is_active = 1
-                  AND (public_read = 1 OR public_write = 1)";
+                WHERE kind = 'public' AND is_active = 1";
     $args   = [];
     if ($joined !== []) {
         $sql .= ' AND id NOT IN (' . implode(',', array_fill(0, count($joined), '?')) . ')';

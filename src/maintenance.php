@@ -463,7 +463,31 @@ function maintenance_upload_is_orphan(string $name): bool
     if ((int) scalar('SELECT COUNT(*) FROM categories WHERE default_image_filename = ?', [$bare]) > 0) {
         return false;
     }
-    return (int) scalar('SELECT COUNT(*) FROM users WHERE avatar_filename = ?', [$bare]) === 0;
+    if ((int) scalar('SELECT COUNT(*) FROM users WHERE avatar_filename = ?', [$bare]) > 0) {
+        return false;
+    }
+    // The instance's own logos, which are named in `settings` rather than by a
+    // column on a row.
+    //
+    // Every other picture here is referred to by a table this function can ask
+    // about; these two are not, so without this they read as orphans and the
+    // repair below deletes what this reports - somebody uploads a logo, runs the
+    // orphan sweep, and the header goes back to the built-in mark with no
+    // explanation. The same shape of gap the category default pictures had, and
+    // the reason that comment above is worth having.
+    //
+    // Also checks the pending avatar column, for the same reason: a picture
+    // waiting for an administrator is referred to by a row, just not the one
+    // this used to ask about.
+    if ((int) scalar('SELECT COUNT(*) FROM users WHERE avatar_pending_filename = ?', [$bare]) > 0) {
+        return false;
+    }
+    foreach (['logo_small', 'logo_large'] as $key) {
+        if ((string) setting($key, '') === $bare) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /**

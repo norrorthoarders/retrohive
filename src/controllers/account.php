@@ -2023,7 +2023,7 @@ function library_join(int $id): void
     csrf_verify();
 
     $lib = one('SELECT * FROM libraries WHERE id = ?', [$id]);
-    if ($lib === null || (string) $lib['kind'] !== 'shared'
+    if ($lib === null || (string) $lib['kind'] !== 'public'
         || ((int) $lib['public_read'] !== 1 && (int) $lib['public_write'] !== 1)) {
         flash('error', 'That library is not open to join.');
         redirect('/libraries');
@@ -2517,7 +2517,7 @@ function library_admin_save(): void
         }
 
         // Only a shared library can have anybody else in it.
-        if (($library['kind'] ?? 'private') !== 'shared' && !$selfGrant) {
+        if (($library['kind'] ?? 'private') !== 'public' && !$selfGrant) {
             flash('error', 'This library is private. Make it shared before inviting anyone.');
             redirect('/libraries', ['edit' => $id]);
         }
@@ -2726,12 +2726,12 @@ function library_admin_save(): void
     $existing = $id === null ? null : one('SELECT * FROM libraries WHERE id = ?', [$id]);
     $personal = (int) ($existing['is_personal'] ?? 0) === 1;
 
-    $kind = (!$personal && input('kind') === 'shared') ? 'shared' : 'private';
+    $kind = (!$personal && input('kind') === 'public') ? 'public' : 'private';
 
     // Turning a library private is not a quiet act: it takes access away from
     // everyone who has it. Refusing is kinder than doing it and telling them
     // afterwards, and it is one click to undo.
-    if ($kind === 'private' && $existing !== null && ($existing['kind'] ?? '') === 'shared') {
+    if ($kind === 'private' && $existing !== null && ($existing['kind'] ?? '') === 'public') {
         $others = (int) scalar(
             'SELECT COUNT(*) FROM library_members WHERE library_id = ? AND user_id <> ?',
             [$id, (int) ($existing['owner_id'] ?? 0)]
@@ -2755,7 +2755,7 @@ function library_admin_save(): void
     // than merely hidden, since a column nobody can set but that old
     // rows may still carry is a trap for the next person reading this.
     $publicWrite = 0;
-    $publicRead  = $kind === 'shared' && !empty($_POST['public_read']) ? 1 : 0;
+    $publicRead  = $kind === 'public' && !empty($_POST['public_read']) ? 1 : 0;
     $restrict   = input_int('restrict_to_platform_id');
 
     $data = [
@@ -2860,7 +2860,7 @@ function auth_verify_resend(): void
  */
 function library_visibility_flags(string $kind, string $visibility): array
 {
-    if ($kind !== 'shared') {
+    if ($kind !== 'public') {
         return [0, 0];
     }
     return match ($visibility) {
@@ -2918,7 +2918,7 @@ function library_create(): void
         $name = mb_substr($name, 0, 120);
     }
 
-    $kind = input('kind') === 'shared' ? 'shared' : 'private';
+    $kind = input('kind') === 'public' ? 'public' : 'private';
     // One control decides both flags, so they cannot disagree: public-write without
     // public-read is not a state a library can meaningfully be in. A private library
     // ignores them entirely.
@@ -3149,12 +3149,22 @@ function library_edit_form(int $id): void
  * whichever it was asked. Two owners is not a state this should be able to reach from a
  * dropdown.
  */
+/**
+ * The levels an invitation to this library may grant.
+ *
+ * One rule, in acl.php, because this is an access decision and that is where
+ * access decisions live. This used to answer it here and on `kind`: only a
+ * public library could grant above viewer, so a private library shared with
+ * three people could never make any of them an editor - which is backwards. A
+ * private library is the one whose membership is deliberate.
+ *
+ * What actually caps it is `is_personal`: somebody's own shelf, made with their
+ * account and impossible to delete, invites at viewer and no higher. Every other
+ * library, private or public, goes up to admin.
+ */
 function library_grantable_levels(array $library): array
 {
-    if (($library['kind'] ?? 'private') !== 'shared') {
-        return [ACCESS_VIEWER];
-    }
-    return [ACCESS_VIEWER, ACCESS_CONTRIBUTOR, ACCESS_EDITOR, ACCESS_CURATOR, ACCESS_ADMIN];
+    return library_invitable_levels((int) $library['id']);
 }
 
 /** Save one library's own settings, or resync its structure. */
@@ -3209,7 +3219,7 @@ function library_edit_save(int $id): void
             redirect($back);
         }
         if (!in_array($level, $allowed, true)) {
-            flash('error', ($library['kind'] ?? 'private') === 'shared'
+            flash('error', ($library['kind'] ?? 'private') === 'public'
                 ? 'That is not a level this library hands out.'
                 : 'A private library invites readers only. Make it shared to let somebody add to it.');
             redirect($back);
@@ -3391,11 +3401,11 @@ function library_edit_save(int $id): void
     // can always write to.
     $personal = (int) ($library['is_personal'] ?? 0) === 1;
     // Read the posted value both ways round. This used to keep the existing kind
-    // unless 'shared' was posted, which meant a shared library could never be made
+    // unless 'public' was posted, which meant a shared library could never be made
     // private again: the form offered the choice and the save quietly ignored half
     // of it. A personal library is always private, and that is the only clamp.
-    $kind = $personal ? 'private' : (input('kind') === 'shared' ? 'shared' : 'private');
-    if ($personal && input('kind') === 'shared') {
+    $kind = $personal ? 'private' : (input('kind') === 'public' ? 'public' : 'private');
+    if ($personal && input('kind') === 'public') {
         flash('error', 'A personal library cannot be shared. Make a shared one instead.');
         redirect($back);
     }
@@ -3441,7 +3451,7 @@ function library_edit_save(int $id): void
     // library hands out reading only, so leaving a contributor in place would mean
     // the kind said one thing and the membership another - and the membership is
     // what acl.php actually enforces. The owner keeps their level.
-    if ($kind === 'private' && ($library['kind'] ?? '') === 'shared') {
+    if ($kind === 'private' && ($library['kind'] ?? '') === 'public') {
         $demoted = (int) scalar(
             'SELECT COUNT(*) FROM library_members
               WHERE library_id = ? AND user_id <> ? AND access <> ?',

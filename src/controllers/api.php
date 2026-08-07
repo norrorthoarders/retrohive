@@ -23,6 +23,10 @@ function api_meta(): void
         'api_version'     => API_VERSION,
         'currency'        => config('currency'),
         'timezone'        => config('timezone'),
+        // The instance's own logos. Here rather than behind /admin because a
+        // client needs the large one before anybody has signed in, which is the
+        // whole point of it. Null means "draw the built-in mark".
+        'logos'           => instance_logos(),
         'server_time'     => gmdate('Y-m-d\TH:i:s\Z'),
         'authenticated'   => api_identify() !== null,
         'max_upload_bytes' => (int) config('uploads.max_bytes'),
@@ -1681,6 +1685,18 @@ function api_profile_libraries(): void
         'invites'      => $invites,
         'owner_offers' => $ownerOffers,
         'joinable'     => $joinable,
+    ], [
+        // How many things are waiting on a decision from this account.
+        //
+        // An invitation and an offer of ownership are different objects and the
+        // same fact to somebody looking at a menu: something is waiting. A
+        // client drawing a badge should not have to fetch both lists and add
+        // them up, nor decide for itself that those are the two that count.
+        //
+        // Joinable libraries are deliberately not in it. Nobody is waiting on an
+        // answer about those - they are an offer standing open to everybody, and
+        // counting them would put a permanent badge on a menu entry.
+        'waiting' => count($invites) + count($ownerOffers),
     ]);
 }
 
@@ -1694,7 +1710,7 @@ function api_libraries_join(int $id): void
 {
     [$user] = api_require_write();
     $lib = one('SELECT * FROM libraries WHERE id = ?', [$id]);
-    if ($lib === null || (string) $lib['kind'] !== 'shared'
+    if ($lib === null || (string) $lib['kind'] !== 'public'
         || ((int) $lib['public_read'] !== 1 && (int) $lib['public_write'] !== 1)) {
         api_error('validation_failed', 'That library is not open to join.', 422);
     }
@@ -4743,7 +4759,7 @@ function api_libraries_create(): void
     $name = mb_substr($name, 0, 120);
 
     $kind = (string) ($in['kind'] ?? 'private');
-    if (!in_array($kind, ['private', 'shared'], true)) {
+    if (!in_array($kind, ['private', 'public'], true)) {
         api_error('validation_failed', 'Must be private or shared.', 422,
                   ['kind' => 'Not a known value.']);
     }
@@ -4829,11 +4845,11 @@ function api_libraries_update(int $id): void
     // its owner can always write to.
     $personal = (int) ($library['is_personal'] ?? 0) === 1;
     $kindIn   = isset($in['kind']) ? (string) $in['kind'] : (string) $library['kind'];
-    if ($personal && $kindIn === 'shared') {
+    if ($personal && $kindIn === 'public') {
         api_error('validation_failed', 'A personal library cannot be shared.', 422,
                    ['kind' => 'Not allowed on a personal library.']);
     }
-    $kind = $personal ? 'private' : ($kindIn === 'shared' ? 'shared' : 'private');
+    $kind = $personal ? 'private' : ($kindIn === 'public' ? 'public' : 'private');
 
     $visibility = (string) ($in['visibility'] ?? 'members');
     [$publicRead, $publicWrite] = library_visibility_flags($kind, $visibility);
@@ -4859,11 +4875,11 @@ function api_libraries_update(int $id): void
         }
     }
 
-    // Shared to private demotes anybody who could write - the kind and the
+    // Public to private demotes anybody who could write - the kind and the
     // membership have to agree, and the membership is what acl.php actually
     // enforces. The owner keeps their own level.
     $demoted = 0;
-    if ($kind === 'private' && ($library['kind'] ?? '') === 'shared') {
+    if ($kind === 'private' && ($library['kind'] ?? '') === 'public') {
         $demoted = (int) scalar(
             'SELECT COUNT(*) FROM library_members WHERE library_id = ? AND user_id <> ? AND access <> ?',
             [$id, (int) $library['owner_id'], ACCESS_VIEWER]
@@ -5204,7 +5220,7 @@ function api_admin_example_library_create(): void
 {
     [$me] = api_require_admin();
 
-    if ((int) scalar("SELECT COUNT(*) FROM libraries WHERE kind = 'shared'") > 0) {
+    if ((int) scalar("SELECT COUNT(*) FROM libraries WHERE kind = 'public'") > 0) {
         api_error('validation_failed', 'A shared library already exists on this instance.', 422);
     }
 
@@ -5426,6 +5442,67 @@ function api_library_members_index(int $libraryId): void
         'access'       => (string) $r['access'],
         'status'       => (string) $r['status'],
         'granted_at'   => api_datetime($r['granted_at'] ?? null),
+    ], $rows));
+}
+
+/**
+ * Accounts that could be invited to this library, matching a search.
+ *
+ * The invite form asked for a numeric account id, which nobody knows and which
+ * has to be looked up on a screen most people cannot open. This is the search
+ * that replaces it.
+ *
+ * Deliberately a search rather than a list. Anybody who administers one library
+ * would otherwise be handed every account on the instance, which is a
+ * membership directory nobody asked them to have - and on a shared instance that
+ * is somebody else's business. A query is required, two characters minimum, and
+ * the answer is capped.
+ *
+ * Only what an invitation needs: the id to send, and a name to recognise. No
+ * email, no role, no last-seen - none of which is required to choose somebody,
+ * and all of which would be a fact about an account leaking to whoever runs a
+ * shelf.
+ *
+ * Existing members and the people already invited are left out: offering them
+ * again is offering an action that is refused.
+ */
+function api_library_invitable(int $libraryId): void
+{
+    [$me] = api_require_auth();
+    if (one('SELECT id FROM libraries WHERE id = ?', [$libraryId]) === null) {
+        api_error('not_found', 'No library with that id.', 404);
+    }
+    // The same gate the invitation itself has. A search that answers for
+    // somebody who could not act on the answer is a directory with extra steps.
+    if (!can_administer_library($libraryId) && !is_admin()) {
+        api_error('forbidden', 'That library is not one you may administer.', 403);
+    }
+
+    $q = trim((string) ($_GET['q'] ?? ''));
+    if (mb_strlen($q) < 2) {
+        // Not an error: an empty box is the ordinary state of a search, and a
+        // 422 for it would put a red message under a field nobody has typed in.
+        api_ok([]);
+    }
+
+    $like = '%' . $q . '%';
+    $rows = all(
+        "SELECT u.id, u.username, u.display_name
+           FROM users u
+          WHERE u.is_active = 1
+            AND u.id <> ?
+            AND (u.username LIKE ? OR u.display_name LIKE ?)
+            AND NOT EXISTS (SELECT 1 FROM library_members lm
+                             WHERE lm.library_id = ? AND lm.user_id = u.id)
+       ORDER BY COALESCE(NULLIF(u.display_name, ''), u.username)
+          LIMIT 20",
+        [(int) $me['id'], $like, $like, $libraryId]
+    );
+
+    api_ok(array_map(static fn(array $u): array => [
+        'id'    => (int) $u['id'],
+        'name'  => (string) ($u['display_name'] ?: $u['username']),
+        'username' => (string) $u['username'],
     ], $rows));
 }
 

@@ -804,6 +804,11 @@ function library_to_api(array $r): array
         // are waiting now. The count only for somebody who could act on it -
         // for anybody else it is a number about pictures they cannot see.
         'photo_approval' => (bool) (int) ($r['photo_approval'] ?? 0),
+        // The levels an invitation here may grant, so a client offers what is
+        // allowed rather than a full list the server then refuses. A personal
+        // shelf caps at viewer; every other library goes to admin.
+        'invitable_levels' => function_exists('library_invitable_levels')
+            ? library_invitable_levels((int) $r['id']) : [],
         'pending_images' => can_structure_library((int) $r['id'])
             ? (int) scalar("SELECT COUNT(*) FROM item_images img
                               JOIN items i ON i.id = img.item_id AND i.deleted_at IS NULL
@@ -1155,6 +1160,25 @@ function credit_to_api(array $r): array
             'name' => $r['holder_name'] ?? null,
         ],
         'sort_order' => (int) ($r['sort_order'] ?? 100),
+    ];
+}
+
+/**
+ * The instance's own logos, as URLs a client can use directly.
+ *
+ * Null when none is set, which every client reads as "draw the built-in mark" -
+ * so an instance that has uploaded nothing looks exactly as it did.
+ */
+function instance_logos(): array
+{
+    $small = (string) setting('logo_small', '');
+    $large = (string) setting('logo_large', '');
+    return [
+        // The header mark is only ever shown small, so the thumbnail is what it
+        // wants. The sign-in one is used at its own size - scaling it down and
+        // then displaying it large would throw away the reason for uploading it.
+        'small' => $small === '' ? null : absolute_url(image_url($small, 'thumb')),
+        'large' => $large === '' ? null : absolute_url(image_url($large, 'orig')),
     ];
 }
 

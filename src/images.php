@@ -165,6 +165,68 @@ function delete_company_logo(int $companyId): void
 }
 
 /**
+ * Store one of the instance's own logos, replacing any previous one.
+ *
+ * `$which` is 'small' for the header wordmark or 'large' for the sign-in page.
+ * Two files rather than one scaled twice: a mark that reads at 24 pixels beside
+ * a menu is rarely the same drawing as one that carries a sign-in page, and
+ * making somebody use the same image for both means one of the two is wrong.
+ *
+ * Kept in the uploads directory with everything else, named so it cannot collide
+ * with a company logo or an avatar. The filename goes in `settings`, which is
+ * where the rest of the instance's own choices live.
+ *
+ * Returns [filename, error].
+ */
+function store_instance_logo(string $which, string $field): array
+{
+    $which = $which === 'large' ? 'large' : 'small';
+    if (!isset($_FILES[$field]) || (int) ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return [null, null];
+    }
+
+    [$info, $ext, $error] = validate_uploaded_image($_FILES[$field]);
+    if ($error !== null) {
+        return [null, $error];
+    }
+
+    $basename = unique_upload_name('logo_instance_' . $which, $ext);
+    $target   = uploads_dir() . '/' . $basename;
+
+    if (!move_uploaded_file($_FILES[$field]['tmp_name'], $target)) {
+        return [null, 'The logo could not be written to the uploads directory. Check permissions.'];
+    }
+    @chmod($target, 0644);
+
+    // A thumbnail for the small one, which is all it is ever shown at. The large
+    // one is used at its own size on the sign-in page, so scaling it down and
+    // then displaying it big would throw away the reason somebody uploaded it.
+    if ($which === 'small') {
+        resize_image($target, uploads_dir() . '/thumb_' . $basename, (string) $info['mime'], (int) config('uploads.thumb_px'));
+    }
+
+    delete_instance_logo($which);
+    set_setting('logo_' . $which, $basename);
+    return [$basename, null];
+}
+
+function delete_instance_logo(string $which): void
+{
+    $which = $which === 'large' ? 'large' : 'small';
+    $name  = (string) setting('logo_' . $which, '');
+    if ($name === '') {
+        return;
+    }
+    foreach (['', 'thumb_'] as $prefix) {
+        $path = uploads_dir() . '/' . $prefix . $name;
+        if (is_file($path)) {
+            @unlink($path);
+        }
+    }
+    set_setting('logo_' . $which, null);
+}
+
+/**
  * Store a profile picture, replacing any previous one.
  * Returns [filename, error].
  */

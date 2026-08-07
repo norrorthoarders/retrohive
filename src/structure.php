@@ -1158,6 +1158,18 @@ function structure_row_counts(?int $libraryId = null): array
             // The table is operating_systems; "environments" is what the file and
             // the screens call them.
             (int) scalar("SELECT COUNT(*) FROM operating_systems WHERE $tpl")],
+        // Offered as a part to synchronise and never counted here, so the one
+        // report that says whether a sync worked had nothing to say about it -
+        // somebody ticking "Credit roles" got no confirmation either way.
+        //
+        // People are deliberately absent and stay absent: there is no people
+        // file to sync from. A person exists because a credit named them - a
+        // director on a film, a composer on a record - so the list grows from
+        // the catalogue rather than from the structure feed, and a row here
+        // reporting "0 of 0" would invite somebody to go looking for the sync
+        // that would fill it.
+        ['credit_roles', 'Credit roles',
+            (int) scalar("SELECT COUNT(*) FROM credit_roles WHERE $tpl")],
     ];
 
     $out = [];

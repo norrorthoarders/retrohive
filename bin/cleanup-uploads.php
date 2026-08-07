@@ -49,7 +49,14 @@ function referenced_filenames(): array
               // The fourth, missing since category default pictures were added:
               // without it, --delete removed every branch's own picture and left
               // the rows pointing at nothing.
-              'SELECT default_image_filename AS f FROM categories WHERE default_image_filename IS NOT NULL'] as $sql) {
+              'SELECT default_image_filename AS f FROM categories WHERE default_image_filename IS NOT NULL',
+              // A profile picture waiting for an administrator is referred to by
+              // a row, just not the column this used to ask about - so --delete
+              // threw away the very picture somebody was queued up to approve.
+              'SELECT avatar_pending_filename AS f FROM users WHERE avatar_pending_filename IS NOT NULL',
+              // The instance's own logos are named in `settings` rather than by
+              // a column on a row, so they have to be asked for by name.
+              "SELECT value AS f FROM settings WHERE name IN ('logo_small','logo_large') AND value <> ''"] as $sql) {
         try {
             foreach (all($sql) as $row) {
                 if (!empty($row['f'])) {

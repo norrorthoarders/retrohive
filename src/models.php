@@ -3299,7 +3299,7 @@ function seed_library_music_examples(int $libraryId): int
  */
 function seed_shared_example_library(int $ownerId): int
 {
-    if ((int) scalar("SELECT COUNT(*) FROM libraries WHERE kind = 'shared'") > 0) {
+    if ((int) scalar("SELECT COUNT(*) FROM libraries WHERE kind = 'public'") > 0) {
         return 0;
     }
 
@@ -3309,7 +3309,7 @@ function seed_shared_example_library(int $ownerId): int
         'description'  => 'A shared library, as an example. It belongs to whoever set this '
                         . 'instance up; invite people to it, or publish it so anybody '
                         . 'signed in can join. Rename it, empty it, or delete it.',
-        'kind'         => 'shared',
+        'kind'         => 'public',
         'owner_id'     => $ownerId,
 
         // Not published.
