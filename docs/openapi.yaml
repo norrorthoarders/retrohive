@@ -2526,6 +2526,80 @@ paths:
         "403": { description: Curator access on this library is required }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /admin/users/{id}/avatar/approve:
+    post:
+      tags: [Account]
+      summary: Accept a profile picture that is waiting
+      description: >-
+        The waiting picture becomes the account's avatar and the old one's files
+        are removed. Administrators only. An administrator's own picture never
+        reaches this queue - they are exempt from the switch - so there is no
+        case of approving your own.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The account, with the new avatar }
+        "422": { description: That account has no picture waiting }
+
+  /admin/users/{id}/avatar/reject:
+    post:
+      tags: [Account]
+      summary: Refuse a profile picture that is waiting
+      description: >-
+        The waiting picture and its files are deleted; the one already in use is
+        untouched. There is no rejected state - a refused picture left on disk is
+        one somebody can still reach by guessing a URL.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The account, unchanged apart from the queue }
+        "422": { description: That account has no picture waiting }
+
+  /libraries/{id}/pending-images:
+    get:
+      tags: [Images]
+      summary: Photographs waiting for approval in one library
+      description: >-
+        Curator-or-better on the library. These are pictures deliberately not
+        shown to everybody, so the list of them is the same secret as the
+        pictures. Empty on a library that has never switched approval on.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Images, each with its entry and who uploaded it }
+        "403": { description: Curator access on this library is required }
+
+  /images/{id}/approve:
+    post:
+      tags: [Images]
+      summary: Accept a photograph that is waiting
+      description: >-
+        The library is read from the picture rather than taken from the caller,
+        so no request can approve a picture into a library it is not in. The
+        entry's cover is recomputed afterwards, since this may be the only
+        picture it has.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The image, now approved }
+        "422": { description: That photo is not waiting for a decision }
+        "403": { description: Curator access on its library is required }
+
+  /images/{id}/reject:
+    post:
+      tags: [Images]
+      summary: Refuse a photograph that is waiting
+      description: >-
+        The row and its files both go, through the same delete every other
+        removal uses. No rejected state: a refused picture kept on disk is still
+        reachable by URL, and a kept row is a queue that only ever grows.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: id and deleted:true }
+        "422": { description: That photo is not waiting for a decision }
+        "403": { description: Curator access on its library is required }
+
   /admin/mail:
     get:
       tags: [Account]
@@ -3810,6 +3884,28 @@ components:
         `personal`. On upload anything that is not exactly `official` is treated
         as `personal`, because mistaking a snapshot for the publisher's artwork
         misrepresents it while the reverse merely under-claims.
+
+    HardwareModelFields:
+      type: object
+      description: |
+        The specification fields a hardware model states - what a machine or part
+        made from it is asked, with an answer filled in where the model knows
+        one. Replaced wholesale when the key is present, left alone when absent.
+        A row with a blank label is dropped rather than refused.
+
+        An entry seeds its own rows from these and they stay editable there: what
+        the model *is* cannot differ per copy, but what a copy *has* very much
+        can - a particular Amiga 2000 may have had its memory changed.
+      properties:
+        fields:
+          type: array
+          items:
+            type: object
+            required: [label]
+            properties:
+              label:         { type: string, maxLength: 60 }
+              default_value: { type: [string, "null"], maxLength: 200 }
+              hint:          { type: [string, "null"], maxLength: 160 }
 
     SoftwareModelLists:
       type: object

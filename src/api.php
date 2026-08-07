@@ -1047,6 +1047,19 @@ function hardware_model_to_api(array $r): array
         // something the part does not. Always present, and empty for a machine -
         // a machine does not fit into anything, it is what things fit into.
         'compatible_model_ids' => model_compatibility_ids((int) $r['id']),
+        // What a machine or part made from this model is asked.
+        //
+        // `model_fields` has existed and been written by the engine's own screen
+        // throughout, and was never reported here - so a client could pick an
+        // Amiga 2000 and get its name, its interface and nothing else, while the
+        // model itself knew its processor, its memory and its chipset. The
+        // autofill on the entry form filled three fields because three were all
+        // it could see.
+        'fields' => array_map(static fn(array $f): array => [
+            'label'         => (string) $f['label'],
+            'default_value' => $f['default_value'],
+            'hint'          => $f['hint'],
+        ], model_fields((int) $r['id'])),
     ];
 }
 

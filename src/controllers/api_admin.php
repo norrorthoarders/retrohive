@@ -989,13 +989,26 @@ function api_admin_libraries_index(): void
 {
     api_require_admin();
 
+    // Every library on the instance except somebody else's private one.
+    //
+    // Administering an instance means the shared shelves, the club libraries,
+    // the ones with members - not reading the list of what a colleague keeps at
+    // home. `acl.php` is deliberate that membership is the whole of access and
+    // that being an administrator grants nothing; this screen used to be the one
+    // place that quietly disagreed, listing every private shelf on the instance
+    // with its owner's name and a count of what is in it.
+    //
+    // The administrator's own private library stays, because it is theirs.
+    $me = (int) (acting_user()['id'] ?? 0);
     $rows = all(
         "SELECT l.*, u.display_name AS owner_name,
                 (SELECT COUNT(*) FROM items i
                   WHERE i.library_id = l.id AND i.deleted_at IS NULL) AS n
            FROM libraries l
       LEFT JOIN users u ON u.id = l.owner_id
-       ORDER BY l.sort_order, l.name"
+          WHERE l.kind <> 'private' OR l.owner_id <=> ?
+       ORDER BY l.sort_order, l.name",
+        [$me]
     );
 
     api_ok(array_map('api_admin_library_row', $rows), [
@@ -1148,6 +1161,19 @@ function api_admin_libraries_delete(int $id): void
     $library = one('SELECT * FROM libraries WHERE id = ?', [$id]);
     if ($library === null) {
         api_error('not_found', 'No library with that id.', 404);
+    }
+
+    // A personal library cannot be deleted, by anybody.
+    //
+    // api_libraries_delete() has refused this from the owner's own side
+    // throughout, and this path had no such check - so the one account with the
+    // most reach was the one that could destroy somebody's default shelf and
+    // leave them with nowhere for their things to live. An administrator can
+    // still disable it, which is what "stop this being used" actually means.
+    if ((int) ($library['is_personal'] ?? 0) === 1) {
+        api_error('validation_failed',
+                  'That is somebody\'s personal library. Every account has exactly one and it '
+                . 'cannot be deleted - disable it instead.', 422);
     }
 
     $held = (int) scalar('SELECT COUNT(*) FROM items WHERE library_id = ? AND deleted_at IS NULL',

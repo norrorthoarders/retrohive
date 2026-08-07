@@ -3205,6 +3205,45 @@ function api_hardware_model_payload(array $in, int $libraryId, ?array $existing 
  * question at all: a machine is what things fit into, and a compatibility list
  * on one would be recording the relationship backwards.
  */
+/**
+ * The specification fields a model states, when the request mentions them.
+ *
+ * Replaced wholesale, absent means leave alone - the same rule every other child
+ * list on this API follows, and what makes a PATCH of the name alone safe.
+ *
+ * A row with no label is dropped rather than refused: the form that posts these
+ * keeps a blank row at the bottom to type into, so an empty trailing row is the
+ * ordinary state of the thing and not a mistake worth an error about.
+ */
+function api_apply_model_fields(int $modelId, array $in): ?string
+{
+    if (!array_key_exists('fields', $in)) {
+        return null;
+    }
+    if (!is_array($in['fields'])) {
+        return 'Must be an array of {label, default_value, hint}.';
+    }
+
+    q('DELETE FROM model_fields WHERE model_id = ?', [$modelId]);
+    $order = 0;
+    foreach ($in['fields'] as $row) {
+        $label = trim((string) ($row['label'] ?? ''));
+        if ($label === '') {
+            continue;
+        }
+        $order += 10;
+        // INSERT IGNORE, because uq_model_field is on (model_id, label): two
+        // rows both called "Memory" is a typo, and the second silently losing
+        // is better than the whole save failing on it.
+        q('INSERT IGNORE INTO model_fields (model_id, label, default_value, hint, sort_order)
+           VALUES (?, ?, ?, ?, ?)',
+          [$modelId, mb_substr($label, 0, 60),
+           nullify($row['default_value'] ?? null),
+           nullify($row['hint'] ?? null), $order]);
+    }
+    return null;
+}
+
 function api_apply_model_compatibility(int $modelId, array $in, string $role): ?string
 {
     if (!array_key_exists('compatible_model_ids', $in)) {
@@ -3246,6 +3285,10 @@ function api_hardware_models_create(): void
     if ($err !== null) {
         api_error('validation_failed', $err, 422, ['compatible_model_ids' => $err]);
     }
+    $err = api_apply_model_fields($id, $in);
+    if ($err !== null) {
+        api_error('validation_failed', $err, 422, ['fields' => $err]);
+    }
     api_ok(hardware_model_to_api(hardware_model_fetch($id)), null, 201);
 }
 
@@ -3273,6 +3316,10 @@ function api_hardware_models_update(int $id): void
     $err = api_apply_model_compatibility($id, $in, (string) ($row['category_role'] ?? ''));
     if ($err !== null) {
         api_error('validation_failed', $err, 422, ['compatible_model_ids' => $err]);
+    }
+    $err = api_apply_model_fields($id, $in);
+    if ($err !== null) {
+        api_error('validation_failed', $err, 422, ['fields' => $err]);
     }
     api_ok(hardware_model_to_api(hardware_model_fetch($id)));
 }
@@ -5593,9 +5640,12 @@ function api_metadata_providers_delete(int $id): void
  * reaches insert_row()/update_row() with no network step in between, and
  * Test/Inspect are separate, optional actions a person may or may not
  * press. That is what makes this half fully buildable: nothing here was
- * ever gated behind a connection this environment cannot make. Testing
- * a real bind and looking up a real directory entry stay out of scope,
- * needing an actual server to answer either.
+ * ever gated behind a connection this environment cannot make.
+ *
+ * Testing a real bind is built - POST /admin/auth-methods/test - and takes
+ * whatever is on the form rather than what is stored, so a directory can be
+ * proved before it is saved. Looking up a named user against it is the part
+ * still only on the engine's own screen.
  */
 function api_auth_methods_index(): void
 {

@@ -51,22 +51,6 @@ function settings_schema(): array
                     'help'  => 'Used to build links in mail and notifications. Without it they point nowhere.',
                     'max'   => 255,
                 ],
-                'structure_source' => [
-                    'kind'    => 'url',
-                    'label'   => 'Structure source',
-                    'help'    => 'Where companies, categories and models are fetched from when structure data is refreshed.',
-                    'default' => 'https://raw.githubusercontent.com/norrorthoarders/retrohive/main/structure',
-                    'max'     => 255,
-                ],
-                'avatar_approval' => [
-                    'kind'    => 'bool',
-                    'label'   => 'An administrator approves a new profile picture',
-                    'help'    => 'Off, a picture appears the moment somebody uploads it. On, it waits '
-                               . 'in Instance Users until an administrator says yes, and the picture '
-                               . 'already there stays up meanwhile - what is pending is the change, '
-                               . 'not the removal. Administrators are exempt from their own switch.',
-                    'default' => '',
-                ],
             ],
         ],
 
@@ -99,6 +83,15 @@ function settings_schema(): array
                         'allow'      => 'May index this instance',
                         'discourage' => 'Asked not to',
                     ],
+                ],
+                'avatar_approval' => [
+                    'kind'    => 'bool',
+                    'label'   => 'An administrator approves a new profile picture',
+                    'help'    => 'Off, a picture appears the moment somebody uploads it. On, it waits '
+                               . 'in Instance Users until an administrator says yes, and the picture '
+                               . 'already there stays up meanwhile - what is pending is the change, '
+                               . 'not the removal. Administrators are exempt from their own switch.',
+                    'default' => '',
                 ],
                 'libraries_deletable' => [
                     'kind'    => 'bool',
@@ -151,8 +144,23 @@ function settings_schema(): array
 
         'catalogue' => [
             'label' => 'Catalogue',
-            'help'  => 'How entries look when nobody has told the catalogue what they look like.',
+            'help'  => 'Where the filing structure comes from, and what entries look like when '
+                     . 'nobody has told the catalogue what they look like.',
             'fields' => [
+                // Moved here from General, which is where a setting goes when
+                // nobody has decided where it belongs. This one names the feed
+                // the categories, companies, platforms and models are fetched
+                // from - it is the source of the catalogue's whole shape, and
+                // sat beside the instance name and the public address.
+                'structure_source' => [
+                    'kind'    => 'url',
+                    'label'   => 'Structure source',
+                    'help'    => 'Where companies, categories, platforms and models are fetched from when '
+                               . 'structure data is refreshed. Point it at a fork to run your own tree; the '
+                               . 'copy that shipped with the package is used if the address does not answer.',
+                    'default' => 'https://raw.githubusercontent.com/norrorthoarders/retrohive/main/structure',
+                    'max'     => 255,
+                ],
                 'stock_images' => [
                     'kind'    => 'bool',
                     'label'   => 'Generic pictures for entries with no photograph',

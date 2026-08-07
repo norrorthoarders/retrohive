@@ -119,8 +119,8 @@
     "slug": "sound-card",
     "name": "Sound card",
     "role": "peripheral",
-    "parent": "expansions",
-    "sort_order": 30,
+    "parent": "adapters",
+    "sort_order": 50,
     "classes": "computer",
     "stock_image": "hardware_peripheral_isa_sound_card"
   },

@@ -1,5 +1,131 @@
 # Changelog
 
+**An audit, and the one real finding from it: five endpoints added in build 110
+were never documented.**
+
+`/admin/users/{id}/avatar/approve` and `/reject`,
+`/libraries/{id}/pending-images`, `/images/{id}/approve` and `/reject`. The
+schema they use was documented at the time and the paths were not, so the
+approval features existed for anybody reading the code and did not exist for
+anybody reading the API. Now 107 routes and 107 documented paths.
+
+## What was checked, and found clean
+
+- **Every route handler exists.** 253 in the engine, 118 in the web client, none
+  missing.
+- **Every column written exists in the schema.** Parsed the CREATE TABLE bodies
+  and every `insert_row()`/`update_row()` literal against them. Two literals the
+  parser could not read were checked by hand.
+- **Every template variable is passed or local.** Cross-checked what each
+  controller sends against what each template reads.
+- **This session's features as chains** rather than as files: pending pictures
+  stay out of `item_images()`, out of the cover, and out of the image count;
+  every new endpoint is routed; every new function is defined exactly once.
+- **The settings schema and the client's tab list agree** in both directions, and
+  no setting is declared in two sections - a move between sections would
+  otherwise shadow one silently.
+
+Two findings were false and worth recording as such: `h()` and `fail()` appear
+twice each, in separate entry points that never load together, and the three
+"duplicate" template functions are in separate script scopes.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 122**.
+
+**A stale scope note corrected.**
+
+`api_auth_methods_index()` still said that "testing a real bind and looking up a
+real directory entry stay out of scope". Testing a bind was built - it is
+`POST /admin/auth-methods/test`, and it takes whatever is on the form rather than
+what is stored, so a directory can be proved before it is saved. Only the
+named-user lookup is still engine-only.
+
+A comment describing restraint that no longer exists is worse than no comment: it
+is the file telling somebody the wrong thing about itself, and the next person to
+read it will believe it.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 121**.
+
+**Structure source moves from General to Catalogue.**
+
+General is where a setting goes when nobody has decided where it belongs, and
+this one had been sitting between the instance name and the public address. What
+it names is the feed the categories, companies, platforms and models are fetched
+from - the source of the catalogue's whole shape, and the one setting on the
+instance that decides what the filing tree looks like.
+
+It joins the switch for the generic pictures, and the Catalogue section's help
+now covers both: where the structure comes from, and what entries look like when
+nobody has said.
+
+The help text says what it is actually for, which the old one left implicit -
+pointing it at a fork runs your own tree, and the copy that shipped is used when
+the address does not answer.
+
+Nothing stored moves. A section is where a field is *shown*; settings are keyed by
+their own name, and every reader of this one - `structure_source_url()`, the
+sync, the settings form - reads it by name. Checked, along with the field names
+being unique across sections so a move cannot shadow another.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 120**.
+
+**Hardware model specification fields reach the API, an administrator stops
+seeing everybody's private shelves, and a personal library can no longer be
+deleted from the one path that allowed it.**
+
+## Specification fields
+
+`model_fields` has existed and been written by the engine's own screen
+throughout, and `hardware_model_to_api()` never reported it. So a client could
+pick an Amiga 2000 and get its name, its interface and nothing else, while the
+model itself knew its processor, its memory and its chipset - which is why the
+autofill on the entry form filled three fields: three were all it could see.
+
+Reported now, and accepted on create and update. Replaced wholesale when present,
+left alone when absent, blank-label rows dropped - the same rule every other
+child list on this API follows. `INSERT IGNORE`, because `uq_model_field` is on
+(model_id, label): two rows both called "Memory" is a typo, and the second
+silently losing beats the whole save failing on it.
+
+## An administrator is not a landlord
+
+`GET /admin/libraries` listed every library on the instance, private ones
+included, with the owner's name and a count of what was in it. `acl.php` is
+deliberate that membership is the whole of access and that being an administrator
+grants nothing - this screen was the one place that quietly disagreed.
+
+It now returns every library except somebody else's private one. The
+administrator's own private library stays, because it is theirs. Ordinary
+browsing was already membership-only for administrators and is unchanged.
+
+## A personal library cannot be deleted, by anybody
+
+`api_libraries_delete()` has refused this from the owner's own side throughout,
+and `library_purge()` refuses it too. `api_admin_libraries_delete()` had no such
+check - so the one account with the most reach was the one that could destroy
+somebody's default shelf and leave them nowhere to put things. It refuses now,
+and says that disabling is what "stop this being used" actually means.
+
+## Elsewhere
+
+Sound card joins Graphics card under Adapters. A sound card's whole purpose is
+reaching something outside the case - a speaker, an amplifier, a MIDI box - and
+the earlier reading, that it adds synthesis the machine did not have, is equally
+true of a graphics card. Splitting the pair on it put two cards that sit in
+adjacent slots in different branches.
+
+The profile-picture approval switch moves from General to Security, where the
+other three site-wide security switches already are.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 119**.
+
 **`effective_image` on a category told a screen "nothing" while the shelf plainly
 showed something.**
 
