@@ -1164,17 +1164,49 @@ function api_platforms_index(): void
     }
     $in = implode(',', array_fill(0, count($mine), '?'));
 
+    // How many entries this platform holds, optionally in one section only.
+    //
+    // `item_count` counted every section at once, which is right for a
+    // platform list and wrong for a section's own filter bar: the Video browser
+    // offered the C64 because the C64 has games, and picking it gave an empty
+    // page. Counting through v_items rather than items directly is what makes
+    // the section reachable at all - the domain lives on the category, not on
+    // the entry.
+    $domain = (string) ($_GET['domain'] ?? '');
+    $scoped = in_array($domain, ['hardware', 'software', 'video', 'audio'], true);
+    // Its own ACL clause for the aliased table rather than a string edit of the
+    // one built for `items` - library_filter_sql() takes a qualified name, and
+    // rewriting generated SQL by search-and-replace is how a filter ends up
+    // pointing at the wrong column without anyone noticing.
+    if ($scoped) {
+        [$viAcl, $viAclP] = library_filter_sql('vi.library_id', ACCESS_VIEWER);
+        $countSql  = '(SELECT COUNT(*) FROM v_items vi
+                        WHERE vi.platform_id = p.id AND vi.status = \'owned\'
+                          AND vi.domain = ? AND ' . $viAcl . ')';
+        $countArgs = array_merge([$domain], $viAclP);
+    } else {
+        $countSql  = '(SELECT COUNT(*) FROM items i
+                        WHERE i.platform_id = p.id AND i.deleted_at IS NULL
+                          AND i.status = \'owned\' AND ' . $acl . ')';
+        $countArgs = $aclP;
+    }
+
     $rows = all(
-        'SELECT p.*, v.name AS manufacturer,
-                (SELECT COUNT(*) FROM items i
-                  WHERE i.platform_id = p.id AND i.deleted_at IS NULL
-                    AND i.status = \'owned\' AND ' . $acl . ') AS n
+        'SELECT p.*, v.name AS manufacturer, ' . $countSql . ' AS n
            FROM platforms p
       LEFT JOIN companies v ON v.id = p.vendor_id
           WHERE p.library_id IN (' . $in . ')
        ORDER BY p.name',
-        array_merge($aclP, $mine)
+        array_merge($countArgs, $mine)
     );
+
+    // Only the ones that hold something, when asked. Off by default: a picker
+    // for *filing* an entry needs the empty platforms most of all, exactly as
+    // with categories.
+    if (($_GET['non_empty'] ?? '') !== '') {
+        $rows = array_values(array_filter($rows, fn($r) => (int) ($r['n'] ?? 0) > 0));
+    }
+
     api_ok(array_map('platform_to_api', $rows));
 }
 
@@ -1299,6 +1331,35 @@ function api_platform_payload(array $in, int $libraryId, ?array $existing = null
 
     $color = (string) ($field('accent_color') ?? '');
     $data['accent_color'] = preg_match('/^#[0-9a-f]{6}$/i', $color) ? $color : '#a6adc8';
+
+    // Which sections this platform takes part in.
+    //
+    // Never accepted here before, so the column's default - hardware,software -
+    // was the only answer a hand-added platform could ever have. A VHS label or
+    // a bootleg cassette format added by hand was therefore a *software*
+    // platform, offered under Software and Hardware and never under Video or
+    // Audio, with no way to say otherwise short of editing the database. The
+    // shipped platforms escaped this only because the structure feed writes the
+    // column directly.
+    //
+    // Absent leaves it alone, so a PATCH of the name does not silently reset it.
+    // Present and empty is refused rather than written: the column is a SET and
+    // would take '' happily, and a platform belonging to no section at all
+    // cannot be filed under, browsed, or found again.
+    if (array_key_exists('domains', $in)) {
+        $picked = is_array($in['domains'])
+            ? $in['domains']
+            : array_map('trim', explode(',', (string) $in['domains']));
+        $picked = array_values(array_unique(array_filter(
+            $picked,
+            fn($d) => in_array($d, ['hardware', 'software', 'video', 'audio'], true)
+        )));
+        if ($picked === []) {
+            api_error('validation_failed', 'Some fields need attention.', 422,
+                       ['domains' => 'Choose at least one section this platform belongs to.']);
+        }
+        $data['domains'] = implode(',', $picked);
+    }
 
     return $data;
 }
@@ -1995,6 +2056,20 @@ function api_categories_index(): void
         [$acl, $aclP] = library_filter_sql('library_id', ACCESS_VIEWER);
         $sql  = "SELECT DISTINCT category_path FROM v_items WHERE $acl";
         $args = $aclP;
+
+        // Scoped to the same section the list itself is scoped to.
+        //
+        // Without this, an item counts a branch as occupied through every
+        // section at once - and a platform's root node is the same row for all
+        // of them. So a C64 *game* marked the C64 node live, and the C64 node
+        // then survived this filter in the *hardware* list, where the machine
+        // has nothing at all. The dropdown offered a branch that could only
+        // return an empty page, which is the exact thing this filter exists to
+        // prevent.
+        if (in_array($domain, ['hardware', 'software', 'video', 'audio'], true)) {
+            $sql .= ' AND domain = ?';
+            $args[] = $domain;
+        }
         if (isset($_GET['platform_id'])) {
             $sql .= ' AND platform_id = ?';
             $args[] = (int) $_GET['platform_id'];

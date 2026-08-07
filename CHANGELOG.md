@@ -1,5 +1,65 @@
 # Changelog
 
+**A platform can finally say which sections it belongs to.**
+
+`platforms.domains` decides which browsers offer a platform, and the write path
+never accepted it. `api_platform_payload()` handled the maker, the year and the
+colour, and left `domains` to the column's own default - `hardware,software`.
+
+So every platform added by hand was a hardware-and-software platform, whatever it
+actually was. A VHS label, a bootleg cassette format, a disc format the shipped
+feed does not carry: all offered under Software and Hardware, none under Video or
+Audio, with no way to say otherwise short of editing the database. The shipped
+platforms escaped only because the structure feed writes the column directly, so
+the filters looked correct until somebody added their own.
+
+`domains` is accepted now on create and update, as an array or a comma string.
+Absent leaves it alone, so a PATCH of the name does not silently reset it.
+Present and empty is **refused** rather than written: the column is a SET and
+would take `''` happily, and a platform belonging to no section at all cannot be
+filed under, browsed, or found again.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 108**.
+
+**`non_empty` counted through every section at once, which is how the C64 kept
+turning up in the Hardware filters.**
+
+## The category list
+
+A platform's root node is one row shared by every section - the C64 node is the
+same row whether you are looking at its games or its hardware. The non-empty
+check asked "does anything anywhere use this branch", so one C64 *game* marked
+the C64 node occupied, and the C64 node then survived the filter in the
+*hardware* list, where the machine has nothing at all. The dropdown offered a
+branch that could only ever return an empty page - the exact thing the filter
+exists to prevent.
+
+Scoped to the same section the list itself is scoped to, through `v_items.domain`.
+
+## The platform list
+
+The same fault in the other dropdown, and it needed more than a scope: platforms
+carried an `item_count` over every section, so the Video browser offered the C64
+because the C64 has games. `GET /platforms` now takes `domain` to scope that
+count, and `non_empty` to drop platforms it leaves at zero.
+
+Counting through `v_items` rather than `items` is what makes the section
+reachable at all - the domain lives on the category, not on the entry. That
+needed its own ACL clause for the aliased view rather than a string edit of the
+one built for `items`: `library_filter_sql()` takes a qualified column name, and
+rewriting generated SQL by search-and-replace is how a filter ends up pointing at
+the wrong column without anybody noticing. The function refuses any column but
+`library_id` for precisely that reason.
+
+Both flags are off by default. A picker for *filing* an entry needs the empty
+branches and the empty platforms most of all.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 107**.
+
 **A per-user preference store, and the first thing kept in it.**
 
 New `user_prefs` table (migration 010) and `GET`/`PATCH /prefs`. A row per person

@@ -2033,6 +2033,22 @@ paths:
           required: false
           schema: { type: integer }
           description: Scope to one library's own platforms instead of every library the caller can read.
+        - name: domain
+          in: query
+          schema: { type: string, enum: [hardware, software, video, audio] }
+          description: >-
+            Scopes `item_count` to one section. Without it the count is every
+            section at once, which is right for a platform list and wrong for a
+            section's own filter bar - the C64 has games, so an unscoped count
+            offered it under Video, where it holds nothing.
+        - name: non_empty
+          in: query
+          schema: { type: string }
+          description: >-
+            Any value: drop platforms whose `item_count` is zero. Combine with
+            `domain` to mean "platforms this section actually has entries on".
+            Off by default, because a picker for filing an entry needs the empty
+            platforms most of all.
       responses:
         "200":
           description: OK
@@ -2061,6 +2077,15 @@ paths:
               properties:
                 library_id: { type: integer }
                 name: { type: string }
+                domains:
+                  type: array
+                  items: { type: string, enum: [hardware, software, video, audio] }
+                  description: >-
+                    Which sections this platform takes part in, and so which
+                    browsers offer it. Absent leaves it alone; present and empty
+                    is refused, because a platform in no section cannot be filed
+                    under or browsed. Omitted on create, the column's own default
+                    applies - hardware and software.
                 vendor_id:
                   type: integer
                   nullable: true
