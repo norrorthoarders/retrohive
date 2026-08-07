@@ -660,7 +660,11 @@ function build_item_filters(array $qs): array
     // a branch with no role set is neither, and hiding those would hide entries
     // somebody then cannot find.
     $role = trim((string) ($qs['kind'] ?? ''));
-    if (in_array($role, ['machine', 'peripheral'], true)) {
+    // movie and tv_show join machine and peripheral: all four are real
+    // category_role values, so all four are the same column test. Video needed
+    // this for the same reason hardware did - Movies and TV Shows are two
+    // different things to browse and were sharing one list.
+    if (in_array($role, ['machine', 'peripheral', 'movie', 'tv_show', 'music'], true)) {
         $where[]  = 'category_role = ?';
         $params[] = $role;
         $active['kind'] = $role;
@@ -736,6 +740,38 @@ function build_item_filters(array $qs): array
             $params[] = (string) $node['path'] . '%';
         }
         $active['category'] = $qs['category'];
+    }
+
+    // A genre, across every platform that has one.
+    //
+    // `category` names one node in one platform's tree, which is right for
+    // hardware and software where the platform is most of the point - an Amiga
+    // graphics card is a different thing from a PC one. It is wrong for films
+    // and records: the tree is copied per platform, so Action exists once per
+    // format and asking for "action films" through `category` means asking for
+    // action films *on Blu-ray*, with the DVD and VHS copies filed under
+    // different rows of the same name.
+    //
+    // This asks by the template branch instead - `source_slug`, which every
+    // copy carries and which is indexed - so one choice covers every format.
+    // Narrowing to one of them is what the platform filter is for, and the two
+    // combine.
+    if (!empty($qs['genre'])) {
+        $nodes = all('SELECT path FROM categories
+                       WHERE source_slug = ? AND library_id IS NOT NULL',
+                     [(string) $qs['genre']]);
+        if ($nodes === []) {
+            $where[] = '1 = 0';
+        } else {
+            // Everything at or beneath each copy, so Adventure also finds the
+            // Point and click filed under it.
+            $where[] = 'category_id IN (SELECT id FROM categories WHERE '
+                     . implode(' OR ', array_fill(0, count($nodes), 'path LIKE ?')) . ')';
+            foreach ($nodes as $n) {
+                $params[] = (string) $n['path'] . '%';
+            }
+        }
+        $active['genre'] = $qs['genre'];
     }
 
     foreach (['platform' => 'platform_slug', 'developer' => 'developer_slug'] as $key => $col) {

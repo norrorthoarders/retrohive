@@ -884,7 +884,31 @@ paths:
         - { name: library, in: query, schema: { type: string }, description: Library slug - the shelf it is on }
         - { name: title_id, in: query, schema: { type: integer }, description: Every copy of one title }
         - { name: work, in: query, schema: { type: string }, description: Every release of one work, across platforms }
-        - { name: category, in: query, schema: { type: string } }
+        - name: category
+          in: query
+          schema: { type: string }
+          description: >-
+            One branch of one platform's tree, by that copy's own slug
+            (`amiga-platformer`), and everything beneath it. Right for hardware
+            and software, where the platform is part of the answer.
+        - name: genre
+          in: query
+          schema: { type: string }
+          description: >-
+            A branch across every platform that has a copy of it, by the
+            *template* slug (`movie-action`) rather than any one copy's. The tree
+            is duplicated per platform, so `category=blu-ray-movie-action` means
+            action films on Blu-ray and nothing else; `genre=movie-action` means
+            action films. Combine with `platform` to narrow to one format.
+            Everything beneath each copy is included, so `genre=adventure` also
+            finds what is filed under Point and click.
+        - name: kind
+          in: query
+          schema: { type: string, enum: [machine, peripheral, movie, tv_show, music, game, software] }
+          description: >-
+            machine, peripheral, movie, tv_show and music are category roles and
+            are matched on the column. game and software are asked of the
+            ancestry instead, because software carries no role of its own.
         - { name: developer, in: query, schema: { type: string } }
         - { name: year, in: query, schema: { type: integer } }
         - { name: decade, in: query, schema: { type: integer, example: 1990 } }

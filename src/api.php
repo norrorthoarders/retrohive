@@ -851,6 +851,12 @@ function category_to_api(array $r): array
         'depth'       => (int) ($r['depth'] ?? 0),
         'platform_id' => ($r['platform_id'] ?? null) === null ? null : (int) $r['platform_id'],
         'library_id'  => ($r['library_id'] ?? null) === null ? null : (int) $r['library_id'],
+        // Which template branch this copy came from, null for a branch somebody
+        // added by hand. It is what ties the sixty-odd copies of "Action" to
+        // each other, and so what a client needs to offer a genre once rather
+        // than once per platform. See the `genre` filter in build_item_filters().
+        'source_slug' => ($r['source_slug'] ?? null) === null || $r['source_slug'] === ''
+            ? null : (string) $r['source_slug'],
         'path'        => category_breadcrumb((int) $r['id']),
         'description' => $r['description'] ?? null,
         'sort_order'  => (int) ($r['sort_order'] ?? 0),

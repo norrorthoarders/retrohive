@@ -1,5 +1,40 @@
 # Changelog
 
+**A genre filter that spans formats, and Movies/TV Shows as a kind.**
+
+## `genre=` asks about the branch, not one platform's copy of it
+
+`category=` names one node in one platform's tree. That is right for hardware and
+software, where the platform is part of the answer - an Amiga graphics card is a
+different thing from a PC one, filed apart on purpose.
+
+It is wrong for films and records. The tree is copied per platform, so Action
+exists once per format, and `category=blu-ray-movie-action` means *action films
+on Blu-ray* with the DVD and VHS copies sitting under different rows of the same
+name. There was no way to ask for action films.
+
+`genre=movie-action` matches every platform's copy at once, by `source_slug` -
+what each copy carries to name the template it came from, and what is already
+indexed. Everything at or beneath each copy is included, so `genre=adventure`
+also finds what is filed under Point and click. Narrowing to one format is what
+`platform=` is for, and the two combine.
+
+`category_to_api()` now reports `source_slug`, which is what lets a client offer
+a genre once instead of once per platform. Null for a branch somebody added by
+hand - it has no template behind it and nothing to collapse with.
+
+## kind accepts movie and tv_show
+
+Both are real `category_role` values, so both are the same column test that
+already answered machine and peripheral. Video needed it for the reason hardware
+did: Movies and TV Shows are two different things to browse and were sharing one
+list. `music` is accepted too, for symmetry, though audio has only the one branch
+today.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 103**.
+
 **Games and Applications get real trees - 32 more branches, so a shelf of Amiga
 boxes divides into something a person would recognise.**
 
