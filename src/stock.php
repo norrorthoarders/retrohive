@@ -218,6 +218,23 @@ function stock_images(): array
             'note'  => 'A processor board with a large chip and a heatsink.',
         ],
 
+        'hardware_peripheral_drive_floppy' => [
+            'label' => 'Floppy drive',
+            'note'  => 'An external drive box with a 3.5-inch slot.',
+        ],
+        'hardware_peripheral_drive_zip' => [
+            'label' => 'Zip drive',
+            'note'  => 'The dark external cartridge drive.',
+        ],
+        'hardware_peripheral_drive_optical' => [
+            'label' => 'Optical drive',
+            'note'  => 'A tray-loading drive box. A CD-ROM, a DVD-ROM and a writer are the same object from the front.',
+        ],
+        'hardware_peripheral_drive_cassette' => [
+            'label' => 'Tape drive',
+            'note'  => 'A cassette recorder of the kind a home computer loaded from.',
+        ],
+
         'hardware_peripheral_console_chipmod' => [
             'label' => 'Modchip',
             'note'  => 'A small bare board meant to be fitted inside a machine.',

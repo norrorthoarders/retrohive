@@ -1020,11 +1020,14 @@ function hardware_model_to_api(array $r): array
 
 /**
  * A boxed release template - what titles made from it start out already
- * filled in with. Narrower than the real form on purpose: no custom spec
- * fields, no box-contents checklist, no per-medium list - each a genuine,
- * separate child table (software_model_fields, software_model_contents,
- * software_model_media) left for later, the same restraint applied to
- * hardware models' own compatibility and vocabulary features.
+ * filled in with.
+ *
+ * All three child lists are here: the fields a title is asked
+ * (software_model_fields), what the box should hold (software_model_contents),
+ * and what it comes on (software_model_media). Only when `$withLists`, because
+ * they are three queries per row and an index of forty models would otherwise
+ * run a hundred and twenty of them to draw a table showing none of it - the
+ * counts come down with the list instead.
  */
 function software_model_to_api(array $r, bool $withLists = false): array
 {

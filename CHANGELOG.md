@@ -1,5 +1,81 @@
 # Changelog
 
+**An optical drive, and a Storage branch for it.**
+
+    Storage
+      Hard drive       (still inherits the generic card)
+      Floppy drive
+      Optical drive    new
+      Zip drive
+      Tape drive
+
+**Named for the family rather than for CD-ROM specifically.** A CD-ROM drive, a
+DVD-ROM drive and a writer are the same object from the front - three branches
+that cannot be told apart in a photograph would be three ways to file the same
+thing, and whichever one somebody picked would be a guess. The note on the
+picture says as much.
+
+Sort orders renumbered rather than wedging the new branch on the end, so the list
+still reads in a sensible order.
+
+Unlike the three drives in build 112, this one is photographic and matches the
+monitor and the cards. The floppy, Zip and tape drives remain the line-art
+outliers in an otherwise photographic hardware set.
+
+**Hard drive is now the only one of the five without a picture of its own**, and
+the only remaining gap in the hardware catalogue.
+
+41 pictures across 82 files, 5.9 MB. 32 of the 35 hardware branches name one.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 113**.
+
+**Three drive pictures, closing most of the gap left when Storage gained its
+four branches in build 99.**
+
+    Floppy drive   an external drive box with a 3.5-inch slot
+    Zip drive      the dark external cartridge drive
+    Tape drive     a cassette recorder of the kind a home computer loaded from
+
+Those three branches were inheriting the generic expansion card, which is honest
+about them being peripherals and wrong about all three - a drive is not a card.
+
+**Hard drive is still the exception** and still inherits the card. It is the one
+of the four with no picture, and worth saying rather than quietly leaving.
+
+Normalised the same way as the rest: trimmed to their own alpha bounds and
+re-centred at the same relative scale, so the grid does not jump between a drive
+and a jewel case. 2.2 MB of PNG each down to 143, 86 and 83 KB of WebP.
+
+A note on style, since it will be visible: these three are drawn as line art
+while the rest of the hardware set is photographic. Beside the monitor and the
+cards they read as a different hand. Not wrong - they are clear at thumbnail
+size, which is the job - but if the set is ever made consistent, these are the
+three that differ.
+
+The catalogue is 40 pictures across 80 files, 5.8 MB, and 31 of the 34 hardware
+branches now name one.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 112**.
+
+**A stale docblock corrected.**
+
+`software_model_to_api()` still carried the note explaining that the three child
+lists were "left for later" - written when they were, and left in place when
+build 89 added them. A comment describing restraint that no longer exists is
+worse than no comment: it is the file telling somebody the wrong thing about
+itself.
+
+Replaced with what the function actually does, including why the lists are
+behind `$withLists`.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 111**.
+
 **Pictures can be made to wait for somebody's approval - profile pictures across
 the instance, photographs per library.**
 
