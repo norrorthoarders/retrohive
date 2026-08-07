@@ -363,6 +363,17 @@ function structure_apply(string $name, array $rows, bool $force = false): array
                             ), fn($c) => in_array($c, $ok, true)));
                             return implode(',', $in);
                         })($row['classes'] ?? ''),
+                        // Which shipped picture this branch's things get when
+                        // they have no photograph. A slug, checked against the
+                        // catalogue rather than trusted: a feed naming a picture
+                        // this release does not carry writes null and the branch
+                        // falls back to its kind's, which is the same thing that
+                        // would have happened had the feed said nothing. A feed
+                        // running ahead of a release is not an error.
+                        'stock_image' => (function ($v): ?string {
+                            $v = trim((string) $v);
+                            return $v !== '' && isset(stock_images()[$v]) ? $v : null;
+                        })($row['stock_image'] ?? ''),
                         'sort_order' => (int) ($row['sort_order'] ?? 0),
                     ];
                     if (isset($have) && $have !== null) {

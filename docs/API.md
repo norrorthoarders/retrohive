@@ -391,12 +391,16 @@ first photo on an item becomes the cover automatically.
 |------------|------------|
 | `photo`    | A real photograph of this copy - uploaded, or brought in by a metadata agent. |
 | `category` | The picture set on the branch this entry is filed under, or on the nearest ancestor that has one. |
-| `stock`    | A generic picture of the format, shipped with the package and served from `/stock/`. |
+| `stock`    | A generic picture, shipped with the package and served from `/stock/`. |
 | `null`     | Nothing to show. |
 
-Stock pictures are chosen from what the entry already says about itself - its
-kind, what it comes on, and whether it says it has a case - and are never stored
-against it. An entry that gains a real photograph tomorrow simply stops
+Stock pictures are chosen in this order: whatever the entry's own branch of the
+category tree declares (inherited from the nearest ancestor that says anything -
+this is how a Gamepad branch gets a gamepad rather than a generic card), then a
+rule matching what the entry comes on, then one per kind. The branch's answer
+comes from the structure feed and is the reason a picture can be added for a new
+kind of thing by editing a JSON file rather than by changing code. None of it is
+stored against the entry. An entry that gains a real photograph tomorrow simply stops
 resolving to one. `GET /stock-images` lists them. An instance can switch them
 off entirely with the `stock_images` setting, after which those entries report
 `source: null`.

@@ -4,20 +4,23 @@
     "name": "Computers",
     "role": "machine",
     "sort_order": 10,
-    "classes": "computer"
+    "classes": "computer",
+    "stock_image": "hardware_computer"
   },
   {
     "slug": "peripherals",
     "name": "Peripherals",
     "role": "peripheral",
-    "sort_order": 20
+    "sort_order": 20,
+    "stock_image": "hardware_peripheral"
   },
   {
     "slug": "expansions",
     "name": "Expansions",
     "role": "peripheral",
     "sort_order": 30,
-    "classes": "computer"
+    "classes": "computer",
+    "stock_image": "hardware_peripheral"
   },
   {
     "slug": "memory",
@@ -33,21 +36,24 @@
     "role": "peripheral",
     "parent": "expansions",
     "sort_order": 33,
-    "classes": "computer"
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_pci_graphics_card"
   },
   {
     "slug": "console",
     "name": "Consoles",
     "role": "machine",
     "sort_order": 11,
-    "classes": "console"
+    "classes": "console",
+    "stock_image": "hardware_console"
   },
   {
     "slug": "handheld",
     "name": "Handhelds",
     "role": "machine",
     "sort_order": 12,
-    "classes": "handheld"
+    "classes": "handheld",
+    "stock_image": "hardware_console"
   },
   {
     "slug": "adapters",
@@ -63,7 +69,8 @@
     "role": "other",
     "parent": "adapters",
     "sort_order": 22,
-    "classes": "computer"
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_isa_network_card"
   },
   {
     "slug": "storage",
@@ -100,6 +107,146 @@
     "name": "Cartridges",
     "role": "peripheral",
     "sort_order": 30,
-    "classes": "console,handheld"
+    "classes": "console,handheld",
+    "stock_image": "hardware_peripheral_console_flashcart"
+  },
+  {
+    "slug": "sound-card",
+    "name": "Sound card",
+    "role": "peripheral",
+    "parent": "expansions",
+    "sort_order": 40,
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_isa_sound_card"
+  },
+  {
+    "slug": "storage-controller",
+    "name": "Storage controller",
+    "role": "peripheral",
+    "parent": "expansions",
+    "sort_order": 50,
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_isa_scsi_controller"
+  },
+  {
+    "slug": "scsi-controller",
+    "name": "SCSI controller",
+    "role": "peripheral",
+    "parent": "storage-controller",
+    "sort_order": 10,
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_isa_scsi_controller"
+  },
+  {
+    "slug": "ide-controller",
+    "name": "IDE controller",
+    "role": "peripheral",
+    "parent": "storage-controller",
+    "sort_order": 20,
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_isa_ide_controller"
+  },
+  {
+    "slug": "raid-controller",
+    "name": "RAID controller",
+    "role": "peripheral",
+    "parent": "storage-controller",
+    "sort_order": 30,
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_pci_raid_controller"
+  },
+  {
+    "slug": "io-card",
+    "name": "I/O card",
+    "role": "peripheral",
+    "parent": "expansions",
+    "sort_order": 60,
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_isa_multi_io_controller"
+  },
+  {
+    "slug": "serial-parallel-card",
+    "name": "Serial/parallel card",
+    "role": "peripheral",
+    "parent": "io-card",
+    "sort_order": 10,
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_pci_serial_parallel_card"
+  },
+  {
+    "slug": "multi-io-card",
+    "name": "Multi-I/O card",
+    "role": "peripheral",
+    "parent": "io-card",
+    "sort_order": 20,
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_isa_multi_io_controller"
+  },
+  {
+    "slug": "input-devices",
+    "name": "Input devices",
+    "role": "peripheral",
+    "parent": "peripherals",
+    "sort_order": 10,
+    "stock_image": "hardware_peripheral_console_gamepad"
+  },
+  {
+    "slug": "gamepad",
+    "name": "Gamepad",
+    "role": "peripheral",
+    "parent": "input-devices",
+    "sort_order": 10,
+    "stock_image": "hardware_peripheral_console_gamepad"
+  },
+  {
+    "slug": "joystick",
+    "name": "Joystick",
+    "role": "peripheral",
+    "parent": "input-devices",
+    "sort_order": 20,
+    "stock_image": "hardware_peripheral_console_joystick"
+  },
+  {
+    "slug": "keyboard",
+    "name": "Keyboard",
+    "role": "peripheral",
+    "parent": "input-devices",
+    "sort_order": 30,
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_console_keyboard"
+  },
+  {
+    "slug": "mouse",
+    "name": "Mouse",
+    "role": "peripheral",
+    "parent": "input-devices",
+    "sort_order": 40,
+    "classes": "computer",
+    "stock_image": "hardware_peripheral_console_mouse"
+  },
+  {
+    "slug": "modifications",
+    "name": "Modifications",
+    "role": "peripheral",
+    "parent": "peripherals",
+    "sort_order": 60,
+    "stock_image": "hardware_peripheral_console_chipmod"
+  },
+  {
+    "slug": "modchip",
+    "name": "Modchip",
+    "role": "peripheral",
+    "parent": "modifications",
+    "sort_order": 10,
+    "stock_image": "hardware_peripheral_console_chipmod"
+  },
+  {
+    "slug": "flash-cartridge",
+    "name": "Flash cartridge",
+    "role": "peripheral",
+    "parent": "modifications",
+    "sort_order": 20,
+    "classes": "console,handheld",
+    "stock_image": "hardware_peripheral_console_flashcart"
   }
 ]

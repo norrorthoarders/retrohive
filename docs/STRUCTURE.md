@@ -87,6 +87,23 @@ Category rows carry an optional `classes` — a comma-separated subset of the sa
 three, absent meaning every machine. It is what keeps disk controllers off a
 Game Boy.
 
+Category rows also carry an optional `stock_image`: the slug of one of the
+pictures that ship in `public/stock/`, used for entries filed on that branch that
+have no photograph of their own. Inherited down the branch, so declaring it once
+on *Input devices* covers Gamepad, Joystick, Keyboard and Mouse beneath it.
+
+This is the way to give a new kind of thing a picture — a line in this file
+rather than a case in `stock_image_rules()`. A branch's answer beats the format
+rules and the per-kind fallbacks, and loses to a picture a curator uploaded for
+the branch themselves, which is held in a different column for exactly that
+reason.
+
+A slug naming a picture the running release does not ship is ignored rather than
+refused, on the way in and again on the way out. A feed can therefore name
+pictures ahead of the release that adds them, and an instance that has not
+updated yet simply falls back to the per-kind picture — the same thing that
+would have happened had the feed said nothing.
+
 ## What the repository needs
 
 For **structure data**, a `structure/` directory at the root of the default

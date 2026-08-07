@@ -1,5 +1,140 @@
 # Changelog
 
+**Seventeen more hardware pictures, and - more usefully - the taxonomy can now
+say which picture a branch's things get, so the next one is a line of JSON
+rather than a case in PHP.**
+
+## The structure feed decides
+
+Until now a stock picture was chosen by role and format alone, and that works for
+releases because the format *is* the shape: a Blu-ray really does come in a
+Blu-ray case. It does not work for hardware. A sound card and a SCSI controller
+are both `peripheral` on the same platform with the same media, and no rule
+reading a media string can tell them apart. The thing that knows is the branch
+the entry is filed under, and the branch had no way to say so.
+
+Category rows in the structure files now carry an optional `stock_image`, held in
+a new `categories.stock_image` column (migration 009) and inherited down the
+branch - declared once on *Input devices*, it covers Gamepad, Joystick, Keyboard
+and Mouse beneath it. It beats the format rules and the per-kind fallbacks, and
+loses to a picture a curator uploaded for the branch.
+
+Deliberately a second column rather than a reuse of `default_image_filename`.
+That one holds a decision somebody made; this one is rewritten on every structure
+import. In one column the import would either silently overwrite a curator's
+choice or be unable to tell it apart from its own - so, two columns, and the
+curator's wins.
+
+A slug naming a picture the running release does not ship is ignored rather than
+refused, on the way in and again on the way out. The feed can name pictures ahead
+of the release that adds them, and an instance that has not updated falls back to
+the per-kind picture - the same thing that would have happened had the feed said
+nothing.
+
+Also carried into each library's own copy of the tree, which the copy statement
+was not doing. `default_image_filename` deliberately is not copied - it names a
+file on this instance's disk and a template has none - but a shipped picture
+exists on every install by definition, so a template can safely name one.
+
+## Sixteen new peripheral branches
+
+`hardware_categories.json` grows from 14 rows to 30: Sound card, Storage
+controller with SCSI/IDE/RAID beneath it, I/O card with Serial/parallel and
+Multi-I/O, Input devices with Gamepad/Joystick/Keyboard/Mouse, and Modifications
+with Modchip and Flash cartridge. Twenty-four of the thirty now name a picture.
+
+Keyboard and Mouse are `computer`-class; Gamepad and Joystick are not, because a
+pad is as much a console thing as a computer one. Flash cartridge is
+`console,handheld`.
+
+## A judgement call worth flagging
+
+The `isa_` and `pci_` in these slugs describe the picture, not a rule about where
+it may be used - the generic *Sound card* branch uses the ISA image on every
+platform, Amiga included. An ISA sound card and a Zorro sound card are the same
+silhouette at thumbnail size, and insisting on the difference would need a
+picture per bus per function and still be wrong about the next machine. Anyone
+who disagrees for a particular platform can set that branch by hand: the trees
+are per-platform copies, so the Amiga *Sound card* branch is a different row from
+the PC one and the existing picker already sets it.
+
+## Applying it to an install that already exists
+
+New maintenance job, **Branch pictures not carried into libraries**. A library
+gets its copy of the tree when it is made, so one made before this version has
+branches with nothing declared while their templates now declare something. The
+repair copies the template's answer down, matched on the indexed `source_slug`,
+and never touches a branch somebody has given a picture of their own. Branches
+added by hand carry no `source_slug` and are left alone - they never came from a
+template, so there is nothing to be out of step with.
+
+The images arrived at mixed sizes with off-centre content and were trimmed to
+their alpha bounds and re-centred at the same relative scale as the rest, so the
+grid does not jump. Two of the seventeen - the compact graphics card and the PCI
+network card - are variants no branch names, reachable only by picking them by
+hand. That is on purpose rather than an oversight.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 95**.
+
+**Hardware gets stock pictures after all - a beige desktop for machines, an
+expansion card for peripherals - reversing the judgement in build 88.**
+
+That build left hardware out deliberately, on the grounds that a generic
+computer is a weaker claim than a generic DVD case: every keep case really does
+look like that, and no two machines do. The reasoning still holds and is worth
+keeping in the file, but it was the wrong call. What it left on a hardware shelf
+was a grey rectangle saying nothing at all, and "this is a computer" is more
+than nothing. The entry's own page already captions a stock picture as not being
+a photograph of this copy, and the whole feature can be switched off, so nobody
+is misled by it who does not choose to be.
+
+Both are reached by kind alone, with no format rules above them. Hardware has no
+packaging axis to vary on - what a machine "comes on" is not a question - so
+every machine gets the same picture, which is the honest limit of what a generic
+image can say here.
+
+The two arrived 1536x1024 with their content off-centre, against a catalogue
+that is uniformly 1024 square. They are trimmed to their own alpha bounds and
+re-centred at the same relative scale the existing fifteen use, so a card does
+not sit in a 3:2 frame among square ones and make the grid rows jump. 2.2 MB and
+2.6 MB of PNG down to 163 KB and 104 KB of WebP, transparency intact.
+
+Checked against the case that would have been easy to miss: a machine whose
+platform slug is `cd`, or whose media reads `CD-ROM`, still gets the computer
+rather than being dragged into the music or film rules. Role gates before format
+does, so it never reaches them. The existing fifteen are unchanged, confirmed by
+running the same twelve cases again.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 94**.
+
+**The already-installed check from build 88 exempted the one machine it needed
+to cover.**
+
+`api_link_refusal()` learned to refuse a peripheral already fitted somewhere -
+and then exempted the machine being edited:
+
+    if ($fittedIn !== null && (int) $fittedIn['parent_item_id'] !== (int) $machine['id'])
+
+So a card in another machine was correctly withheld, and a card in *this* one was
+still offered. That is the only case anybody actually meets: you open an Amiga
+2000, see the BigRAM 2008 listed under Installed peripherals, and find it in the
+picker below as though it were free. The exemption was written for the
+peripheral's own form, which asks the same question from the other end and needs
+its current host to stay selectable - but that screen already re-offers the host
+itself, so nothing needed the exemption at all.
+
+Refused now whenever the part is fitted anywhere, with the two situations
+worded apart: "already installed in Amiga 2000" when it is here, and "already
+installed in X. Remove it from there first" when it is elsewhere.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 93**.
+
 **Compatibility is editable at last - both halves of it. The three tables have
 been enforced since they were added, against lists nothing outside the engine's
 own interface could supply.**

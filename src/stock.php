@@ -10,11 +10,11 @@ declare(strict_types=1);
  * two hundred boxes is a weekend nobody has. So the shelf reads as empty long
  * after it stopped being empty.
  *
- * These fifteen pictures are blank mock-ups of the packaging itself - a big box,
- * a jewel case, a VHS in its slip, a record half out of its sleeve. They say
- * nothing about the release, which is the point: they say what shape of object is
- * on the shelf, which is a true thing this catalogue already knows and was
- * throwing away.
+ * These pictures are blank mock-ups of the object itself - a big box, a jewel
+ * case, a VHS in its slip, a record half out of its sleeve, a beige desktop, an
+ * expansion card. They say nothing about the release, which is the point: they
+ * say what shape of thing is on the shelf, which is a true thing this catalogue
+ * already knows and was throwing away.
  *
  * Three rules govern the whole feature:
  *
@@ -34,9 +34,14 @@ declare(strict_types=1);
  *      of public/uploads does not need to carry them, and a redeploy restores
  *      them for free.
  *
- * Hardware gets nothing here on purpose. A generic picture of "a computer" would
- * be a lie about a specific machine in a way that a generic picture of "a DVD
- * case" is not: every DVD case really does look like that, and no two machines do.
+ * Hardware has two of its own - a beige desktop and an expansion card. These are
+ * a weaker claim than the packaging pictures and worth being honest about: every
+ * DVD case really does look like that, whereas no two machines do, so a generic
+ * computer says only "this is a computer" rather than describing the object. It
+ * earns its place anyway, because the alternative on a hardware shelf was a grey
+ * rectangle saying nothing at all, and because the caption on the entry's own
+ * page says plainly that it is not a photograph of this copy. Somebody who
+ * disagrees turns the whole feature off in settings.
  */
 
 /** The extension every stock file uses. */
@@ -117,6 +122,93 @@ function stock_images(): array
             'label' => 'Cassette',
             'note'  => 'A compact cassette, shell and all.',
         ],
+        'hardware_computer' => [
+            'label' => 'Computer',
+            'note'  => 'A beige desktop, monitor and keyboard - the shape rather than the model.',
+        ],
+        'hardware_peripheral' => [
+            'label' => 'Expansion card',
+            'note'  => 'A card with a bracket and an edge connector.',
+        ],
+        'hardware_console' => [
+            'label' => 'Console',
+            'note'  => 'A low wedge-shaped console with a cartridge slot.',
+        ],
+
+        // Cards, by what the card does.
+        //
+        // The isa_/pci_ in these names describes the picture, not a rule about
+        // where it may be used: an ISA sound card and a Zorro sound card are the
+        // same silhouette at thumbnail size, and a catalogue that insisted on
+        // the difference would need a picture per bus per function and still be
+        // wrong about the next machine. The bus in the name is there so somebody
+        // choosing one by hand knows what they are looking at.
+        'hardware_peripheral_isa_sound_card' => [
+            'label' => 'Sound card',
+            'note'  => 'A long card with audio jacks on the bracket.',
+        ],
+        'hardware_peripheral_isa_network_card' => [
+            'label' => 'Network card (ISA)',
+            'note'  => 'A card with a network socket on the bracket.',
+        ],
+        'hardware_peripheral_isa_scsi_controller' => [
+            'label' => 'SCSI controller',
+            'note'  => 'A controller card with a wide internal header.',
+        ],
+        'hardware_peripheral_isa_ide_controller' => [
+            'label' => 'IDE controller',
+            'note'  => 'A short controller card with drive headers.',
+        ],
+        'hardware_peripheral_isa_multi_io_controller' => [
+            'label' => 'Multi-I/O controller',
+            'note'  => 'A card carrying serial, parallel and drive ports at once.',
+        ],
+        'hardware_peripheral_pci_graphics_card' => [
+            'label' => 'Graphics card',
+            'note'  => 'A card with a fan and a display connector.',
+        ],
+        'hardware_peripheral_pci_compact_graphics_card' => [
+            'label' => 'Graphics card (compact)',
+            'note'  => 'The same, in a short low-profile shape.',
+        ],
+        'hardware_peripheral_pci_network_card' => [
+            'label' => 'Network card (PCI)',
+            'note'  => 'A short card with a single network socket.',
+        ],
+        'hardware_peripheral_pci_raid_controller' => [
+            'label' => 'RAID controller',
+            'note'  => 'A storage controller card with multiple drive headers.',
+        ],
+        'hardware_peripheral_pci_serial_parallel_card' => [
+            'label' => 'Serial/parallel card',
+            'note'  => 'A short card with serial and parallel ports.',
+        ],
+
+        // Things you hold, plug in, or solder in.
+        'hardware_peripheral_console_gamepad' => [
+            'label' => 'Gamepad',
+            'note'  => 'A two-handed pad with a d-pad and face buttons.',
+        ],
+        'hardware_peripheral_console_joystick' => [
+            'label' => 'Joystick',
+            'note'  => 'A single-stick base with a fire button.',
+        ],
+        'hardware_peripheral_console_keyboard' => [
+            'label' => 'Keyboard',
+            'note'  => 'A full-length keyboard.',
+        ],
+        'hardware_peripheral_console_mouse' => [
+            'label' => 'Mouse',
+            'note'  => 'A two-button mouse.',
+        ],
+        'hardware_peripheral_console_flashcart' => [
+            'label' => 'Flash cartridge',
+            'note'  => 'A cartridge shell with a card slot in the end.',
+        ],
+        'hardware_peripheral_console_chipmod' => [
+            'label' => 'Modchip',
+            'note'  => 'A small bare board meant to be fitted inside a machine.',
+        ],
     ];
 }
 
@@ -170,7 +262,8 @@ function stock_image_rules(): array
  * a cassette inlay for the C64 era - would be four more pictures to draw a
  * distinction nobody browsing a shelf is asking about.
  *
- * Machines and peripherals are absent deliberately. See the note at the top.
+ * Machines and peripherals get one apiece and no format rules above them, for
+ * the reason in the note at the top.
  *
  * @return array<string, string>
  */
@@ -182,6 +275,13 @@ function stock_image_fallbacks(): array
         'movie'       => 'dvd_movies',
         'tv_show'     => 'dvd_tv_shows',
         'music'       => 'cd_music_jewel_case',
+        // One each, with no format rules above them: hardware has no packaging
+        // axis to vary on. What a machine "comes on" is not a question, and the
+        // media tokens a film or a record is matched by mean nothing here - so
+        // these are reached by kind alone and every machine gets the same
+        // picture, which is the honest limit of what a generic image can say.
+        'machine'     => 'hardware_computer',
+        'peripheral'  => 'hardware_peripheral',
     ];
 }
 
@@ -294,6 +394,25 @@ function stock_image_for_item(array $row, array $media = []): ?string
     }
     if ($role === null || $role === '') {
         return null;
+    }
+
+    // What the branch itself declares, if anything, walking up to the nearest
+    // ancestor that does.
+    //
+    // Above the format rules rather than below them, and that is the point of
+    // the whole column: a branch saying "things filed here are ISA sound cards"
+    // knows more than any rule reading a media string ever could. It is how the
+    // taxonomy gets to answer a question the taxonomy is the right thing to
+    // answer - and how a picture is added for a new kind of thing by editing a
+    // JSON file rather than by adding a case to stock_image_rules().
+    //
+    // Still below a curator's uploaded picture for the branch, which is checked
+    // before this function is ever called. See item_to_api().
+    if (!empty($row['category_id'])) {
+        $declared = category_effective_stock_image((int) $row['category_id']);
+        if ($declared !== null) {
+            return STOCK_REF_PREFIX . $declared;
+        }
     }
 
     $format = stock_format_of($row, $media);

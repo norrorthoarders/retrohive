@@ -2464,12 +2464,13 @@ paths:
       tags: [Taxonomy]
       summary: The generic pictures that ship with the package
       description: >-
-        Fifteen blank mock-ups of packaging - a big box, a jewel case, a VHS
-        slip, a record sleeve. An entry with no photograph of its own and no
+        Blank mock-ups of packaging - a big box, a jewel case, a VHS slip, a
+        record sleeve - plus one apiece for a computer and an expansion card.
+        An entry with no photograph of its own and no
         picture on its branch already falls back to whichever of these matches
         what it is and what it comes on; this endpoint exists so a client can
         also offer them as something to set deliberately on a branch. Readable
-        by anyone signed in - the same fifteen files on every install.
+        by anyone signed in - the same files on every install.
       responses:
         "200":
           description: The catalogue, plus whether the instance has them switched on

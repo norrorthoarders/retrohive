@@ -2213,7 +2213,7 @@ function api_categories_delete(int $id): void
  * The pictures that ship with the package, so a client can offer them as
  * something to set on a branch rather than only accepting an upload.
  *
- * Readable by anyone signed in: they are the same fifteen files on every
+ * Readable by anyone signed in: they are the same files on every
  * install, they are already served to every browser that renders an entry, and
  * a picker that needs curator rights to *look* at the list would be a strange
  * shape.
@@ -6088,9 +6088,22 @@ function api_link_refusal(array $machine, array $part): ?string
           LIMIT 1",
         [(int) $part['id']]
     );
-    if ($fittedIn !== null && (int) $fittedIn['parent_item_id'] !== (int) $machine['id']) {
-        return sprintf('%s is already installed in %s. Remove it from there first.',
-                       (string) $part['title'], (string) $fittedIn['title']);
+    if ($fittedIn !== null) {
+        // Already in *this* machine counts, and getting that wrong is what made
+        // the first version of this check useless: it exempted the machine being
+        // edited, so the one case somebody actually sees - opening an A2000 and
+        // finding the BigRAM already in it still offered as installable - was
+        // the one case it let through.
+        //
+        // The peripheral's own form asks the same question from the other end
+        // and would refuse every machine while the card is fitted, including the
+        // one it is fitted to. That is correct here: it is the client's job to
+        // re-offer the current host as "where it is now", which it already does.
+        return (int) $fittedIn['parent_item_id'] === (int) $machine['id']
+            ? sprintf('%s is already installed in %s.',
+                      (string) $part['title'], (string) $machine['title'])
+            : sprintf('%s is already installed in %s. Remove it from there first.',
+                      (string) $part['title'], (string) $fittedIn['title']);
     }
 
     // And the platform, which catches the case where neither has a model: an

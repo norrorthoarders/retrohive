@@ -324,6 +324,22 @@ CREATE TABLE IF NOT EXISTS categories (
   -- instance's own disk, and a template is copied to instances that
   -- have never seen it.
   default_image_filename VARCHAR(255) DEFAULT NULL,
+  -- The same question answered by the template feed instead of by a person.
+  --
+  -- A slug from stock_images() - one of the pictures that ship in public/stock -
+  -- rather than a filename, because these are part of the package and not part
+  -- of the collection. Which is also why this one *is* set on template rows
+  -- where default_image_filename cannot be: a shipped picture exists on every
+  -- instance by definition, so a template can name it safely.
+  --
+  -- Kept apart from the column above on purpose. That one is a deliberate act by
+  -- whoever curates the library; this one is rewritten on every structure
+  -- import. In one column the import would either silently overwrite somebody's
+  -- choice or be unable to tell it apart from its own. Two columns, and the
+  -- curator's wins - see the fallback order in item_to_api().
+  --
+  -- Inherited down the branch when unset, the same walk as the two above.
+  stock_image VARCHAR(80)  DEFAULT NULL,
   sort_order  INT          NOT NULL DEFAULT 0,
   created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),

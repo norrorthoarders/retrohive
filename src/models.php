@@ -1197,6 +1197,44 @@ function category_effective_default_image(int $categoryId): ?string
     return $cache[$categoryId] = null;
 }
 
+/**
+ * Which shipped picture this branch declares, walking up until something says.
+ *
+ * The same walk as category_effective_default_image() beside it, over the other
+ * column - and separate from it because the two answer to different people. That
+ * one is what a curator uploaded; this one is what the structure feed said, and
+ * is rewritten on every import. The curator's wins.
+ *
+ * Returns a slug, or null. Checked against the catalogue on the way out as well
+ * as on the way in: a row written by an older release naming a picture this one
+ * no longer ships would otherwise resolve to a broken image, and falling through
+ * to the kind's own picture is the better failure.
+ */
+function category_effective_stock_image(int $categoryId): ?string
+{
+    static $cache = [];
+    if (array_key_exists($categoryId, $cache)) {
+        return $cache[$categoryId];
+    }
+
+    $line = category_ancestry($categoryId);
+    if ($line === []) {
+        return $cache[$categoryId] = null;
+    }
+    $in   = implode(',', array_fill(0, count($line), '?'));
+    $rows = [];
+    foreach (all("SELECT id, stock_image FROM categories WHERE id IN ($in)", $line) as $row) {
+        $rows[(int) $row['id']] = $row['stock_image'];
+    }
+    foreach ($line as $id) {
+        $slug = (string) ($rows[$id] ?? '');
+        if ($slug !== '' && isset(stock_images()[$slug])) {
+            return $cache[$categoryId] = $slug;
+        }
+    }
+    return $cache[$categoryId] = null;
+}
+
 /** "Peripherals › Storage", for showing where an entry sits. */
 function category_breadcrumb(int $categoryId, string $separator = ' › '): string
 {
@@ -3523,11 +3561,17 @@ function seed_library_categories(int $libraryId): void
             for ($d = 0; $d <= $maxDepth; $d++) {
                 q("INSERT INTO categories
                        (library_id, section_id, role, parent_id, platform_id, name, slug,
-                        source_slug, description, sort_order)
+                        source_slug, description, sort_order, stock_image)
                    SELECT ?, ?, t.role,
                           COALESCE(mineParent.id, domNode.id),
                           p.id, t.name, CONCAT(p.slug, '-', t.slug), t.slug,
-                          t.description, t.sort_order
+                          t.description, t.sort_order,
+                          -- Carried down with the rest of what the template says.
+                          -- default_image_filename deliberately is not: that one names
+                          -- a file on this instance's disk and a template has none, but
+                          -- a stock picture ships with the package and exists on every
+                          -- install by definition, so the copy can safely name it.
+                          t.stock_image
                      FROM categories t
                      JOIN platforms  p ON p.id IN ($cin)
                      -- Joined on (library_id, platform_id, source_slug), all indexed.

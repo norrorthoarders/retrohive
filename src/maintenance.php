@@ -224,6 +224,22 @@ function maintenance_jobs(): array
             'repair_label' => 'Switch on the usual sources',
         ],
 
+        'stale_branch_pictures' => [
+            'label'  => 'Branch pictures not carried into libraries',
+            'scope'  => 'instance',
+            'access' => 'admin',
+            'blurb'  => 'The structure feed says which shipped picture a branch\'s things '
+                      . 'should get when they have no photograph. A library gets its own copy '
+                      . 'of the tree when it is made, so a library made before the feed said '
+                      . 'anything - or before this version existed - has branches with nothing '
+                      . 'declared while their templates now declare something. Repairing copies '
+                      . 'the template\'s answer down, matched on source_slug, and never touches '
+                      . 'a branch somebody has given a picture of their own.',
+            'check'  => 'maintenance_check_stale_branch_pictures',
+            'repair' => 'maintenance_repair_stale_branch_pictures',
+            'repair_label' => 'Carry the pictures down',
+        ],
+
         'unfiled' => [
             'label'  => 'Entries filed somewhere that is gone',
             'scope'  => 'library',
@@ -537,6 +553,65 @@ function maintenance_repair_unasked_branches(): array
         $added === 0 => 'Nothing to switch on.',
         $added === 1 => '1 source switched on.',
         default      => $added . ' sources switched on.',
+    }];
+}
+
+/**
+ * Library branches whose template now declares a picture they do not carry.
+ *
+ * Matched on source_slug, which is what ties a copy back to the template it came
+ * from and is indexed for exactly this kind of question. A branch added by hand
+ * has a null source_slug and is left alone - it never came from a template, so
+ * there is nothing to be out of step with.
+ */
+function maintenance_check_stale_branch_pictures(): array
+{
+    $rows = all(
+        "SELECT c.id, c.name, t.stock_image, l.name AS library_name
+           FROM categories c
+           JOIN categories t ON t.library_id IS NULL AND t.slug = c.source_slug
+           JOIN libraries  l ON l.id = c.library_id
+          WHERE c.library_id IS NOT NULL
+            AND c.source_slug IS NOT NULL
+            AND t.stock_image IS NOT NULL
+            AND (c.stock_image IS NULL OR c.stock_image <> t.stock_image)
+          ORDER BY l.name, c.name"
+    );
+
+    $out = [];
+    foreach ($rows as $r) {
+        $out[] = [
+            'what'   => (string) $r['library_name'] . ' › ' . (string) $r['name'],
+            'detail' => 'its template declares ' . (string) $r['stock_image'] . ' and this copy does not',
+            'id'     => (int) $r['id'],
+        ];
+    }
+    return maintenance_result(count($out), $out,
+        $out === [] ? 'Every branch carries what its template declares.' : '');
+}
+
+/**
+ * Copy the template's answer down.
+ *
+ * Only this column. A picture somebody uploaded for the branch lives in
+ * default_image_filename and is a different question with a different answer -
+ * it is still checked first when an entry is drawn, so a branch repaired here
+ * looks exactly as it did to anyone who had set one.
+ */
+function maintenance_repair_stale_branch_pictures(): array
+{
+    $st = q("UPDATE categories c
+               JOIN categories t ON t.library_id IS NULL AND t.slug = c.source_slug
+                SET c.stock_image = t.stock_image
+              WHERE c.library_id IS NOT NULL
+                AND c.source_slug IS NOT NULL
+                AND t.stock_image IS NOT NULL
+                AND (c.stock_image IS NULL OR c.stock_image <> t.stock_image)");
+    $n = $st->rowCount();
+    return ['done' => true, 'message' => match (true) {
+        $n === 0 => 'Nothing to carry down.',
+        $n === 1 => '1 branch updated.',
+        default  => $n . ' branches updated.',
     }];
 }
 
