@@ -167,7 +167,7 @@ CREATE TABLE IF NOT EXISTS platforms (
   -- which machines exist, not what this column was actually for; it only ever
   -- existed to look up a fixed class-to-sections table. A platform now just says
   -- the sections directly, the same way a company already does.
-  domains SET('hardware','software','video','music') NOT NULL DEFAULT 'hardware,software',
+  domains SET('hardware','software','video','audio') NOT NULL DEFAULT 'hardware,software',
   name            VARCHAR(120) NOT NULL,
   slug            VARCHAR(140) NOT NULL,
   -- Who made it, as a row rather than a word typed again. Nullable because a
@@ -224,7 +224,14 @@ INSERT IGNORE INTO sections (slug, name, platform_label, sort_order) VALUES
   ('hardware', 'Hardware', 'Platform', 10),
   ('software', 'Software', 'Platform', 20),
   ('video',    'Video',    'Format',   30),
-  ('music',    'Music',    'Format',   40);
+  -- Renamed from "Music" so a future release can file more than music
+  -- under this section without the name itself being wrong - audiobooks,
+  -- podcasts, radio recordings are all audio and none of them are music.
+  -- The slug changed too, not just the label: every domain check
+  -- throughout this codebase compares against the slug, and a section
+  -- that reads "Audio" while still answering to 'music' internally is
+  -- exactly the kind of mismatch that becomes a bug report later.
+  ('audio',    'Audio',    'Format',   40);
 
 -- ---------------------------------------------------------------------------
 -- Categories: the filing tree, and the single place a section's own
@@ -308,6 +315,15 @@ CREATE TABLE IF NOT EXISTS categories (
   path        VARCHAR(255) NOT NULL DEFAULT '',
   depth       TINYINT UNSIGNED NOT NULL DEFAULT 0,
   description TEXT         DEFAULT NULL,
+  -- What an entry filed here looks like with no photograph of its own -
+  -- a generic VHS clamshell, a boxed Amiga disk, whatever this branch's
+  -- own things generally come in. Inherited down the branch when unset:
+  -- a leaf with nothing of its own uses the nearest ancestor that has
+  -- one, the same walk-up-the-tree category_role already does for kind.
+  -- NULL on every template row - a picture is a real file on this
+  -- instance's own disk, and a template is copied to instances that
+  -- have never seen it.
+  default_image_filename VARCHAR(255) DEFAULT NULL,
   sort_order  INT          NOT NULL DEFAULT 0,
   created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -397,7 +413,7 @@ CREATE TABLE IF NOT EXISTS companies (
   -- up in a manufacturer picker and a publisher picker alike. Extended for the
   -- same reason `sections` exists: a studio can make a film, a label can press
   -- a record, and neither should need a separate companies table of its own.
-  makes         SET('hardware','software','video','music') NOT NULL DEFAULT 'software',
+  makes         SET('hardware','software','video','audio') NOT NULL DEFAULT 'software',
   -- Games or other software. Two lists rather than one because they overlap
   -- barely at all - Psygnosis never shipped a spreadsheet - and a single list
   -- of both makes each harder to search. 'both' exists for the handful that
@@ -470,7 +486,7 @@ CREATE TABLE IF NOT EXISTS credit_roles (
   library_id    INT UNSIGNED DEFAULT NULL,
   name          VARCHAR(80)  NOT NULL,
   slug          VARCHAR(100) NOT NULL,
-  domains       SET('hardware','software','video','music') NOT NULL DEFAULT 'software',
+  domains       SET('hardware','software','video','audio') NOT NULL DEFAULT 'software',
   sort_order    SMALLINT UNSIGNED NOT NULL DEFAULT 100,
   created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),

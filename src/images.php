@@ -224,6 +224,57 @@ function delete_user_avatar(int $userId): void
 }
 
 /**
+ * What a category's own entries look like with no photograph of their
+ * own - a client for the same upload machinery store_user_avatar()
+ * already uses, storing to categories.default_image_filename instead
+ * of users.avatar_filename. No crop: an avatar is cut to a circle
+ * because it is shown small and round everywhere; this is shown as a
+ * whole cover image the same way a real photograph would be, so
+ * cropping it would be solving a problem this one does not have.
+ */
+function store_category_default_image(int $categoryId, string $field): array
+{
+    if (!isset($_FILES[$field]) || (int) ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return [null, null];
+    }
+
+    [$info, $ext, $error] = validate_uploaded_image($_FILES[$field]);
+    if ($error !== null) {
+        return [null, $error];
+    }
+
+    $basename = unique_upload_name('category_default_' . $categoryId, $ext);
+    $target   = uploads_dir() . '/' . $basename;
+
+    if (!move_uploaded_file($_FILES[$field]['tmp_name'], $target)) {
+        return [null, 'The picture could not be written to the uploads directory. Check permissions.'];
+    }
+    @chmod($target, 0644);
+
+    resize_image($target, uploads_dir() . '/thumb_' . $basename, (string) $info['mime'], (int) config('uploads.thumb_px'));
+
+    delete_category_default_image($categoryId);
+    update_row('categories', $categoryId, ['default_image_filename' => $basename]);
+
+    return [$basename, null];
+}
+
+function delete_category_default_image(int $categoryId): void
+{
+    $row = one('SELECT default_image_filename FROM categories WHERE id = ?', [$categoryId]);
+    if ($row === null || empty($row['default_image_filename'])) {
+        return;
+    }
+    foreach (['', 'thumb_'] as $prefix) {
+        $path = uploads_dir() . '/' . $prefix . $row['default_image_filename'];
+        if (is_file($path)) {
+            @unlink($path);
+        }
+    }
+    update_row('categories', $categoryId, ['default_image_filename' => null]);
+}
+
+/**
  * Validate and store every uploaded photo for an item.
  * Returns [storedCount, errors[]].
  */

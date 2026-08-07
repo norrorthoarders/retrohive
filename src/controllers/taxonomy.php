@@ -175,7 +175,7 @@ function taxonomy_save(string $type): void
         if ($ftype === 'makes') {
             $picked = $_POST[$field] ?? [];
             $picked = is_array($picked)
-                ? array_values(array_intersect(['hardware', 'software', 'video', 'music'], $picked))
+                ? array_values(array_intersect(['hardware', 'software', 'video', 'audio'], $picked))
                 : [];
             $data[$field] = implode(',', $picked);
             continue;

@@ -159,7 +159,7 @@
     "sort_order": 850,
     "maker": "columbia-records",
     "domains": [
-      "music"
+      "audio"
     ]
   },
   {
@@ -170,7 +170,7 @@
     "sort_order": 860,
     "maker": "philips",
     "domains": [
-      "music"
+      "audio"
     ]
   },
   {
@@ -181,7 +181,7 @@
     "sort_order": 870,
     "maker": "philips",
     "domains": [
-      "music"
+      "audio"
     ]
   }
 ]

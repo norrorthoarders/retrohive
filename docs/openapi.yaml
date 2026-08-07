@@ -1243,6 +1243,98 @@ paths:
         "200": { description: OK }
         "404": { description: No library with that id, or not yours to see }
 
+  /profile/libraries:
+    get:
+      tags: [Libraries]
+      summary: Everything the "Library access" page needs, in one call
+      description: >-
+        A client for the real app's own three-tab access page, combined
+        the same way it combines them for one render rather than three
+        separate requests. mine is what this account already has, with
+        the counts the real page shows; invites and owner_offers are
+        what's waiting on an answer - an invitation and an ownership
+        offer are the same kind of thing, something somebody else has
+        proposed and nothing has happened until this account answers;
+        joinable is a published shelf not yet taken on.
+      responses:
+        "200": { description: mine, invites, owner_offers, joinable }
+        "403": { description: Sign in first }
+
+  /libraries/{id}/join:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Libraries]
+      summary: Take on a published shelf
+      description: >-
+        Only a library that is genuinely open (shared, and public_read
+        or public_write) - this accepts an open invitation, it does not
+        let anybody into a private library. Grants contributor where the
+        library is open to write, viewer otherwise, and never downgrades
+        somebody already holding more.
+      responses:
+        "200": { description: The library, as this account now sees it }
+        "422": { description: That library is not open to join }
+        "403": { description: A read-only token }
+
+  /libraries/{id}/leave:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Libraries]
+      summary: Take a library off your own shelf
+      description: >-
+        Refused on a personal library - whoever's it is, that is the one
+        place an account always has, or a place this account was merely
+        let into and cannot be made to leave through this button - and
+        refused on a library this account owns outright, since leaving
+        one's own library would strand it. Rejoining later is always
+        possible where it was ever possible at all.
+      responses:
+        "204": { description: Left }
+        "422": { description: A personal library, or one this account owns }
+        "403": { description: A read-only token }
+        "404": { description: No library with that id }
+
+  /libraries/{id}/invite/{action}:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+      - name: action
+        in: path
+        required: true
+        schema: { type: string, enum: [accept, decline] }
+    post:
+      tags: [Libraries]
+      summary: Answer an invitation waiting on this account
+      description: >-
+        Only ever this account's own pending invitation - one it did not
+        ask for and has not answered grants nothing regardless. Whoever
+        sent it is told either way.
+      responses:
+        "200": { description: status (accepted/declined), library_name }
+        "404": { description: No invitation waiting for this account there }
+        "403": { description: A read-only token }
+
+  /libraries/{id}/ownership/{action}:
+    parameters:
+      - { $ref: "#/components/parameters/Id" }
+      - name: action
+        in: path
+        required: true
+        schema: { type: string, enum: [accept, decline, withdraw] }
+    post:
+      tags: [Libraries]
+      summary: Answer an ownership offer, or withdraw one still in flight
+      description: >-
+        accept/decline are the offered account's own answer; withdraw is
+        the current owner taking the offer back before anyone has
+        answered. Accepting swaps the owning column and the two
+        membership rows that follow from it in one step - the outgoing
+        owner stays on as a Library Admin rather than being dropped to
+        nothing, since they were running the place a moment before.
+      responses:
+        "200": { description: status (accepted/declined/withdrawn), library_name when accepted }
+        "404": { description: No offer outstanding for that library }
+        "403": { description: Not this account's offer to answer, or not the owner withdrawing one }
+
   /libraries:
     post:
       tags: [Libraries]
@@ -1296,6 +1388,36 @@ paths:
                 type: object
                 properties:
                   data: { type: array, items: { $ref: "#/components/schemas/Library" } }
+
+  /libraries/{id}/contents:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Libraries]
+      summary: What a library actually holds
+      description: >-
+        A client for the real app's own library_contents_index() and
+        library_contents_summary() - built because a bare item count is
+        a poor thing to make a delete decision against. Every entry,
+        paginated, plus the platforms, makers, models, and places the
+        library defined for itself - the things people forget a
+        library owns until it's gone. Owner or instance administrator;
+        it was administrator-only originally, which the real app's own
+        comment calls the wrong way round, since "what is actually in
+        here" is the first thing an owner wants once a library has
+        grown past what they can hold in their head.
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+      responses:
+        "200":
+          description: >-
+            library, summary (counts across every kind of thing the
+            library holds or defines), entries (paginated, 100 per
+            page), platforms, companies, locations, hardware, software,
+            members. meta.page/pages/total describe the entries list.
+        "403": { description: Only the owner, or an administrator, may see what a library holds }
+        "404": { description: No such library }
 
   /libraries/{id}:
     parameters: [{ $ref: "#/components/parameters/Id" }]
@@ -2172,7 +2294,33 @@ paths:
   /categories:
     get:
       tags: [Taxonomy]
-      summary: Software types
+      summary: The filing tree, filtered
+      description: >-
+        The tree is thousands of rows - one per kind per machine - so a
+        client asking a specific question is answered directly rather
+        than fetching everything and sorting it out itself.
+      parameters:
+        - name: domain
+          in: query
+          schema: { type: string, enum: [hardware, software, video, audio] }
+        - name: parent_id
+          in: query
+          description: The children of one node - a genre list, among other things.
+          schema: { type: integer }
+        - name: platform_id
+          in: query
+          description: One machine's own branches.
+          schema: { type: integer }
+        - name: role
+          in: query
+          description: >-
+            Matched against the effective role, not just what a row
+            happens to say on its own - most leaves declare nothing and
+            inherit from a branch above, the same walk item_kind_
+            label() already does to decide what an entry itself is.
+          schema:
+            type: string
+            enum: [machine, peripheral, game, application, movie, tv_show, music, other]
       responses: { "200": { description: OK } }
     post:
       tags: [Taxonomy]
@@ -2216,12 +2364,11 @@ paths:
       summary: Rename a branch, or change its kind
       description: >-
         Name-only by default. Include `role` to also switch the branch's
-        kind and, for a hardware/software-flavoured kind, cascade the
-        matching section across its entire subtree - the same
-        role/section-switch the web form's rename performs, matched to its
-        exact hardware/software-only scope. A root has no kind, whatever
-        the request says. `other` says nothing about which side of the
-        shop a branch is on, so the section is left as it was.
+        kind and cascade the matching section across its entire subtree -
+        the same role/section-switch the web form's rename performs. A
+        root has no kind, whatever the request says. `other` says nothing
+        about which side of the shop a branch is on, so the section is
+        left as it was.
       requestBody:
         required: true
         content:
@@ -2233,10 +2380,11 @@ paths:
                 sort_order: { type: integer }
                 role:
                   type: string
-                  enum: [other, machine, peripheral, game, application]
+                  enum: [other, machine, peripheral, game, application, movie, tv_show, music]
                   description: >-
                     machine/peripheral cascade to the hardware section,
-                    game/application to software, other leaves it as is.
+                    game/application to software, movie/tv_show to video,
+                    music to audio - other leaves the section as it is.
                     Refused on a root.
       responses:
         "200": { description: Updated }
@@ -2265,6 +2413,47 @@ paths:
         "403": { description: Curator access on this library is required }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /categories/{id}/image:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Taxonomy]
+      summary: What this branch's own entries look like with no photograph of their own
+      description: >-
+        A generic case for the format - a VHS clamshell, a boxed Amiga
+        disk - shown on an entry filed in this branch only when that
+        entry genuinely has no photograph of its own, real or brought in
+        by a metadata agent. Inherited down the branch: a leaf with
+        none of its own uses the nearest ancestor that has one, the
+        same walk category_effective_role() already does for kind.
+        Curator-level, the same permission the tree's other structural
+        edits already need.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image: { type: string, format: binary }
+      responses:
+        "200": { description: id and image (thumb, display) }
+        "422": { description: No file arrived, or it failed validation }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove this branch's own picture
+      description: >-
+        Only ever removes this node's own upload. A leaf inheriting one
+        from an ancestor still shows it afterward - inheritance is a
+        property of the branch, not a copy stored on every node beneath
+        it, so there is nothing on a leaf to remove in the first place.
+      responses:
+        "204": { description: Removed - or there was nothing on this node to remove }
+        "403": { description: Curator access on this library is required }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /categories/{id}/move:
     parameters: [{ $ref: "#/components/parameters/Id" }]
     post:
@@ -2288,6 +2477,19 @@ paths:
         "422": { description: A loop, or a parent in another library }
         "403": { description: Curator access on this library is required }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /directory:
+    get:
+      tags: [Admin]
+      summary: Every active account, by name
+      description: >-
+        id, username, display_name only - enough to fill a picker (who to
+        invite, who to grant ownership to) without handing every caller
+        the full account list an administrator's own user management
+        screen shows.
+      responses:
+        "200": { description: OK }
+        "403": { description: Sign in first }
 
   /companies:
     get:

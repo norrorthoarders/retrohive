@@ -1228,6 +1228,285 @@ function api_libraries_index(): void
     api_ok(array_map('library_to_api', $rows));
 }
 
+/**
+ * What a library actually holds - a client for library_contents_index()
+ * and library_contents_summary(), not a new screen invented alongside
+ * them. The real app built this specifically because a bare item count
+ * is a poor thing to make a delete decision against: every entry,
+ * linked, and the platforms, makers, models and places the library
+ * defined for itself - the things people forget a library owns until
+ * they have deleted it. Owner or instance administrator, the same
+ * check the real screen uses; it was administrator-only originally,
+ * which the real app's own comment calls the wrong way round; "what is
+ * actually in here" is the first thing an owner wants once a library
+ * has grown past what they can hold in their head.
+ */
+function api_library_contents(int $id): void
+{
+    [$user] = api_require_auth();
+    $library = one('SELECT l.*, o.username AS owner_name
+                       FROM libraries l LEFT JOIN users o ON o.id = l.owner_id
+                      WHERE l.id = ?', [$id]);
+    if ($library === null) {
+        api_error('not_found', 'No such library.', 404);
+    }
+    if (!is_admin() && !can_own_library($id)) {
+        api_error('forbidden', 'Only the owner, or an administrator, may see what a library holds.', 403);
+    }
+
+    $page    = max(1, api_query_int('page') ?? 1);
+    $perPage = 100;
+
+    $entries = all(
+        'SELECT i.id, i.title, i.created_at,
+                c.name AS category_name, p.name AS platform_name,
+                (SELECT COUNT(*) FROM item_images im WHERE im.item_id = i.id) AS images
+           FROM items i
+      LEFT JOIN categories c ON c.id = i.category_id
+      LEFT JOIN platforms  p ON p.id = i.platform_id
+          WHERE i.library_id = ? AND i.deleted_at IS NULL
+       ORDER BY i.title
+          LIMIT ' . (int) $perPage . ' OFFSET ' . (int) (($page - 1) * $perPage),
+        [$id]
+    );
+
+    $summary = library_contents_summary($id);
+    $total   = (int) $summary['entries'];
+
+    api_ok([
+        'library' => library_to_api($library),
+        'summary' => $summary,
+        'entries' => array_map(fn($r) => [
+            'id'            => (int) $r['id'],
+            'title'         => $r['title'],
+            'category_name' => $r['category_name'],
+            'platform_name' => $r['platform_name'],
+            'images'        => (int) $r['images'],
+            'created_at'    => api_datetime($r['created_at']),
+        ], $entries),
+        'platforms' => all('SELECT id, name, slug FROM platforms WHERE library_id = ? ORDER BY name', [$id]),
+        'companies' => all('SELECT id, name, slug FROM companies WHERE library_id = ? ORDER BY name', [$id]),
+        'locations' => all('SELECT id, name FROM locations WHERE library_id = ? ORDER BY name', [$id]),
+        'hardware'  => all('SELECT id, name, slug FROM hardware_models WHERE library_id = ? ORDER BY name', [$id]),
+        'software'  => all('SELECT id, name FROM software_models WHERE library_id = ? ORDER BY name', [$id]),
+        'members'   => all('SELECT m.access, m.status, u.username, u.display_name
+                               FROM library_members m JOIN users u ON u.id = m.user_id
+                              WHERE m.library_id = ? ORDER BY u.username', [$id]),
+    ], [
+        'page'  => $page,
+        'pages' => max(1, (int) ceil($total / $perPage)),
+        'total' => $total,
+    ]);
+}
+
+/**
+ * Everything the "Library access" page needs in one call - a client for
+ * library_admin_index()'s own three-tab data, combined the same way it
+ * combines them for one render rather than three separate requests.
+ * mine is joined_libraries() with the counts the real page shows; invites
+ * and owner_offers are what's waiting on an answer; joinable is a
+ * published shelf not yet taken on.
+ */
+function api_profile_libraries(): void
+{
+    [$user] = api_require_auth();
+
+    $mine = array_map(fn($l) => library_to_api($l + [
+        'n' => (int) scalar('SELECT COUNT(*) FROM items WHERE library_id = ? AND deleted_at IS NULL', [(int) $l['id']]),
+    ]) + [
+        'member_count' => (int) scalar('SELECT COUNT(*) FROM library_members WHERE library_id = ?', [(int) $l['id']]),
+    ], joined_libraries());
+
+    $invites = array_map(fn($r) => [
+        'library'     => library_to_api($r),
+        'access'      => $r['access'],
+        'access_label' => access_label((string) $r['access']),
+        'invited_by'  => $r['invited_by'],
+        'granted_at'  => api_datetime($r['granted_at']),
+    ], all(
+        "SELECT l.*, m.access, m.granted_at, g.username AS invited_by
+           FROM library_members m
+           JOIN libraries l ON l.id = m.library_id
+      LEFT JOIN users g ON g.id = m.granted_by
+          WHERE m.user_id = ? AND m.status = 'pending' AND l.is_active = 1
+       ORDER BY m.granted_at DESC",
+        [(int) $user['id']]
+    ));
+
+    $ownerOffers = array_map(fn($r) => [
+        'library'     => library_to_api($r),
+        'offered_by'  => $r['offered_by'],
+    ], all(
+        "SELECT l.*, o.username AS offered_by
+           FROM libraries l
+      LEFT JOIN users o ON o.id = l.owner_id
+          WHERE l.pending_owner_id = ? AND l.is_active = 1
+       ORDER BY l.pending_owner_at DESC",
+        [(int) $user['id']]
+    ));
+
+    $joinable = array_map(fn($l) => library_to_api($l + [
+        'n' => (int) scalar('SELECT COUNT(*) FROM items WHERE library_id = ? AND deleted_at IS NULL', [(int) $l['id']]),
+    ]) + [
+        // What joining would grant - access_label() on a value nobody has
+        // yet, so a client can say what "Join" actually means before it's
+        // pressed, the same way the real page's own column does.
+        'would_get' => access_label((int) $l['public_write'] === 1 ? ACCESS_CONTRIBUTOR : ACCESS_VIEWER),
+    ], joinable_libraries());
+
+    api_ok([
+        'mine'         => $mine,
+        'invites'      => $invites,
+        'owner_offers' => $ownerOffers,
+        'joinable'     => $joinable,
+    ]);
+}
+
+/**
+ * A client for library_join() - taking on a published shelf. Only ever
+ * grants what the library itself offers (contributor where it's open
+ * to write, viewer otherwise), and never downgrades somebody already
+ * holding more, the same as the real handler.
+ */
+function api_libraries_join(int $id): void
+{
+    [$user] = api_require_write();
+    $lib = one('SELECT * FROM libraries WHERE id = ?', [$id]);
+    if ($lib === null || (string) $lib['kind'] !== 'shared'
+        || ((int) $lib['public_read'] !== 1 && (int) $lib['public_write'] !== 1)) {
+        api_error('validation_failed', 'That library is not open to join.', 422);
+    }
+
+    $access = (int) $lib['public_write'] === 1 ? ACCESS_CONTRIBUTOR : ACCESS_VIEWER;
+    $held = one('SELECT access FROM library_members WHERE library_id = ? AND user_id = ?',
+                [$id, (int) $user['id']]);
+    if ($held === null) {
+        q('INSERT INTO library_members (library_id, user_id, access, note)
+           VALUES (?, ?, ?, ?)',
+          [$id, (int) $user['id'], $access, 'Joined a published library']);
+        $GLOBALS['__membership_cache'] = [];
+    }
+
+    api_ok(library_to_api($lib));
+}
+
+/**
+ * A client for library_leave(). Refused on a personal library or on
+ * the library's own owner - the same two cases the real handler
+ * refuses, since leaving either one is not a thing that makes sense.
+ */
+function api_libraries_leave(int $id): void
+{
+    [$user] = api_require_write();
+    $lib = one('SELECT * FROM libraries WHERE id = ?', [$id]);
+    if ($lib === null) {
+        api_error('not_found', 'No such library.', 404);
+    }
+    if ((int) $lib['is_personal'] === 1 || (int) ($lib['owner_id'] ?? 0) === (int) $user['id']) {
+        api_error('validation_failed', 'You cannot leave a library you own.', 422);
+    }
+
+    q('DELETE FROM library_members WHERE library_id = ? AND user_id = ?', [$id, (int) $user['id']]);
+    $GLOBALS['__membership_cache'] = [];
+    api_no_content();
+}
+
+/**
+ * A client for the invitation half of library_admin_save()'s own
+ * action=accept/decline - answering an invitation waiting on this
+ * account. Whoever sent it is told either way, the same as the real
+ * handler.
+ */
+function api_library_invite_respond(int $id, string $action): void
+{
+    [$user] = api_require_write();
+    if (!in_array($action, ['accept', 'decline'], true)) {
+        api_error('validation_failed', 'Not a real answer.', 422);
+    }
+
+    $invite = one(
+        "SELECT * FROM library_members WHERE library_id = ? AND user_id = ? AND status = 'pending'",
+        [$id, (int) $user['id']]
+    );
+    if ($invite === null) {
+        api_error('not_found', 'No invitation waiting for you there.', 404);
+    }
+
+    q('UPDATE library_members SET status = ?, responded_at = NOW() WHERE library_id = ? AND user_id = ?',
+      [$action === 'accept' ? 'accepted' : 'declined', $id, (int) $user['id']]);
+    $GLOBALS['__membership_cache'] = [];
+
+    $name = (string) scalar('SELECT name FROM libraries WHERE id = ?', [$id]);
+    if ($invite['granted_by'] !== null) {
+        notify((int) $invite['granted_by'], 'library.invite_answered', [
+            'subject'      => sprintf('%s %s your invitation to %s',
+                                      $user['display_name'] ?: $user['username'],
+                                      $action === 'accept' ? 'accepted' : 'declined', $name),
+            'link_path'    => '/libraries?edit=' . $id,
+            'subject_type' => 'library',
+            'subject_id'   => $id,
+        ]);
+    }
+
+    api_ok(['status' => $action === 'accept' ? 'accepted' : 'declined', 'library_name' => $name]);
+}
+
+/**
+ * A client for library_ownership_respond() - accepting or declining
+ * an offer made to this account, or the owner withdrawing one still
+ * in flight. Accepting swaps both the owning column and the two
+ * membership rows that follow from it in one step, the same as the
+ * real handler; the outgoing owner stays on as an admin rather than
+ * being dropped to nothing.
+ */
+function api_library_ownership_respond(int $id, string $action): void
+{
+    [$user] = api_require_write();
+    if (!in_array($action, ['accept', 'decline', 'withdraw'], true)) {
+        api_error('validation_failed', 'Not a real answer.', 422);
+    }
+
+    $lib = one('SELECT * FROM libraries WHERE id = ?', [$id]);
+    if ($lib === null || (int) ($lib['pending_owner_id'] ?? 0) === 0) {
+        api_error('not_found', 'There is no offer outstanding for that library.', 404);
+    }
+
+    $offered = (int) $lib['pending_owner_id'];
+    $amOwner = is_library_owner($user, $id);
+    $amThem  = (int) $user['id'] === $offered;
+
+    if ($action === 'withdraw' && !$amOwner) {
+        api_error('forbidden', 'Only the owner can withdraw the offer.', 403);
+    }
+    if (in_array($action, ['accept', 'decline'], true) && !$amThem) {
+        api_error('forbidden', 'That offer was not made to you.', 403);
+    }
+
+    if ($action !== 'accept') {
+        update_row('libraries', $id, ['pending_owner_id' => null, 'pending_owner_at' => null]);
+        api_ok(['status' => $action === 'withdraw' ? 'withdrawn' : 'declined']);
+    }
+
+    $wasOwner = (int) ($lib['owner_id'] ?? 0);
+    update_row('libraries', $id, [
+        'owner_id' => $offered, 'pending_owner_id' => null, 'pending_owner_at' => null,
+    ]);
+    q("INSERT INTO library_members (library_id, user_id, access, status, note)
+       VALUES (?, ?, 'owner', 'accepted', 'Accepted ownership')
+       ON DUPLICATE KEY UPDATE access = 'owner', status = 'accepted'", [$id, $offered]);
+    if ($wasOwner > 0 && $wasOwner !== $offered) {
+        q("UPDATE library_members SET access = 'admin' WHERE library_id = ? AND user_id = ?", [$id, $wasOwner]);
+        notify($wasOwner, 'library.ownership_answered', [
+            'subject'   => sprintf('"%s" now belongs to somebody else', (string) $lib['name']),
+            'body'      => 'They accepted the handover. You are still a curator there.',
+            'link_path' => '/profile/access',
+        ]);
+    }
+    $GLOBALS['__membership_cache'] = [];
+
+    api_ok(['status' => 'accepted', 'library_name' => (string) $lib['name']]);
+}
+
 /** Canonical titles, for a client building an entry form. */
 function api_titles_index(): void
 {
@@ -1524,11 +1803,12 @@ function api_categories_index(): void
     //   ?domain=software   the software side
     //   ?parent_id=17      the children of one node - a genre list, among other things
     //   ?platform_id=4     one machine's branches
-    //   ?role=machine      machine kinds, peripheral kinds, or neither
+    //   ?role=machine      machine kinds, peripheral kinds, game, application,
+    //                      movie, tv_show, music, or other
     $rows = all_categories();
 
     $domain = (string) ($_GET['domain'] ?? '');
-    if (in_array($domain, ['hardware', 'software', 'video', 'music'], true)) {
+    if (in_array($domain, ['hardware', 'software', 'video', 'audio'], true)) {
         $rows = array_values(array_filter($rows, fn($c) => (string) $c['domain'] === $domain));
     }
     if (isset($_GET['parent_id'])) {
@@ -1546,8 +1826,19 @@ function api_categories_index(): void
         ));
     }
     $role = (string) ($_GET['role'] ?? '');
-    if (in_array($role, ['machine', 'peripheral', 'other'], true)) {
-        $rows = array_values(array_filter($rows, fn($c) => (string) $c['role'] === $role));
+    if (in_array($role, ['machine', 'peripheral', 'game', 'application', 'movie', 'tv_show', 'music', 'other'], true)) {
+        // The role a leaf actually holds, not just what it happens to say
+        // on its own row - most leaves declare nothing and inherit from
+        // a branch above, the same effective_role() walk item_kind_
+        // label() already does. Without this, asking "what can I file a
+        // game under" found nothing at all on any library whose tree
+        // declares a kind once at the top of a branch and lets the rest
+        // inherit, which is the ordinary case now, not the exception.
+        $rows = array_values(array_filter($rows, function ($c) use ($role) {
+            $own = (string) ($c['role'] ?? 'other');
+            $effective = $own !== 'other' ? $own : (category_effective_role((int) $c['id']) ?? 'other');
+            return $effective === $role;
+        }));
     }
 
     api_ok(array_map('category_to_api', $rows));
@@ -1667,7 +1958,7 @@ function api_categories_update(int $id): void
 
     if (array_key_exists('role', $in) && $existing['parent_id'] !== null) {
         $wantRole = (string) $in['role'];
-        if (!in_array($wantRole, ['other', 'machine', 'peripheral', 'game', 'application'], true)) {
+        if (!in_array($wantRole, ['other', 'machine', 'peripheral', 'game', 'application', 'movie', 'tv_show', 'music'], true)) {
             api_error('validation_failed', 'Some fields need attention.', 422,
                        ['role' => 'Not a real kind.']);
         }
@@ -1675,6 +1966,8 @@ function api_categories_update(int $id): void
         $sideSlug = match ($wantRole) {
             'machine', 'peripheral' => 'hardware',
             'game', 'application'   => 'software',
+            'movie', 'tv_show'      => 'video',
+            'music'                 => 'audio',
             default                 => null,
         };
         $newSectionId = $sideSlug !== null
@@ -1791,6 +2084,52 @@ function api_categories_delete(int $id): void
 
     delete_row('categories', $id);
     category_rebuild_paths();
+    api_no_content();
+}
+
+/**
+ * What a category's own entries look like with no photograph of their
+ * own - a client for store_category_default_image(), the same upload
+ * machinery a user's own avatar already uses. Curator-level, the same
+ * permission the tree's own structural edits already need: a picture
+ * shown across every entry in a branch is closer to shaping the
+ * catalogue than to describing one item in it.
+ */
+function api_category_image_upload(int $id): void
+{
+    $existing = one('SELECT * FROM categories WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No such category.', 404);
+    }
+    api_require_curates_library((int) $existing['library_id']);
+
+    if (!isset($_FILES['image']) || (int) ($_FILES['image']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        api_error('validation_failed', 'No file arrived.', 422, ['image' => 'Required.']);
+    }
+
+    [$filename, $error] = store_category_default_image($id, 'image');
+    if ($error !== null) {
+        api_error('validation_failed', $error, 422, ['image' => $error]);
+    }
+
+    api_ok([
+        'id'    => $id,
+        'image' => [
+            'thumb'   => absolute_url(image_url($filename, 'thumb')),
+            'display' => absolute_url(image_url($filename, 'display')),
+        ],
+    ]);
+}
+
+function api_category_image_delete(int $id): void
+{
+    $existing = one('SELECT * FROM categories WHERE id = ?', [$id]);
+    if ($existing === null) {
+        api_error('not_found', 'No such category.', 404);
+    }
+    api_require_curates_library((int) $existing['library_id']);
+
+    delete_category_default_image($id);
     api_no_content();
 }
 
@@ -1924,7 +2263,7 @@ function api_company_payload(array $in, ?array $existing = null): array
     // here follows.
     if (array_key_exists('makes', $in)) {
         $picked = is_array($in['makes']) ? $in['makes'] : [];
-        $picked = array_values(array_intersect(['hardware', 'software', 'video', 'music'], $picked));
+        $picked = array_values(array_intersect(['hardware', 'software', 'video', 'audio'], $picked));
         $data['makes'] = implode(',', $picked);
     }
 
@@ -2118,7 +2457,7 @@ function api_credit_roles_create(): void
     }
 
     $picked = is_array($in['domains'] ?? null) ? $in['domains'] : [];
-    $picked = array_values(array_intersect(['hardware', 'software', 'video', 'music'], $picked));
+    $picked = array_values(array_intersect(['hardware', 'software', 'video', 'audio'], $picked));
     if ($picked === []) {
         api_error('validation_failed', 'Some fields need attention.', 422,
                    ['domains' => 'Choose at least one domain this role applies to.']);
@@ -2151,7 +2490,7 @@ function api_credit_roles_update(int $id): void
     $data = ['name' => mb_substr($name, 0, 80), 'slug' => unique_slug('credit_roles', slugify($name), $id)];
     if (array_key_exists('domains', $in)) {
         $picked = is_array($in['domains']) ? $in['domains'] : [];
-        $picked = array_values(array_intersect(['hardware', 'software', 'video', 'music'], $picked));
+        $picked = array_values(array_intersect(['hardware', 'software', 'video', 'audio'], $picked));
         if ($picked === []) {
             api_error('validation_failed', 'Some fields need attention.', 422,
                        ['domains' => 'Choose at least one domain this role applies to.']);
@@ -2485,15 +2824,24 @@ function api_software_models_index(): void
         $lib = working_library();
         $libraryId = $lib === null ? 0 : (int) $lib['id'];
     }
+    $where  = 'm.library_id = ?';
+    $params = [$libraryId];
+    // Optional: the picker on an entry's own form only wants models for
+    // the platform already chosen there - Amiga's own boxed-disk shapes,
+    // not a VHS clamshell sitting in the same dropdown.
+    if (isset($_GET['platform_id']) && (int) $_GET['platform_id'] > 0) {
+        $where   .= ' AND m.platform_id = ?';
+        $params[] = (int) $_GET['platform_id'];
+    }
     $rows = all(
         "SELECT m.*, c.name AS category_name, c.slug AS category_slug,
                 p.name AS platform_name, p.slug AS platform_slug
            FROM software_models m
       LEFT JOIN categories c ON c.id = m.category_id
       LEFT JOIN platforms p  ON p.id = m.platform_id
-          WHERE m.library_id = ?
+          WHERE $where
        ORDER BY p.name, m.sort_order, m.name",
-        [$libraryId]
+        $params
     );
     api_ok(array_map('software_model_to_api', $rows));
 }
@@ -2946,7 +3294,7 @@ function api_taxonomy_create(string $type): void
             $data['section_id'] = (int) $row['section_id'];
         } else {
             $sectionSlug = in_array((string) ($in['domain'] ?? 'software'),
-                                    ['software', 'hardware', 'video', 'music'], true)
+                                    ['software', 'hardware', 'video', 'audio'], true)
                 ? (string) $in['domain'] : 'software';
             $data['section_id'] = (int) scalar('SELECT id FROM sections WHERE slug = ?', [$sectionSlug]);
         }
@@ -3829,6 +4177,56 @@ function api_libraries_update(int $id): void
 }
 
 /**
+ * A client for the owner's own delete, copied field by field from
+ * library_admin_save()'s "delete" branch - the same four guards, in
+ * the same order: owner only, never a personal library (the one shelf
+ * every account is guaranteed, not managed from here), refused while
+ * it still holds anything (deleting a library should never be a way
+ * to lose a collection by accident), and refused if it's the only
+ * library left on the instance. This is deliberately not the
+ * administrator's force-delete this session already built elsewhere -
+ * that one is a different, separate action with different guards, for
+ * a different reason.
+ */
+function api_libraries_delete(int $id): void
+{
+    [$user] = api_require_write();
+    if (!can_own_library($id)) {
+        api_error('forbidden', 'Only the owner can delete a library.', 403);
+    }
+
+    $library = one('SELECT * FROM libraries WHERE id = ?', [$id]);
+    if ($library === null) {
+        api_error('not_found', 'No such library.', 404);
+    }
+    if ((int) $library['is_personal'] === 1) {
+        api_error('validation_failed',
+            'A personal library cannot be deleted. It is where your own things live, '
+          . 'and every account has exactly one.', 422);
+    }
+
+    $count = (int) scalar('SELECT COUNT(*) FROM items WHERE library_id = ? AND deleted_at IS NULL', [$id]);
+    if ($count > 0) {
+        api_error('validation_failed', sprintf(
+            'That library still holds %d %s. Move or delete them first - deleting a library '
+          . 'should never be a way to lose a collection by accident.',
+            $count, $count === 1 ? 'entry' : 'entries'
+        ), 422);
+    }
+
+    if ((int) scalar('SELECT COUNT(*) FROM libraries') <= 1) {
+        api_error('validation_failed', 'That is the only library. Create another before deleting this one.', 422);
+    }
+
+    $name = (string) $library['name'];
+    delete_row('libraries', $id);
+    log_security('library.deleted', sprintf('Library "%s" removed', $name), LOG_WARNING,
+                 ['library' => (string) $library['slug']]);
+
+    api_no_content();
+}
+
+/**
  * Add starter structure and/or examples to a library that already
  * exists - a client for the same library_populate() /libraries already
  * calls at creation, made reachable for a library that started out
@@ -4243,6 +4641,24 @@ function api_auth_register(): void
         'expires_at' => null,
         'user'       => user_to_api($row),
     ], null, 201);
+}
+
+/**
+ * Every active account, by name only - who could be invited, not the
+ * full administrator's own directory (api_users_index() elsewhere,
+ * which needs an administrator and answers a different question). Any
+ * signed-in account may see this: choosing who to invite to a library
+ * you curate or own is not an administrative act, and the real app's
+ * own access page never treated it as one.
+ */
+function api_directory_index(): void
+{
+    api_require_auth();
+    api_ok(array_map(fn($r) => [
+        'id'           => (int) $r['id'],
+        'username'     => $r['username'],
+        'display_name' => $r['display_name'],
+    ], all('SELECT id, username, display_name FROM users WHERE is_active = 1 ORDER BY username')));
 }
 
 /**

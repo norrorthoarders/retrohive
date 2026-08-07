@@ -512,7 +512,7 @@ function company_id_for_name(?string $name, string $makes = 'software'): ?int
     if ($name === '') {
         return null;
     }
-    $makes = in_array($makes, ['hardware', 'video', 'music'], true) ? $makes : 'software';
+    $makes = in_array($makes, ['hardware', 'video', 'audio'], true) ? $makes : 'software';
 
     $lib = working_library();
     $libId = $lib === null ? null : (int) $lib['id'];
@@ -651,7 +651,7 @@ function build_item_filters(array $qs): array
     // is genuinely a different thing to catalogue - a game wants a genre, a
     // machine wants an interface and a revision, a film wants a director -
     // and a shared list leaves most of the columns blank on every row.
-    if (!empty($qs['domain']) && in_array($qs['domain'], ['software', 'hardware', 'video', 'music'], true)) {
+    if (!empty($qs['domain']) && in_array($qs['domain'], ['software', 'hardware', 'video', 'audio'], true)) {
         $where[]  = 'domain = ?';
         $params[] = (string) $qs['domain'];
         $active['domain'] = (string) $qs['domain'];
@@ -833,6 +833,8 @@ function item_sort_clause(?string $sort): string
         // column somebody clicks twice and wonders about.
         'company'      => 'developer_name IS NULL, developer_name, COALESCE(sort_title, title)',
         'company_desc' => 'developer_name IS NULL, developer_name DESC, COALESCE(sort_title, title)',
+        'publisher'      => 'publisher_name IS NULL, publisher_name, COALESCE(sort_title, title)',
+        'publisher_desc' => 'publisher_name IS NULL, publisher_name DESC, COALESCE(sort_title, title)',
         'condition'      => 'condition_grade IS NULL, condition_grade, COALESCE(sort_title, title)',
         'condition_desc' => 'condition_grade IS NULL, condition_grade DESC, COALESCE(sort_title, title)',
         'kind'         => 'category_role, COALESCE(sort_title, title)',
@@ -1126,6 +1128,40 @@ function category_effective_role(int $categoryId): ?string
     foreach ($line as $id) {
         if (in_array($rows[$id] ?? '', $kinds, true)) {
             return $cache[$categoryId] = $rows[$id];
+        }
+    }
+    return $cache[$categoryId] = null;
+}
+
+/**
+ * The filename to show when this category's own entries have no
+ * photograph of their own - a generic VHS clamshell, a boxed Amiga
+ * disk, whatever this branch's own things generally come in. The same
+ * walk category_effective_role() already does, nearest ancestor with
+ * an answer wins, because a leaf that has not been given its own
+ * picture almost always wants whatever the branch above it already
+ * says - the ordinary case, the same reasoning kind inheritance
+ * already gives.
+ */
+function category_effective_default_image(int $categoryId): ?string
+{
+    static $cache = [];
+    if (array_key_exists($categoryId, $cache)) {
+        return $cache[$categoryId];
+    }
+
+    $line = category_ancestry($categoryId);
+    if ($line === []) {
+        return $cache[$categoryId] = null;
+    }
+    $in   = implode(',', array_fill(0, count($line), '?'));
+    $rows = [];
+    foreach (all("SELECT id, default_image_filename FROM categories WHERE id IN ($in)", $line) as $row) {
+        $rows[(int) $row['id']] = $row['default_image_filename'];
+    }
+    foreach ($line as $id) {
+        if (!empty($rows[$id] ?? null)) {
+            return $cache[$categoryId] = (string) $rows[$id];
         }
     }
     return $cache[$categoryId] = null;
@@ -2955,8 +2991,8 @@ function seed_library_music_examples(int $libraryId): int
             continue;
         }
 
-        $artistId = seed_company_for_name($libraryId, $ex['artist'], 'music');
-        $labelId  = seed_company_for_name($libraryId, $ex['label'], 'music');
+        $artistId = seed_company_for_name($libraryId, $ex['artist'], 'audio');
+        $labelId  = seed_company_for_name($libraryId, $ex['label'], 'audio');
 
         // Same guard the video examples just needed, for the same reason:
         // titles have no library_id at all, so two different libraries
@@ -3328,7 +3364,7 @@ function seed_library_categories(int $libraryId): void
         'console'      => ['hardware', 'software'],
         'handheld'     => ['hardware', 'software'],
         'video-format' => ['video'],
-        'audio-format' => ['music'],
+        'audio-format' => ['audio'],
     ];
     $byKind = array_fill_keys(array_keys($kindDomains), []);
     $fresh  = [];
@@ -3364,14 +3400,14 @@ function seed_library_categories(int $libraryId): void
         // The template's machine kinds are 'computers', 'console', 'handheld'; the
         // kinds on a category row are the singular words. Models decide where they
         // exist; the platform's own domains answer otherwise - a single 'video' or
-        // 'music' domain means there is only one honest kind it can be, so that
+        // 'audio' domain means there is only one honest kind it can be, so that
         // case needs no model evidence at all the way computer/console/handheld
         // genuinely does.
         $domainList = explode(',', (string) ($pf['domains'] ?? ''));
         $kind = ['computers' => 'computer', 'console' => 'console',
                  'handheld' => 'handheld'][$derived[$pSlug] ?? ''] ?? match (true) {
             $domainList === ['video'] => 'video-format',
-            $domainList === ['music'] => 'audio-format',
+            $domainList === ['audio'] => 'audio-format',
             default                   => 'computer',
         };
         $byKind[$kind][] = (int) $pf['id'];
@@ -3391,7 +3427,7 @@ function seed_library_categories(int $libraryId): void
     // branches step 2 creates under it.
     $branchLabels = [
         'hardware' => ['Hardware', 10], 'software' => ['Software', 20],
-        'video'    => ['Video', 10],    'music'    => ['Music', 10],
+        'video'    => ['Video', 10],    'audio'    => ['Audio', 10],
     ];
 
     // 1. The machines themselves, one statement per kind rather than one for

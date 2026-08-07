@@ -152,6 +152,9 @@ function metadata_provider_types(): array
         'amigahw'     => ['machine', 'peripheral'],
         'bboah'       => ['machine', 'peripheral'],
         'theretroweb' => ['machine', 'peripheral'],
+        'tmdb'        => ['movie', 'tv_show'],
+        'tvdb'        => ['tv_show'],
+        'theaudiodb'  => ['music'],
         // Wikipedia carries the words, the article's own pictures and the Commons
         // photographs, so it is the one source worth asking about anything.
         'wikipedia'   => ['machine', 'peripheral', 'game', 'application'],
@@ -334,6 +337,86 @@ function metadata_provider_types(): array
             'params'    => [
                 'endpoint' => 'https://api.thegamesdb.net/v1',
                 'api_key'  => '',
+                'timeout'  => 15,
+            ],
+        ],
+        'tmdb' => [
+            'label'     => 'The Movie Database (TMDB)',
+            'blurb'     => 'Movies and TV, with real posters and a genuine overview for almost '
+                          . 'anything released. Free API key on request - the "API Read Access '
+                          . 'Token" from your TMDB account, not the shorter v3 key.',
+            'needs_key' => true,
+            'domains'   => ['video'],
+            'homepage'  => 'https://www.themoviedb.org/',
+            'credentials' => ['api_key' => ['label' => 'API Read Access Token', 'secret' => true]],
+            // TMDB has no platform concept of its own - a film is a film,
+            // not "the VHS release" or "the Blu-ray release" the way a
+            // game has a real Amiga version and a real DOS one. Asking it
+            // to filter by platform would be asking a question it has no
+            // way to answer.
+            'filters_by_platform' => false,
+            'probe'     => 'Jack Reacher',
+            'tested_with' => [],
+            'best_for'  => ['vhs', 'dvd', 'blu-ray', 'laserdisc'],
+            'params'    => [
+                'endpoint' => 'https://api.themoviedb.org/3',
+                'image_endpoint' => 'https://image.tmdb.org/t/p',
+                'api_key'  => '',
+                'language' => 'en-US',
+                'timeout'  => 15,
+            ],
+        ],
+        'tvdb' => [
+            'label'     => 'TheTVDB',
+            'blurb'     => 'TV series, with a network, a genuine overview and a poster for '
+                          . 'almost anything that has aired. Free API key on request. '
+                          . 'Authenticates itself: exchanges the key for a bearer token '
+                          . 'automatically, so there is nothing to renew by hand.',
+            'needs_key' => true,
+            'domains'   => ['video'],
+            'homepage'  => 'https://www.thetvdb.com/',
+            'credentials' => ['api_key' => ['label' => 'API key', 'secret' => true]],
+            // No platform concept of its own, the same reasoning TMDB
+            // already has - a series is a series, not "the DVD box set"
+            // the way a game has a real Amiga release and a real DOS one.
+            'filters_by_platform' => false,
+            'probe'     => 'Breaking Bad',
+            'tested_with' => [],
+            'best_for'  => ['vhs', 'dvd', 'blu-ray'],
+            'params'    => [
+                'endpoint' => 'https://api4.thetvdb.com/v4',
+                'api_key'  => '',
+                // Only needed on a user-supported (free tier) key.
+                // Removed from the login request entirely when blank,
+                // rather than sent empty - TheTVDB's own docs are
+                // explicit that an unwanted pin field should be left
+                // out of the call, not sent as "".
+                'pin'      => '',
+                'timeout'  => 15,
+            ],
+        ],
+        'theaudiodb' => [
+            'label'     => 'TheAudioDB',
+            'blurb'     => 'Music. The free test key works out of the box for artist lookups - '
+                          . 'biography, genre, style, record label and real artwork - but their '
+                          . 'own album search is not usable on it in practice, so results come '
+                          . 'back as an artist, not a specific record. Fine for filling in '
+                          . 'artist and label; a candidate\'s own title will read as the band or '
+                          . 'performer\'s name.',
+            'needs_key' => true,
+            'domains'   => ['audio'],
+            'homepage'  => 'https://www.theaudiodb.com/',
+            'credentials' => ['api_key' => ['label' => 'API key (123 for the free test key)', 'secret' => true]],
+            // No platform concept of its own - a record is a record,
+            // not "the vinyl pressing" or "the cassette" the way a
+            // game has a real Amiga release and a real DOS one.
+            'filters_by_platform' => false,
+            'probe'     => 'Coldplay',
+            'tested_with' => [],
+            'best_for'  => ['vinyl', 'cd', 'cassette'],
+            'params'    => [
+                'endpoint' => 'https://www.theaudiodb.com/api/v1/json',
+                'api_key'  => '123',
                 'timeout'  => 15,
             ],
         ],
@@ -3847,6 +3930,414 @@ function wikipedia_infobox(string $wikitext): array
  * to get wrong. The article link is on the candidate; the pictures are one click
  * away with their terms attached.
  */
+/**
+ * The Movie Database - a search, then a details call per candidate for
+ * the fields the search endpoint doesn't carry (overview, production
+ * companies, runtime). No platform concept of its own: a film has no
+ * real Amiga release the way a game does, so results carry no
+ * platform_id and metadata_rank_results() ranks them on title
+ * closeness alone, which is already how it behaves when a source
+ * declares nothing about platform.
+ */
+
+/**
+ * A logged-in bearer token for TheTVDB, cached rather than fetched on
+ * every search - their own docs say a token is valid for a month, and
+ * asking for a fresh one on every lookup would be a login request for
+ * every search request, twice the traffic for no reason. Returns
+ * [token, error].
+ */
+function tvdb_ensure_token(array $params, string $endpoint, int $timeout): array
+{
+    $apiKey = trim((string) ($params['api_key'] ?? ''));
+    if ($apiKey === '') {
+        return [null, 'no API key configured.'];
+    }
+
+    // Keyed on the API key itself, not just the provider - two rows
+    // pointed at TheTVDB with different keys should never hand one's
+    // token to the other's request.
+    $cacheKey = metadata_cache_key('tvdb', 'token', [$apiKey]);
+    $cached   = metadata_cache_get($cacheKey);
+    if (is_array($cached) && !empty($cached['token'])) {
+        return [(string) $cached['token'], null];
+    }
+
+    $body = ['apikey' => $apiKey];
+    $pin  = trim((string) ($params['pin'] ?? ''));
+    if ($pin !== '') {
+        $body['pin'] = $pin;
+    }
+
+    metadata_rate_limit('tvdb', 0.3);
+    [$resp, $err] = metadata_http_get(
+        $endpoint . '/login', ['Accept: application/json', 'Content-Type: application/json'],
+        $timeout, json_encode($body)
+    );
+    if ($resp === null) {
+        return [null, $err];
+    }
+    $json = json_decode($resp, true);
+    $token = (string) ($json['data']['token'] ?? '');
+    if ($token === '') {
+        return [null, 'login did not return a token.'];
+    }
+
+    // A little under a month, so a token is refreshed before TheTVDB's
+    // own expiry rather than right up against it.
+    metadata_cache_put('tvdb', $cacheKey, ['token' => $token], 24 * 27);
+    return [$token, null];
+}
+
+/**
+ * TheAudioDB - for music. The free key ("123") is genuinely more
+ * limited than the documentation describes: searchalbum.php and
+ * discography.php both return next to nothing on it in practice
+ * (searchalbum.php refuses outright; discography.php answers with a
+ * single, id-less album with no artwork), confirmed by hand against
+ * the live API rather than assumed from the docs. What the free key
+ * does answer well is a plain artist search - biography, genre,
+ * style, record label, and real artwork - so that is what this
+ * provider actually offers: an artist lookup, not an album-specific
+ * one. A candidate's own title is therefore the artist's name, not a
+ * particular record - the honest shape of what the free tier can
+ * really do, not a promise the API itself doesn't keep.
+ */
+function metadata_search_theaudiodb(array $params, string $title, ?string $remotePlatform): array
+{
+    $apiKey = trim((string) ($params['api_key'] ?? '123'));
+    if ($apiKey === '') {
+        return [[], 'TheAudioDB: no API key configured.'];
+    }
+    $base    = rtrim((string) ($params['endpoint'] ?? 'https://www.theaudiodb.com/api/v1/json'), '/');
+    $timeout = (int) ($params['timeout'] ?? 15);
+
+    metadata_rate_limit('theaudiodb', (float) ($params['min_delay'] ?? 2.0));
+    $url = $base . '/' . rawurlencode($apiKey) . '/search.php?' . http_build_query(['s' => $title]);
+    metadata_debug('theaudiodb: search', $url);
+
+    [$body, $err] = metadata_http_get($url, ['Accept: application/json'], $timeout);
+    if ($body === null) {
+        return [[], 'TheAudioDB: ' . $err];
+    }
+    $json = json_decode($body, true);
+    $hits = $json['artists'] ?? null;
+    if (!is_array($hits) || $hits === []) {
+        metadata_debug('theaudiodb: hits', 0);
+        return [[], null];
+    }
+    metadata_debug('theaudiodb: hits', count($hits));
+
+    $limit = max(1, (int) ($params['detail_pages'] ?? 5));
+    $out   = [];
+    foreach (array_slice($hits, 0, $limit) as $hit) {
+        $candidate = theaudiodb_artist_to_candidate($hit);
+        if ($candidate !== null) {
+            $out[] = $candidate;
+        }
+    }
+    return [$out, null];
+}
+
+/** One TheAudioDB artist record, as a candidate. */
+function theaudiodb_artist_to_candidate(array $a): ?array
+{
+    $name = trim((string) ($a['strArtist'] ?? ''));
+    if ($name === '') {
+        return null;
+    }
+
+    $year = null;
+    if (!empty($a['intFormedYear']) && ctype_digit((string) $a['intFormedYear'])) {
+        $year = (int) $a['intFormedYear'];
+    }
+
+    // Their own field for the genre a browser sees; strStyle is a finer
+    // subdivision the site also tracks and worth keeping distinct
+    // rather than folding into one row and losing the difference.
+    $specs = [];
+    if (!empty($a['strGenre'])) {
+        $specs['Genre'] = (string) $a['strGenre'];
+    }
+    if (!empty($a['strStyle'])) {
+        $specs['Style'] = (string) $a['strStyle'];
+    }
+    if (!empty($a['strCountry'])) {
+        $specs['Country'] = (string) $a['strCountry'];
+    }
+
+    $images = [];
+    foreach (['strArtistThumb' => 'Artist photo', 'strArtistFanart' => 'Fan art',
+              'strArtistBanner' => 'Banner'] as $field => $caption) {
+        if (!empty($a[$field])) {
+            $images[] = ['url' => (string) $a[$field], 'thumb_url' => (string) $a[$field],
+                         'kind' => 'other', 'caption' => $caption];
+        }
+    }
+
+    $id  = (string) ($a['idArtist'] ?? '');
+    $url = $id !== ''
+        ? 'https://www.theaudiodb.com/artist/' . $id . '-' . preg_replace('/[^A-Za-z0-9]+/', '-', $name)
+        : 'https://www.theaudiodb.com/searchall.php?s=' . rawurlencode($name);
+
+    return [
+        'remote_id'  => $id,
+        'title'      => $name,
+        'year'       => $year,
+        // The artist itself, in the one field this catalogue already
+        // uses for "who made this" on an audio entry.
+        'developer'  => $name,
+        'publisher'  => !empty($a['strLabel']) ? (string) $a['strLabel'] : null,
+        'platform'   => null,
+        'url'        => $url,
+        'summary'    => trim((string) ($a['strBiography'] ?? '')) ?: null,
+        'images'     => $images,
+        'documents'  => [],
+        'hardware'   => [],
+        'specs'      => $specs,
+    ];
+}
+
+/**
+ * TheTVDB, for TV shows - a single search call carries almost
+ * everything needed (overview, year, network, genres, poster) without
+ * a details call per candidate the way TMDB needs, since their own
+ * search index already returns the fuller record.
+ */
+function metadata_search_tvdb(array $params, string $title, ?string $remotePlatform): array
+{
+    $endpoint = rtrim((string) ($params['endpoint'] ?? 'https://api4.thetvdb.com/v4'), '/');
+    $timeout  = (int) ($params['timeout'] ?? 15);
+
+    [$token, $err] = tvdb_ensure_token($params, $endpoint, $timeout);
+    if ($token === null) {
+        return [[], 'TheTVDB: ' . $err];
+    }
+    $headers = ['Accept: application/json', 'Authorization: Bearer ' . $token];
+
+    metadata_rate_limit('tvdb', 0.3);
+    $url = $endpoint . '/search?' . http_build_query(['query' => $title, 'type' => 'series']);
+    metadata_debug('tvdb: search', $url);
+
+    [$body, $err] = metadata_http_get($url, $headers, $timeout);
+    if ($body === null) {
+        return [[], 'TheTVDB: ' . $err];
+    }
+    $json = json_decode($body, true);
+    $hits = $json['data'] ?? [];
+    if (!is_array($hits) || $hits === []) {
+        metadata_debug('tvdb: hits', 0);
+        return [[], null];
+    }
+    metadata_debug('tvdb: hits', count($hits));
+
+    $limit = max(1, (int) ($params['detail_pages'] ?? 8));
+    $out   = [];
+    foreach (array_slice($hits, 0, $limit) as $hit) {
+        $candidate = tvdb_search_result_to_candidate($hit);
+        if ($candidate !== null) {
+            $out[] = $candidate;
+        }
+    }
+    return [$out, null];
+}
+
+/** One TheTVDB search hit, as a candidate - no second request needed. */
+function tvdb_search_result_to_candidate(array $hit): ?array
+{
+    $name = (string) ($hit['name'] ?? $hit['title'] ?? '');
+    if ($name === '') {
+        return null;
+    }
+
+    $year = null;
+    $yearRaw = (string) ($hit['year'] ?? '');
+    if ($yearRaw !== '' && preg_match('/(\d{4})/', $yearRaw, $m) === 1) {
+        $year = (int) $m[1];
+    }
+
+    // The network is the closest thing a series has to "who made this"
+    // - AMC made The Walking Dead the way Skydance made a film, even
+    // though a network commissions rather than produces in the studio
+    // sense. It is still the one-word answer to "whose is this" that
+    // this field means everywhere else.
+    $network = null;
+    if (!empty($hit['network'])) {
+        $network = (string) $hit['network'];
+    } elseif (!empty($hit['companies']) && is_array($hit['companies'])) {
+        $network = (string) ($hit['companies'][0] ?? '') ?: null;
+    }
+
+    $images = [];
+    $poster = (string) ($hit['image_url'] ?? $hit['poster'] ?? $hit['thumbnail'] ?? '');
+    if ($poster !== '') {
+        $images[] = ['url' => $poster, 'thumb_url' => $poster, 'kind' => 'box_front', 'caption' => 'Poster'];
+    }
+
+    $specs = [];
+    $genres = (array) ($hit['genres'] ?? []);
+    $genres = array_values(array_filter(array_map('strval', $genres)));
+    if ($genres !== []) {
+        $specs['Genre'] = implode(', ', $genres);
+    }
+    if (!empty($hit['status'])) {
+        $specs['Status'] = (string) $hit['status'];
+    }
+
+    $slug = (string) ($hit['slug'] ?? '');
+    $url  = $slug !== '' ? 'https://www.thetvdb.com/series/' . $slug
+                         : 'https://www.thetvdb.com/search?query=' . rawurlencode($name);
+
+    return [
+        'remote_id'  => (string) ($hit['tvdb_id'] ?? $hit['id'] ?? ''),
+        'title'      => $name,
+        'year'       => $year,
+        'developer'  => $network,
+        'publisher'  => null,
+        // No platform opinion, the same reasoning TMDB's own provider
+        // already gives - a series has no real per-machine release.
+        'platform'   => null,
+        'url'        => $url,
+        'summary'    => trim((string) ($hit['overview'] ?? '')) ?: null,
+        'images'     => $images,
+        'documents'  => [],
+        'hardware'   => [],
+        'specs'      => $specs,
+    ];
+}
+
+function metadata_search_tmdb(array $params, string $title, ?string $remotePlatform): array
+{
+    $apiKey = trim((string) ($params['api_key'] ?? ''));
+    if ($apiKey === '') {
+        return [[], 'TMDB: no API Read Access Token configured.'];
+    }
+
+    $base    = rtrim((string) ($params['endpoint'] ?? 'https://api.themoviedb.org/3'), '/');
+    $imgBase = rtrim((string) ($params['image_endpoint'] ?? 'https://image.tmdb.org/t/p'), '/');
+    $lang    = (string) ($params['language'] ?? 'en-US');
+    $timeout = (int) ($params['timeout'] ?? 15);
+    $headers = ['Accept: application/json', 'Authorization: Bearer ' . $apiKey];
+
+    metadata_rate_limit('tmdb', (float) ($params['min_delay'] ?? 0.3));
+    $url = $base . '/search/movie?' . http_build_query(['query' => $title, 'language' => $lang]);
+    metadata_debug('tmdb: search', $url);
+
+    [$body, $err] = metadata_http_get($url, $headers, $timeout);
+    if ($body === null) {
+        return [[], 'TMDB: ' . $err];
+    }
+    $json = json_decode($body, true);
+    if (isset($json['status_code'])) {
+        // TMDB answers a bad key with 200 and a status_code/status_message
+        // pair rather than an HTTP error, so the body has to be read to
+        // find out a request never really worked.
+        return [[], 'TMDB: ' . (string) ($json['status_message'] ?? 'request refused.')];
+    }
+    $hits = $json['results'] ?? [];
+    if (!is_array($hits) || $hits === []) {
+        metadata_debug('tmdb: hits', 0);
+        return [[], null];
+    }
+    metadata_debug('tmdb: hits', count($hits));
+
+    $out   = [];
+    $limit = max(1, (int) ($params['detail_pages'] ?? 4));
+    foreach (array_slice($hits, 0, $limit) as $hit) {
+        $id = (int) ($hit['id'] ?? 0);
+        if ($id <= 0) {
+            continue;
+        }
+        $candidate = tmdb_movie_details($base, $imgBase, $id, $lang, $headers, $timeout);
+        if ($candidate !== null) {
+            $out[] = $candidate;
+        }
+    }
+
+    return [$out, null];
+}
+
+/** One film, with credits appended so production companies come in the same request. */
+function tmdb_movie_details(string $base, string $imgBase, int $id, string $lang, array $headers, int $timeout): ?array
+{
+    metadata_rate_limit('tmdb', 0.3);
+    $url = $base . '/movie/' . $id . '?' . http_build_query([
+        'language' => $lang, 'append_to_response' => 'credits',
+    ]);
+    [$body, $err] = metadata_http_get($url, $headers, $timeout);
+    if ($body === null) {
+        metadata_debug('tmdb: details failed', $id . ' — ' . $err);
+        return null;
+    }
+    $m = json_decode($body, true);
+    if (!is_array($m) || empty($m['id'])) {
+        return null;
+    }
+
+    $year = null;
+    if (!empty($m['release_date']) && preg_match('/^(\d{4})/', (string) $m['release_date'], $mm) === 1) {
+        $year = (int) $mm[1];
+    }
+
+    // The first listed company, not all of them - the same "one answer,
+    // not a list" this field means everywhere else in this catalogue.
+    $companies = $m['production_companies'] ?? [];
+    $studio = is_array($companies) && $companies !== []
+        ? (string) ($companies[0]['name'] ?? '') : null;
+
+    $images = [];
+    if (!empty($m['poster_path'])) {
+        $images[] = [
+            'url'       => $imgBase . '/w780' . $m['poster_path'],
+            'thumb_url' => $imgBase . '/w342' . $m['poster_path'],
+            'kind'      => 'box_front',
+            'caption'   => 'Poster',
+        ];
+    }
+    if (!empty($m['backdrop_path'])) {
+        $images[] = [
+            'url'       => $imgBase . '/w1280' . $m['backdrop_path'],
+            'thumb_url' => $imgBase . '/w300' . $m['backdrop_path'],
+            'kind'      => 'other',
+            'caption'   => 'Backdrop',
+        ];
+    }
+
+    $specs = [];
+    if (!empty($m['runtime'])) {
+        $specs['Running time'] = ((int) $m['runtime']) . ' minutes';
+    }
+    $genres = array_filter(array_map(fn($g) => (string) ($g['name'] ?? ''), (array) ($m['genres'] ?? [])));
+    if ($genres !== []) {
+        $specs['Genre'] = implode(', ', $genres);
+    }
+    $directors = array_filter(array_map(
+        fn($c) => (string) ($c['job'] ?? '') === 'Director' ? (string) ($c['name'] ?? '') : null,
+        (array) ($m['credits']['crew'] ?? [])
+    ));
+    if ($directors !== []) {
+        $specs['Director'] = implode(', ', $directors);
+    }
+
+    return [
+        'remote_id'  => (string) $id,
+        'title'      => (string) ($m['title'] ?? ''),
+        'year'       => $year,
+        'developer'  => $studio,
+        'publisher'  => null,
+        // No opinion on platform - a film has no real per-machine release
+        // the way a game does, so nothing here is claimed either way and
+        // metadata_rank_results() falls back to title closeness alone.
+        'platform'   => null,
+        'url'        => 'https://www.themoviedb.org/movie/' . $id,
+        'summary'    => trim((string) ($m['overview'] ?? '')) ?: null,
+        'images'     => $images,
+        'documents'  => [],
+        'hardware'   => [],
+        'specs'      => $specs,
+    ];
+}
+
 function metadata_search_wikipedia(array $params, string $title, ?string $remotePlatform): array
 {
     $base = rtrim((string) ($params['endpoint'] ?? 'https://en.wikipedia.org/w/api.php'), '/');

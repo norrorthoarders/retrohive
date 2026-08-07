@@ -604,10 +604,25 @@ function item_to_api(array $r, bool $withImages = false): array
         'media_count'  => (int) ($r['media_count'] ?? 1),
 
         'image_count' => (int) ($r['image_count'] ?? 0),
-        'cover'       => [
-            'thumb'   => absolute_url(image_url($r['cover_filename'] ?? null, 'thumb')),
-            'display' => absolute_url(image_url($r['cover_filename'] ?? null, 'display')),
-        ],
+        'cover'       => (function () use ($r): array {
+            $filename = $r['cover_filename'] ?? null;
+            $isDefault = false;
+            // A category's own default only stands in when there is
+            // genuinely no photograph of the entry's own - the walk up
+            // the branch this entry's own category sits in, the same
+            // inheritance kind already uses, nearest ancestor with an
+            // answer wins. Never shown ahead of a real photo, whatever
+            // was uploaded or brought in by a metadata agent.
+            if (empty($filename) && !empty($r['category_id'])) {
+                $filename = category_effective_default_image((int) $r['category_id']);
+                $isDefault = $filename !== null;
+            }
+            return [
+                'thumb'      => absolute_url(image_url($filename, 'thumb')),
+                'display'    => absolute_url(image_url($filename, 'display')),
+                'is_default' => $isDefault,
+            ];
+        })(),
 
         'created_at' => api_datetime($r['created_at']),
         'updated_at' => api_datetime($r['updated_at']),
@@ -677,6 +692,7 @@ function library_to_api(array $r): array
         'sort_order'  => (int) $r['sort_order'],
         'item_count'  => isset($r['n']) ? (int) $r['n'] : null,
         'access'      => library_access(acting_user(), (int) $r['id']),
+        'access_label' => access_label(library_access(acting_user(), (int) $r['id'])),
     ];
 }
 
@@ -731,6 +747,28 @@ function category_to_api(array $r): array
         'path'        => category_breadcrumb((int) $r['id']),
         'description' => $r['description'] ?? null,
         'sort_order'  => (int) ($r['sort_order'] ?? 0),
+        // The picture this branch's own entries get with no photograph
+        // of their own. own_image is only ever this node's own upload,
+        // never inherited - a client offering "remove" needs to know
+        // whether there is genuinely a file on this row to remove, not
+        // whether entries here currently show something borrowed from
+        // above. effective_image is what an item filed here would
+        // actually show, walking up the branch the same way a real
+        // entry's own cover falls back - present so a client can show
+        // "inherited from Peripherals" without a second request.
+        'own_image' => empty($r['default_image_filename']) ? null : [
+            'thumb'   => absolute_url(image_url($r['default_image_filename'], 'thumb')),
+            'display' => absolute_url(image_url($r['default_image_filename'], 'display')),
+        ],
+        'effective_image' => (function () use ($r) {
+            $filename = !empty($r['default_image_filename'])
+                ? (string) $r['default_image_filename']
+                : category_effective_default_image((int) $r['id']);
+            return $filename === null ? null : [
+                'thumb'   => absolute_url(image_url($filename, 'thumb')),
+                'display' => absolute_url(image_url($filename, 'display')),
+            ];
+        })(),
     ];
 }
 
@@ -874,6 +912,8 @@ function software_model_to_api(array $r): array
             'slug' => $r['platform_slug'] ?? null,
         ] : null,
         'notes'       => $r['notes'],
+        'media'       => $r['media'] ?? null,
+        'year_from'   => isset($r['year_from']) ? (int) $r['year_from'] : null,
     ];
 }
 

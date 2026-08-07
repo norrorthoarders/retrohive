@@ -69,7 +69,7 @@ function company_makes_from(array $row, string $default): string
     }
     if (is_array($claimed)) {
         foreach ($claimed as $m) {
-            if (in_array($m, ['hardware', 'software', 'video', 'music'], true)) {
+            if (in_array($m, ['hardware', 'software', 'video', 'audio'], true)) {
                 $out[] = $m;
             }
         }
@@ -81,7 +81,7 @@ function company_makes_from(array $row, string $default): string
 function company_makes_merge(string $have, string $add): string
 {
     $all = array_filter(array_merge(explode(',', $have), explode(',', $add)));
-    $all = array_values(array_unique(array_intersect(['hardware', 'software', 'video', 'music'], $all)));
+    $all = array_values(array_unique(array_intersect(['hardware', 'software', 'video', 'audio'], $all)));
     return implode(',', $all);
 }
 
@@ -103,7 +103,7 @@ function platform_domains_from(array $row, string $default): string
     $out = [];
     if (is_array($claimed)) {
         foreach ($claimed as $d) {
-            if (in_array($d, ['hardware', 'software', 'video', 'music'], true)) {
+            if (in_array($d, ['hardware', 'software', 'video', 'audio'], true)) {
                 $out[] = $d;
             }
         }
@@ -147,7 +147,7 @@ function structure_files(): array
         // What each machine runs. After platforms, because every row names one.
         'environments'         => 'Environments',
         'video_categories'     => 'Video types',
-        'music_categories'     => 'Music types',
+        'audio_categories'     => 'Audio types',
         'credit_roles'         => 'Credit roles',
     ];
 }
@@ -307,7 +307,7 @@ function structure_apply(string $name, array $rows, bool $force = false): array
                 case 'software_categories':
                 case 'hardware_categories':
                 case 'video_categories':
-                case 'music_categories':
+                case 'audio_categories':
                     $have = one('SELECT id FROM categories WHERE slug = ? AND library_id IS NULL', [$slug]);
                     if ($have !== null && !$force) {
                         break;
@@ -775,7 +775,7 @@ function structure_apply(string $name, array $rows, bool $force = false): array
     // sorts and nests wrongly for ever. The seed rebuilt it by hand; doing it
     // here means the JSON file does not have to carry a derived value.
     if (in_array($name, ['software_categories', 'hardware_categories',
-                          'video_categories', 'music_categories'], true)) {
+                          'video_categories', 'audio_categories'], true)) {
         rebuild_category_paths();
     }
 
@@ -1102,9 +1102,9 @@ function structure_row_counts(?int $libraryId = null): array
         ['video_categories', 'Video branches',
             (int) scalar("SELECT COUNT(*) FROM categories c JOIN sections s ON s.id = c.section_id
                            WHERE c.$tpl AND s.slug = 'video'")],
-        ['music_categories', 'Music branches',
+        ['audio_categories', 'Audio branches',
             (int) scalar("SELECT COUNT(*) FROM categories c JOIN sections s ON s.id = c.section_id
-                           WHERE c.$tpl AND s.slug = 'music'")],
+                           WHERE c.$tpl AND s.slug = 'audio'")],
         // Machine or peripheral is the branch's business, not a flag on the
         // model - there is no is_machine column, and inventing one in a count
         // would have been a second opinion about something the tree decides.

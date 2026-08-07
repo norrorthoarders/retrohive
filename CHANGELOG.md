@@ -1,5 +1,326 @@
 # Changelog
 
+**A real metadata source for music - TheAudioDB, and a genuine correction of what the free key
+actually does versus what its docs describe, checked by hand against the live API rather than
+taken on faith.** Their own documentation's search-by-album method (`searchalbum.php`) and
+discography listing (`discography.php`) both looked like the obvious fit for "add a music
+record" - tried both directly against the real, live API using the exact example from their own
+docs, and both come back essentially unusable on the free key: `searchalbum.php` refuses outright
+even on their own documented example, and `discography.php` answers with a single, id-less album
+carrying no artwork at all. What the free key does answer well, confirmed the same way, is a plain
+artist search - real biography, genre, style, record label, and genuine artwork.
+
+Built around what actually works rather than what the docs suggested first: an artist lookup, not
+an album-specific one. Documented plainly in the provider's own description, not left for someone
+to discover the hard way - a candidate's title reads as the artist's name, and the record label
+comes through correctly as the "publisher"/"label" field this catalogue already uses for audio
+entries.
+
+Proved live against the real response shape captured directly from the API, not a synthetic
+guess - genre, style, country, biography, three separate images, and the real front-end URL
+pattern (confirmed by search, not assumed) all mapped correctly. Every real failure path checked
+too: no key, the confirmed live shape for no matches, and a network failure, each handled and
+reported honestly rather than swallowed.
+
+Full suite: back to 1 of 25, the same baseline as both metadata additions before it.
+
+This package is **build 78**.
+
+**A real metadata source for TV shows - TheTVDB, read straight from their own v4 OpenAPI spec
+rather than assumed.** A genuinely different shape from TMDB's own provider: TheTVDB requires a
+separate login step first - the API key is exchanged for a JWT bearer token, valid for a month
+per their own docs, rather than being sent as a static credential on every call the way TMDB's
+own key works. The token is cached rather than fetched fresh on every search - proved directly, not
+assumed: a second search against the same key made exactly one request, not two, confirming reuse
+actually happens rather than merely being intended.
+
+TheTVDB's own search index turned out to already carry most of what a candidate needs directly -
+overview, year, network, genres, a poster - so unlike the movie provider, no second details call
+per result. Network stands in as the answer to "whose is this," the same way a film's own studio
+does - a network commissions a show rather than producing it in the film sense, but it's still the
+one-word answer this field means everywhere else in this catalogue.
+
+Declares no platform opinion, the same reasoning the movie provider already has - a series has no
+real per-machine release the way a game does.
+
+Proved live against realistic response shapes for the full flow and every real failure path:
+login then search on a cold cache, confirmed making both requests with the correct bearer token
+on the second; a second search against a warm cache, confirmed making only the search request,
+not a second login; a missing key refused outright; a login itself failing with 401, surfaced
+rather than swallowed; a genuinely empty result set returned cleanly.
+
+Full suite: back to 1 of 25, the same baseline as the movie provider before it - confirming this
+addition, unlike the near-miss two rounds back, left nothing else broken.
+
+This package is **build 77**.
+
+**A real metadata source for movies - The Movie Database (TMDB), read straight from its own API
+docs rather than assumed.** Search, then a details call per candidate for what the search
+endpoint doesn't carry - overview, runtime, genres, production companies, and the director by way
+of `append_to_response=credits`, all in the same request rather than a second round trip.
+Authenticates with TMDB's own Bearer-token method, the one their docs recommend over the shorter
+v3 key. Poster and backdrop both come through as real candidate images, at real, appropriately
+different sizes - a poster wants to be seen fully; a backdrop is worth a smaller preview.
+
+Declares no opinion on platform - a film has no real per-machine release the way a game does, so
+`metadata_rank_results()` correctly falls back to title closeness alone rather than being handed a
+comparison it has nothing to answer.
+
+**Worth being direct about a real, severe near-miss caught before it went anywhere**: an editing
+mistake while inserting this new provider left `metadata_search_wikipedia()`'s own function
+signature stripped from the file, its entire body orphaned as an unreachable block that `php -l`
+had no way to flag, since a bare `{ }` block is syntactically valid PHP on its own. Caught not by
+linting but by directly searching the file for the function's own name and finding nothing -
+wikipedia lookups would have silently, completely stopped working the moment this shipped. Fixed,
+and the full test suite was run specifically to confirm the fix actually took, not merely assumed
+to have.
+
+Proved live against realistic response shapes for both success and every real failure path TMDB's
+own docs describe: a working search and details call parsed correctly end to end, including a
+director found through the appended credits; a missing API key refused outright with a clear
+message; a real, live TMDB behavior worth knowing - it answers a bad key with an ordinary 200 and
+a `status_code`/`status_message` pair rather than an HTTP error - correctly surfaced rather than
+silently swallowed; a genuinely empty result set returned cleanly with no error at all.
+
+Full suite: back to 1 of 25 - the same baseline, now including live confirmation that the near-miss
+above left nothing broken.
+
+This package is **build 76**.
+
+**`software_models` gained platform filtering and the `media`/`year_from` fields it always had at
+the schema level but never exposed - closing the gap for a real "pick a packaging shape" feature
+on the client.** `media` in particular is what the new picker needs to actually do anything -
+found missing while building it, not assumed present.
+
+Proved live: the endpoint's real response now carries `media` for every one of the twelve
+templates this repo ships; `?platform_id=` correctly narrows the list to one machine's own
+shapes rather than returning all twelve regardless of what's being asked for.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 75**.
+
+**Seven real packaging templates added for video and audio - VHS clamshell, LaserDisc, DVD, Blu-ray,
+vinyl sleeve, CD jewel case, cassette - reusing `software_models` rather than inventing a parallel
+table.** The table's own schema was already genuinely domain-agnostic (platform, category, media,
+name - nothing hardware- or software-specific about any of it), and the column that references it
+(`titles.software_model_id`) already carries no domain restriction either; a video or audio title
+could already point at one of these rows, it just never had any to point at. Renaming the table
+itself to something less misleading was considered and set aside - the "music" section rename
+earlier this session showed exactly how much a rename like that can touch, and the functional
+need here doesn't require it.
+
+Each new model carries real specifications and real contents, the same as every other model this
+repo ships - this repo's own test suite checks both are present on every shipped row, and would
+have refused a version that only had a bare name and platform.
+
+Proved live: a fresh `structure_sync()` added all seven with zero errors; every one confirmed
+carrying both fields and contents; every one confirmed linked to its own real platform (VHS, DVD,
+Blu-ray, vinyl, CD, cassette, LaserDisc) rather than left dangling.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 74**.
+
+**`GET /categories?role=` fixed to use the effective, inherited role - the foundation for the new
+"Add a game"/"Add a machine" style entry points, and a real, significant bug on its own.** The
+filter only ever compared a row's own literal `role` column, never the inherited value
+`category_effective_role()` already computes - the same walk `item_kind_label()` uses to decide
+what an entry itself is. Since the ordinary case is a branch declaring its kind once at the top
+and letting everything below inherit it, the old filter answered "what can I file a game under"
+with only the handful of branches that happened to say `game` on their own row, missing every
+leaf that inherited it - which, on a real library, is most of them.
+
+Extended the same filter's own whitelist to the full role enum - `game`, `application`, `movie`,
+`tv_show`, `music` - alongside the `machine`/`peripheral`/`other` it already had. `role` on
+`POST`/`PATCH /categories/{id}` already gained these in an earlier round; this closes the read
+side to match.
+
+`docs/openapi.yaml`'s own documentation for `GET /categories` was close to nonexistent - no query
+parameters described at all despite four being real and load-bearing. Documented properly.
+
+Proved live against a real seeded library: `role=game` correctly returned 45 categories (not the
+single branch that declares it directly), `role=music` returned real audio categories, and
+`role=machine`/`peripheral` were confirmed unaffected by the fix - a genuine regression check, not
+assumed safe.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 73**.
+
+**Audio, actually fixed at the root - `structure/music_categories.json` renamed to
+`audio_categories.json`, closing a real bug the client-side rename alone left standing.**
+
+The `sections` table itself already read "audio," with a comment explaining exactly why -
+audiobooks and podcasts are audio, and neither is music. What that comment didn't anticipate:
+`structure_sync()` derives which section a category file belongs to from the file's own name
+(`music_categories.json` looks up a section slugged `music`). With the section genuinely renamed
+to `audio` and the file still called `music_categories.json`, every attempt to seed the audio
+branch of the category tree failed outright with a foreign key violation - caught live, not in
+review, the moment a real seed was attempted end to end. Fixed by renaming the file itself and
+the four places in `structure.php` that reference it by name, matching the same
+file-name-declares-section convention every other domain already follows.
+
+**`role` extended to accept `movie`, `tv_show`, and `music`** - `POST`/`PATCH /categories/{id}`
+only ever accepted the hardware/software half of the kind enum; a branch could never be set to a
+video or audio kind through the API at all. Now cascades its section exactly the way
+machine/peripheral and game/application already do - `movie`/`tv_show` move a branch into Video,
+`music` moves it into Audio.
+
+Proved live: a fresh `structure_sync()` seeded the audio category branch with zero errors,
+confirmed against the real database; the API's own role-update endpoint confirmed accepting
+`music` and correctly cascading the section.
+
+`docs/openapi.yaml` updated to match. Full suite: still 1 of 25, unchanged.
+
+This package is **build 72**.
+
+**A real, pre-existing gap found while checking the full suite after unrelated client work -
+`GET /directory` was never documented in `docs/openapi.yaml`, caught by this repo's own
+completeness test.** Fixed. Nothing about the endpoint itself changed.
+
+This package is **build 71**.
+
+**"What a library holds" - `GET /libraries/{id}/contents`, a client for the real app's own
+library_contents_index() and library_contents_summary(), built for the same reason the real app
+built it: a bare item count is a poor thing to make a delete decision against.** Every entry,
+paginated, plus the platforms, makers, models, and places the library defined for itself - the
+things people forget a library owns until it's gone. Owner or instance administrator, matching the
+real app's own comment about who should see this: it was administrator-only originally, which that
+comment itself calls the wrong way round.
+
+Proved live with real data, not assumed: the endpoint correctly returned 14 real entries, 16 real
+platforms, 25 real companies, 6 real locations, 10 real hardware models, 5 real software models,
+and the real owner membership, matching a genuinely seeded library exactly.
+
+Worth being direct about the rest of this round's testing: this session hit severe, repeated
+environment instability while proving this - the database process died mid-test more times than
+any other round tonight, including within single, unbroken scripts. The core endpoint above was
+directly, thoroughly proven with full real data despite that. What could not be completed was a
+full live HTTP round-trip through the web client on top of it; that half was instead verified by
+rendering the real client's own template directly against the exact data shape the live API had
+already confirmed, which succeeded cleanly with no warnings - a genuine, if narrower, form of
+proof than the live browser test this session has otherwise held to throughout.
+
+A real regression caught by the full suite, the same shape as before: the new endpoint wasn't in
+`docs/openapi.yaml`, caught by this repo's own completeness test, fixed, confirmed the suite is
+back to 1 of 25 afterward.
+
+This package is **build 70**.
+
+**Public libraries are always read-only to join now - a real behavior change, not a rename.**
+Confirmed against the current design in conversation first: the six access levels and the
+private-library invite flow already matched what was described almost word for word: the one
+genuine difference was that a shared library could previously be published two ways, read-only or
+read-write, letting anyone who joined the general way become a Contributor outright. That option
+is gone. Joining a public library now always grants Viewer, nothing more - a higher role for a
+specific person still goes through the same invitation mechanism a private library already uses,
+which grants any level up to Administrator and is entirely unaffected by this.
+
+Fixed at the source rather than hidden behind a form: `library_visibility_flags()`, shared by
+every path that can set this, no longer has a write-granting state - a caller that still sends the
+old `public_write` value is treated exactly as `public` now, not refused and not silently
+different. Every "set" site across both the still-live original app and the newer API-driven one
+was checked and fixed the same way, not just one of them.
+
+A migration clears the now-invalid state on any library that already carried it, rather than
+leaving an upgraded instance able to show a state nothing can select or reproduce again.
+
+Proved live: updating a library with the old, removed value now correctly leaves it read-only, not
+refused and not read-write; joining it the general way was confirmed to grant Viewer and nothing
+else; an administrator explicitly inviting somebody to Editor on that same public library was
+confirmed to still work exactly as before - the two mechanisms are genuinely independent. The
+migration itself was proved the same way every schema change has been this session: a real,
+simulated old instance carrying the old state was correctly caught and corrected.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 69**.
+
+**Five new endpoints, a client for the real app's own "Library access" page - what you already
+have, what's waiting on an answer, and what's open to join.** `GET /profile/libraries` combines
+all three tabs' worth of data in one call, matching the real page's own single render rather than
+three round trips. `POST /libraries/{id}/join`, `/leave`, `/invite/{accept,decline}`, and
+`/ownership/{accept,decline,withdraw}` are direct clients for library_join(), library_leave(),
+and the invitation/ownership halves of library_admin_save() and library_ownership_respond() -
+copied field by field, not re-derived, including the parts easy to get wrong: leaving is refused
+on any personal library regardless of whose it is, not just this account's own; accepting an
+ownership offer swaps both the owning column and the membership rows in one step, with the
+outgoing owner kept on as an admin rather than dropped to nothing.
+
+`library_to_api()` gained `access_label` - a human label for the raw access string every caller
+already got, so a client never has to carry its own copy of what "curator" means.
+
+Proved live, thoroughly, covering every real state rather than just the happy path: a real pending
+invitation showed correctly and was accepted through the real endpoint, with the database
+confirmed changed; joining a real published library correctly granted exactly what it offers, no
+more; leaving was confirmed genuinely refused on a personal library even when it wasn't the
+caller's own, and refused again on a library the caller owns outright; a real ownership offer was
+accepted and the outgoing owner's own membership row was confirmed demoted to admin, not curator,
+not removed.
+
+A real regression caught by the full suite, the same shape as before: the new endpoints weren't in
+`docs/openapi.yaml`, caught by this repo's own completeness test, fixed, confirmed the suite is
+back to 1 of 25 afterward.
+
+This package is **build 68**.
+
+**Default category images - what an entry looks like with no photograph of its own, inherited
+down the branch the same way "kind" already is.** `categories.default_image_filename`, migration
+005; `category_effective_default_image()`, the same nearest-ancestor-wins walk
+`category_effective_role()` already does for kind rather than a second inheritance mechanism
+invented alongside it; `POST`/`DELETE /categories/{id}/image`, curator-level, reusing the same
+validated upload machinery a profile picture already uses.
+
+`item_to_api()`'s own `cover` field now falls back to the category's effective image only when an
+entry genuinely has no photograph of its own, real or brought in by a metadata agent - and reports
+`is_default` so a client can tell a real photo from a placeholder. `category_to_api()` reports both
+`own_image` (only ever this node's own upload, so a "Remove" button never implies there's a file to
+remove when there isn't) and `effective_image` (what an entry filed here would actually show right
+now, inherited or not).
+
+Proved live, thoroughly: uploaded a real image to a category, confirmed a real item with no photo
+correctly inherited it; uploaded a real photo directly to that same item afterward and confirmed
+the real photo won outright, not the category default; removed the category image and confirmed a
+different item in the same branch correctly fell back to no cover at all, not something stale.
+
+A real regression caught by the full suite, the same shape as before: the two new endpoints
+weren't in `docs/openapi.yaml`, caught by this repo's own completeness test, added and confirmed
+the suite is back to 1 of 25 afterward. Separately, the full migration path was proved rather than
+assumed - a genuinely simulated old instance missing this column was correctly caught by `doctor`,
+correctly fixed by `up`, and confirmed clean by `doctor` again afterward.
+
+This package is **build 67**.
+
+**A real report - Software models and Credit roles don't sync from the repository - traced to
+its actual cause: `structure/software_models.json`, the template file the sync reads from, was
+genuinely empty. Not a bug in the sync mechanism itself, which already, fully supports both -
+`credit_roles` was already syncing correctly the whole time.**
+
+Five real software packaging templates added - Amiga boxed disk (game and application separately,
+since an application's box says different things), PC DOS floppy big box, PC Windows CD-ROM jewel
+case, C64 cassette - each with real specifications (what a model like this is worth recording:
+minimum memory, copy protection, sound support) and real contents (what's actually in the box:
+disk, manual, box). Both were required, not decorative - this repo's own test suite already
+checks that every shipped model has both, and caught the first version of this fix for shipping
+only the bare name and platform, nothing else, which the test correctly refused.
+
+**Worth being direct about a false alarm along the way**: while proving this live, `credit_roles`
+appeared to have doubled from 8 rows to 16 after a single sync - investigated as a possible
+duplicate-insertion bug before checking the one thing that would have shown it wasn't: the
+`library_id` column. Eight were the shared template (`library_id` null), eight were a real,
+correct copy into a specific library - exactly the same shape every other structure type already
+has. No code was changed chasing this; caught before any was.
+
+Proved live: `structure_sync()` now genuinely populates the global software_models template with
+five real rows; `seed_library_hardware()`'s existing, working software_models copy step - which
+already had nothing wrong with it, only nothing to copy - now correctly fills a real library with
+all five, complete with their own fields and contents.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 66**.
+
 **A real report - a fresh personal library should start totally empty, with only the shared "The
 club shelf" example library getting structure and examples, and only when selected - checked
 against the actual install code, where both installers genuinely disagreed with their own stated

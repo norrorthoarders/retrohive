@@ -2740,10 +2740,17 @@ function library_admin_save(): void
         }
     }
 
-    // Only a shared library can be open to everybody, and writing implies
-    // reading rather than being a separate thing you can forget to tick.
-    $publicWrite = $kind === 'shared' && !empty($_POST['public_write']) ? 1 : 0;
-    $publicRead  = $kind === 'shared' && (!empty($_POST['public_read']) || $publicWrite) ? 1 : 0;
+    // Only a shared library can be open to everybody, and it is always
+    // read-only to join: anyone signed in may become a Viewer, and
+    // nothing more, through the general join button. A higher role for
+    // a specific person is still possible - the same invitation
+    // mechanism a private library already uses grants any level up to
+    // Administrator, unaffected by this. public_write used to let a
+    // library grant Contributor to everyone who joins; removed rather
+    // than merely hidden, since a column nobody can set but that old
+    // rows may still carry is a trap for the next person reading this.
+    $publicWrite = 0;
+    $publicRead  = $kind === 'shared' && !empty($_POST['public_read']) ? 1 : 0;
     $restrict   = input_int('restrict_to_platform_id');
 
     $data = [
@@ -2833,11 +2840,18 @@ function auth_verify_resend(): void
 // ---------------------------------------------------------------------------
 
 /**
- * The two public flags, from one choice.
+ * The public flag, from one choice.
  *
- * Returns [publicRead, publicWrite]. Only a shared library can be open to everyone
- * signed in - the columns exist on every row, but a private library ignores them,
- * and returning zeroes for one keeps that true in the only place that writes them.
+ * Returns [publicRead, publicWrite] - publicWrite is always 0 now.
+ * "Public" always means read-only to join: anyone signed in becomes a
+ * Viewer, nothing more, through the general join button. A higher role
+ * for a specific person still goes through the same invitation
+ * mechanism a private library already uses, which grants any level up
+ * to Administrator and is entirely separate from this. The write half
+ * of this pair used to let a library grant Contributor to everyone who
+ * joins; removed rather than merely made unreachable, since a caller
+ * that still sent 'public_write' deserves the same answer 'public'
+ * gives now, not a silently different one.
  */
 function library_visibility_flags(string $kind, string $visibility): array
 {
@@ -2845,9 +2859,8 @@ function library_visibility_flags(string $kind, string $visibility): array
         return [0, 0];
     }
     return match ($visibility) {
-        'public_write' => [1, 1],
-        'public'       => [1, 0],
-        default        => [0, 0],
+        'public', 'public_write' => [1, 0],
+        default                  => [0, 0],
     };
 }
 

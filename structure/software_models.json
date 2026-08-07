@@ -1,1 +1,344 @@
-[]
+[
+  {
+    "slug": "amiga-boxed-game-disk",
+    "name": "Amiga, boxed, disk",
+    "platform": "amiga",
+    "media": "3.5-inch disk",
+    "sort_order": 10,
+    "fields": [
+      {
+        "label": "Minimum memory",
+        "hint": "512KB, 1MB, 2MB..."
+      },
+      {
+        "label": "Copy protection",
+        "hint": "Disk-based, dongle, code wheel, none"
+      }
+    ],
+    "contents": [
+      {
+        "label": "Disk",
+        "note": "One or more 3.5-inch floppies"
+      },
+      {
+        "label": "Manual"
+      },
+      {
+        "label": "Box"
+      }
+    ]
+  },
+  {
+    "slug": "amiga-boxed-application",
+    "name": "Amiga, boxed, disk (application)",
+    "platform": "amiga",
+    "media": "3.5-inch disk",
+    "sort_order": 20,
+    "fields": [
+      {
+        "label": "Minimum memory",
+        "hint": "512KB, 1MB, 2MB..."
+      },
+      {
+        "label": "Requires",
+        "hint": "A hard drive, a coprocessor, an accelerator..."
+      }
+    ],
+    "contents": [
+      {
+        "label": "Disk",
+        "note": "One or more 3.5-inch floppies"
+      },
+      {
+        "label": "Manual"
+      },
+      {
+        "label": "Registration card"
+      },
+      {
+        "label": "Box"
+      }
+    ]
+  },
+  {
+    "slug": "pc-dos-floppy-bigbox",
+    "name": "PC DOS, big box, floppy",
+    "platform": "pc",
+    "media": "3.5-inch disk",
+    "sort_order": 30,
+    "fields": [
+      {
+        "label": "Minimum memory",
+        "hint": "640KB conventional, or with EMS/XMS stated"
+      },
+      {
+        "label": "Sound support",
+        "hint": "AdLib, Sound Blaster, Roland MT-32..."
+      }
+    ],
+    "contents": [
+      {
+        "label": "Disks",
+        "note": "3.5-inch, 5.25-inch, or both"
+      },
+      {
+        "label": "Manual"
+      },
+      {
+        "label": "Reference card"
+      },
+      {
+        "label": "Box"
+      }
+    ]
+  },
+  {
+    "slug": "pc-win9x-cdrom-jewel",
+    "name": "PC Windows, jewel case, CD-ROM",
+    "platform": "pc",
+    "media": "CD-ROM",
+    "sort_order": 40,
+    "fields": [
+      {
+        "label": "Minimum RAM",
+        "hint": "16MB, 32MB, 64MB..."
+      },
+      {
+        "label": "DirectX version",
+        "hint": "The version this shipped requiring"
+      }
+    ],
+    "contents": [
+      {
+        "label": "CD-ROM"
+      },
+      {
+        "label": "Manual",
+        "note": "Often a folded leaflet rather than a booklet"
+      },
+      {
+        "label": "Jewel case"
+      }
+    ]
+  },
+  {
+    "slug": "c64-cassette-game",
+    "name": "C64, cassette",
+    "platform": "c64",
+    "media": "cassette",
+    "sort_order": 50,
+    "fields": [
+      {
+        "label": "Loader",
+        "hint": "Standard, Novaload, Freeload..."
+      },
+      {
+        "label": "Load time",
+        "hint": "In minutes, at standard speed"
+      }
+    ],
+    "contents": [
+      {
+        "label": "Cassette"
+      },
+      {
+        "label": "Inlay card"
+      }
+    ]
+  },
+  {
+    "slug": "vhs-clamshell",
+    "name": "VHS, clamshell case",
+    "platform": "vhs",
+    "media": "VHS tape",
+    "sort_order": 60,
+    "fields": [
+      {
+        "label": "Region/format",
+        "hint": "PAL, NTSC, SECAM"
+      },
+      {
+        "label": "Running time",
+        "hint": "In minutes"
+      }
+    ],
+    "contents": [
+      {
+        "label": "Tape"
+      },
+      {
+        "label": "Clamshell case"
+      },
+      {
+        "label": "Sleeve insert"
+      }
+    ]
+  },
+  {
+    "slug": "laserdisc-case",
+    "name": "LaserDisc, case",
+    "platform": "laserdisc",
+    "media": "LaserDisc",
+    "sort_order": 65,
+    "fields": [
+      {
+        "label": "Sides",
+        "hint": "CAV or CLV, one or two discs"
+      },
+      {
+        "label": "Running time",
+        "hint": "In minutes"
+      }
+    ],
+    "contents": [
+      {
+        "label": "Disc"
+      },
+      {
+        "label": "Case"
+      },
+      {
+        "label": "Sleeve insert"
+      }
+    ]
+  },
+  {
+    "slug": "dvd-case",
+    "name": "DVD, case",
+    "platform": "dvd",
+    "media": "DVD",
+    "sort_order": 70,
+    "fields": [
+      {
+        "label": "Region code",
+        "hint": "1, 2, 4, free..."
+      },
+      {
+        "label": "Running time",
+        "hint": "In minutes"
+      }
+    ],
+    "contents": [
+      {
+        "label": "Disc"
+      },
+      {
+        "label": "Case"
+      },
+      {
+        "label": "Sleeve insert"
+      }
+    ]
+  },
+  {
+    "slug": "bluray-case",
+    "name": "Blu-ray, case",
+    "platform": "blu-ray",
+    "media": "Blu-ray disc",
+    "sort_order": 75,
+    "fields": [
+      {
+        "label": "Region code",
+        "hint": "A, B, C, free..."
+      },
+      {
+        "label": "Running time",
+        "hint": "In minutes"
+      }
+    ],
+    "contents": [
+      {
+        "label": "Disc"
+      },
+      {
+        "label": "Case"
+      },
+      {
+        "label": "Sleeve insert"
+      },
+      {
+        "label": "Digital copy code",
+        "note": "Often unredeemed on a second-hand copy"
+      }
+    ]
+  },
+  {
+    "slug": "vinyl-sleeve",
+    "name": "Vinyl, sleeve",
+    "platform": "vinyl",
+    "media": "Vinyl record",
+    "sort_order": 80,
+    "fields": [
+      {
+        "label": "Speed",
+        "hint": "33\u2153, 45, 78 RPM"
+      },
+      {
+        "label": "Size",
+        "hint": "7-inch, 10-inch, 12-inch"
+      }
+    ],
+    "contents": [
+      {
+        "label": "Record"
+      },
+      {
+        "label": "Sleeve"
+      },
+      {
+        "label": "Inner sleeve"
+      },
+      {
+        "label": "Insert or lyric sheet"
+      }
+    ]
+  },
+  {
+    "slug": "cd-jewel-case",
+    "name": "CD, jewel case",
+    "platform": "cd",
+    "media": "CD",
+    "sort_order": 85,
+    "fields": [
+      {
+        "label": "Catalogue number",
+        "hint": "Printed on the spine or disc"
+      }
+    ],
+    "contents": [
+      {
+        "label": "Disc"
+      },
+      {
+        "label": "Jewel case"
+      },
+      {
+        "label": "Booklet"
+      }
+    ]
+  },
+  {
+    "slug": "cassette-case",
+    "name": "Cassette, case",
+    "platform": "cassette",
+    "media": "Cassette tape",
+    "sort_order": 90,
+    "fields": [
+      {
+        "label": "Type",
+        "hint": "Type I (normal), II (chrome), IV (metal)"
+      }
+    ],
+    "contents": [
+      {
+        "label": "Tape"
+      },
+      {
+        "label": "Case"
+      },
+      {
+        "label": "J-card insert"
+      }
+    ]
+  }
+]

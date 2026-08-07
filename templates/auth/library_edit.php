@@ -96,21 +96,24 @@ $personal = (int) ($lib['is_personal'] ?? 0) === 1;
 
     <?php if (!$personal): ?>
       <?php
-      $vis = (int) ($lib['public_write'] ?? 0) === 1 ? 'public_write'
-           : ((int) ($lib['public_read'] ?? 0) === 1 ? 'public' : 'members');
+      // Always read-only for anybody who joins through the general
+      // button now - there is no second, write-granting public state
+      // any more. A higher role for a specific person still goes
+      // through inviting them directly, unaffected by this choice.
+      $vis = (int) ($lib['public_read'] ?? 0) === 1 ? 'public' : 'members';
       ?>
       <div class="field field--half" data-shared-only <?= $shared ? '' : 'hidden' ?>>
         <label for="visibility">Who can see it</label>
         <select id="visibility" name="visibility">
-          <option value="members"      <?= $vis === 'members' ? 'selected' : '' ?>>Members only — invite people, even to read</option>
-          <option value="public"       <?= $vis === 'public' ? 'selected' : '' ?>>Public — everyone signed in can read it</option>
-          <option value="public_write" <?= $vis === 'public_write' ? 'selected' : '' ?>>Public — everyone signed in can read and add</option>
+          <option value="members" <?= $vis === 'members' ? 'selected' : '' ?>>Members only — invite people, even to read</option>
+          <option value="public"  <?= $vis === 'public' ? 'selected' : '' ?>>Public — everyone signed in can read it</option>
         </select>
         <span class="hint">
           Public means anybody signed in sees it under <em>Open to join</em> and can add
-          it to their own shelf — read-only unless you pick the second option. Turning
-          it back to members-only removes the people who joined that way; anybody you
-          invited stays. An accepted invitation always wins over this.
+          it to their own shelf as a Viewer, read-only. For anything more, invite
+          somebody directly — a contributor, an editor, up to an administrator.
+          Turning it back to members-only removes the people who joined that way;
+          anybody you invited stays. An accepted invitation always wins over this.
         </span>
       </div>
     <?php endif; ?>

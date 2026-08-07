@@ -53,9 +53,8 @@ $has = ($t['platforms'] + $t['vendors'] + $t['models'] + $t['parts']) > 0;
         <select id="visibility" name="visibility">
           <option value="members">Members only — invite people, even to read</option>
           <option value="public">Public — everyone signed in can read it</option>
-          <option value="public_write">Public — everyone signed in can read and add</option>
         </select>
-        <span class="hint">An accepted invitation always wins over this, so somebody already invited keeps the level they accepted.</span>
+        <span class="hint">Public always means read-only for whoever joins. Invite somebody directly for anything more — a contributor, an editor, up to an administrator — the same as a members-only library.</span>
       </div>
 
       <div class="field field--quarter">
