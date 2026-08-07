@@ -2816,6 +2816,23 @@ paths:
       tags: [Taxonomy]
       summary: Developers and publishers
       parameters:
+        - name: library_id
+          in: query
+          schema: { type: integer }
+          description: >-
+            One library's companies. Companies became per-library when vendors
+            and companies were merged; without this the engine falls back to its
+            own session's working library, which an API client cannot set - so it
+            answered with whatever the server happened to think was current, and
+            with nothing when it thought none was.
+        - name: makes
+          in: query
+          schema: { type: string, enum: [hardware, software] }
+          description: >-
+            One side of the shop. A developer picker wants software makers, a
+            manufacturer picker the hardware ones, and a firm that does both is
+            correctly in each. Applies to the `q` search too, or typing a name
+            would reach past the shelf the rest of the screen is confined to.
         - { name: q, in: query, schema: { type: string } }
       responses: { "200": { description: OK } }
     post:

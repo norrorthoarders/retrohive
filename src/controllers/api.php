@@ -2583,11 +2583,42 @@ function api_category_image_delete(int $id): void
 function api_companies_index(): void
 {
     api_require_auth();
+
+    // Which library, and which side of the shop.
+    //
+    // Neither was accepted here. `all_companies()` with no arguments falls back
+    // to the engine's own working_library(), which is a session notion an API
+    // client has no way to set - so this returned whatever library the *server*
+    // happened to think was current, and nothing at all when it thought none
+    // was. And `?makes=hardware` was ignored outright, so the manufacturer
+    // picker on the hardware model form asked for hardware makers and was
+    // answered with everything or with nothing.
+    //
+    // Both are ordinary query parameters now, like every other picker endpoint.
+    $libraryId = api_query_int('library_id');
+    if ($libraryId !== null && !can_read_library($libraryId)) {
+        api_error('forbidden', 'That library is not one you may read.', 403);
+    }
+    $makes = isset($_GET['makes']) && in_array($_GET['makes'], ['hardware', 'software'], true)
+        ? (string) $_GET['makes'] : null;
+
     $q = isset($_GET['q']) && is_string($_GET['q']) ? trim($_GET['q']) : '';
     if ($q !== '') {
-        $rows = all('SELECT * FROM companies WHERE name LIKE ? ORDER BY name LIMIT 100', ['%' . $q . '%']);
+        // Search is scoped the same way, or typing a name would reach past the
+        // shelf the rest of the screen is confined to.
+        $sql    = 'SELECT * FROM companies WHERE name LIKE ?';
+        $params = ['%' . $q . '%'];
+        if ($libraryId !== null) {
+            $sql .= ' AND library_id = ?';
+            $params[] = $libraryId;
+        }
+        if ($makes !== null) {
+            $sql .= ' AND FIND_IN_SET(?, makes)';
+            $params[] = $makes;
+        }
+        $rows = all($sql . ' ORDER BY name LIMIT 100', $params);
     } else {
-        $rows = all_companies();
+        $rows = all_companies($makes, $libraryId);
     }
     api_ok(array_map('company_to_api', $rows));
 }

@@ -1,5 +1,26 @@
 # Changelog
 
+**`GET /companies` accepted neither the library nor the side of the shop, so the
+Companies screen was empty and every manufacturer picker with it.**
+
+`all_companies()` with no arguments falls back to the engine's own
+`working_library()` - a session notion an API client has no way to set. So this
+endpoint returned whatever library the *server* happened to think was current,
+and nothing at all when it thought none was. Companies became per-library when
+vendors and companies were merged; this was the reader still assuming otherwise.
+
+`?makes=hardware` was ignored outright. The hardware model form has been asking
+for hardware makers all along and being answered with everything, or with
+nothing.
+
+Both are ordinary query parameters now, like every other picker endpoint, and the
+`q` search is scoped the same way - otherwise typing a name reaches past the
+shelf the rest of the screen is confined to.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 123**.
+
 **An audit, and the one real finding from it: five endpoints added in build 110
 were never documented.**
 
