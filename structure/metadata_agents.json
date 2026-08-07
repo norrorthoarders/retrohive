@@ -94,5 +94,55 @@
             "game",
             "application"
         ]
+    },
+    "tmdb": {
+        "tested_with": [
+            "vhs",
+            "dvd",
+            "blu-ray",
+            "laserdisc"
+        ],
+        "platform_map": {},
+        "platform_map_note": "TMDB has no platform concept of its own - a film is a film, not \"the DVD release\" or \"the Blu-ray release\".",
+        "default_for_kinds": [
+            "movie",
+            "tv_show"
+        ]
+    },
+    "tvdb": {
+        "tested_with": [
+            "vhs",
+            "dvd",
+            "blu-ray"
+        ],
+        "platform_map": {},
+        "platform_map_note": "TheTVDB has no platform concept of its own, the same reasoning TMDB's own entry gives.",
+        "default_for_kinds": [
+            "tv_show"
+        ]
+    },
+    "theaudiodb": {
+        "tested_with": [
+            "vinyl",
+            "cd",
+            "cassette"
+        ],
+        "platform_map": {},
+        "platform_map_note": "TheAudioDB has no platform concept of its own - a record is a record, not \"the vinyl pressing\" or \"the cassette\".",
+        "default_for_kinds": [
+            "music"
+        ]
+    },
+    "musicbrainz": {
+        "tested_with": [
+            "vinyl",
+            "cd",
+            "cassette"
+        ],
+        "platform_map": {},
+        "platform_map_note": "MusicBrainz has no platform concept of its own - a record is a record, not \"the vinyl pressing\" or \"the cassette\", the same reasoning TheAudioDB's own entry already gives.",
+        "default_for_kinds": [
+            "music"
+        ]
     }
 }

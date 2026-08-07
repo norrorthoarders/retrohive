@@ -569,6 +569,36 @@ function company_id_for_name(?string $name, string $makes = 'software'): ?int
     return insert_row('companies', $fields);
 }
 
+/**
+ * Find-or-create by name, the same reasoning company_id_for_name()
+ * already settled on, without that function's template-copying half -
+ * people carry no seeded structure data the way companies do, so
+ * there is nothing to copy from, only a name to match or create.
+ * $libraryId explicit rather than read from the session's own working
+ * library: this is called from metadata apply, which already knows
+ * the exact library the item it is crediting belongs to, and that is
+ * not always the same thing as whichever library the session happens
+ * to be working in at the moment.
+ */
+function person_id_for_name(?string $name, int $libraryId): ?int
+{
+    $name = trim((string) $name);
+    if ($name === '' || $libraryId <= 0) {
+        return null;
+    }
+
+    $existing = one('SELECT id FROM people WHERE name = ? AND library_id = ? LIMIT 1', [$name, $libraryId]);
+    if ($existing !== null) {
+        return (int) $existing['id'];
+    }
+
+    return insert_row('people', [
+        'library_id' => $libraryId,
+        'name'       => mb_substr($name, 0, 160),
+        'slug'       => unique_slug('people', slugify($name)),
+    ]);
+}
+
 function find_item(int $id): ?array
 {
     return one('SELECT * FROM v_items WHERE id = ?', [$id]);
@@ -5098,7 +5128,7 @@ function item_kind_label(array $item): string
     if ($role === 'other' && !empty($item['category_id'])) {
         $role = (string) (category_effective_role((int) $item['category_id']) ?? 'other');
     }
-    if (in_array($role, ['machine', 'peripheral', 'game'], true)) {
+    if (in_array($role, ['machine', 'peripheral', 'game', 'movie', 'tv_show', 'music'], true)) {
         return $role;
     }
     if ($role === 'application') {
@@ -5123,6 +5153,20 @@ function item_kind_label(array $item): string
         }
     }
     return 'software';
+}
+
+/**
+ * A human-readable version of item_kind_label()'s own raw value -
+ * ucfirst() alone is correct for every single-word kind (Game,
+ * Machine, Movie, Music...) but leaves a literal underscore in
+ * "tv_show", the one kind that isn't a single word. A small, explicit
+ * map rather than a generic transform, so "TV" reads as the acronym
+ * it is rather than "Tv".
+ */
+function item_kind_display_label(string $kind): string
+{
+    static $labels = ['tv_show' => 'TV show'];
+    return $labels[$kind] ?? ucfirst($kind);
 }
 
 /**

@@ -516,7 +516,7 @@ function item_to_api(array $r, bool $withImages = false): array
         // category's own role, inherited up the tree when a leaf
         // hasn't declared one itself.
         'kind'       => item_kind_label($r),
-        'kind_label' => ucfirst(item_kind_label($r)),
+        'kind_label' => item_kind_display_label(item_kind_label($r)),
         // No 'genre' key. A genre is a category - "Games > Racing" is a leaf like any
         // other - so it is reported once, under 'category', with its full path.
         'developer' => $r['developer_id'] === null ? null : [
@@ -561,6 +561,11 @@ function item_to_api(array $r, bool $withImages = false): array
         'barcode'        => $r['barcode'],
         'language'       => $r['language'],
         'region'         => $r['region'],
+        // The non-hardware counterpart to $hardware['specs'] above - same
+        // shape, same reasoning, its own column since a hardware detail
+        // row is a genuinely separate record from the item itself.
+        'specs'          => $r['specs'] === null
+            ? [] : (json_decode((string) $r['specs'], true) ?: []),
 
         'acquired_on'      => $r['acquired_on'],
         // Who it came from, and what was noted at the time. Both writable and

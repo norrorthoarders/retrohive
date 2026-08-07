@@ -155,6 +155,7 @@ function metadata_provider_types(): array
         'tmdb'        => ['movie', 'tv_show'],
         'tvdb'        => ['tv_show'],
         'theaudiodb'  => ['music'],
+        'musicbrainz' => ['music'],
         // Wikipedia carries the words, the article's own pictures and the Commons
         // photographs, so it is the one source worth asking about anything.
         'wikipedia'   => ['machine', 'peripheral', 'game', 'application'],
@@ -356,7 +357,7 @@ function metadata_provider_types(): array
             // way to answer.
             'filters_by_platform' => false,
             'probe'     => 'Jack Reacher',
-            'tested_with' => [],
+            'tested_with' => ['vhs', 'dvd', 'blu-ray', 'laserdisc'],
             'best_for'  => ['vhs', 'dvd', 'blu-ray', 'laserdisc'],
             'params'    => [
                 'endpoint' => 'https://api.themoviedb.org/3',
@@ -381,7 +382,7 @@ function metadata_provider_types(): array
             // the way a game has a real Amiga release and a real DOS one.
             'filters_by_platform' => false,
             'probe'     => 'Breaking Bad',
-            'tested_with' => [],
+            'tested_with' => ['vhs', 'dvd', 'blu-ray'],
             'best_for'  => ['vhs', 'dvd', 'blu-ray'],
             'params'    => [
                 'endpoint' => 'https://api4.thetvdb.com/v4',
@@ -412,11 +413,33 @@ function metadata_provider_types(): array
             // game has a real Amiga release and a real DOS one.
             'filters_by_platform' => false,
             'probe'     => 'Coldplay',
-            'tested_with' => [],
+            'tested_with' => ['vinyl', 'cd', 'cassette'],
             'best_for'  => ['vinyl', 'cd', 'cassette'],
             'params'    => [
                 'endpoint' => 'https://www.theaudiodb.com/api/v1/json',
                 'api_key'  => '123',
+                'timeout'  => 15,
+            ],
+        ],
+        'musicbrainz' => [
+            'label'     => 'MusicBrainz',
+            'blurb'     => 'Music. Real release-level search - title, artist, label, catalogue '
+                          . 'number, and where the release has one, a real barcode. No key needed, '
+                          . 'but their own API terms require a real contact URL or email in every '
+                          . 'request, not an anonymous one - fill in the "contact" parameter below '
+                          . 'with a URL or address they could actually reach you at.',
+            'needs_key' => false,
+            'domains'   => ['audio'],
+            'homepage'  => 'https://musicbrainz.org/',
+            // No platform concept of its own, the same reasoning
+            // TheAudioDB's own entry already gives.
+            'filters_by_platform' => false,
+            'probe'     => 'Parachutes',
+            'tested_with' => ['vinyl', 'cd', 'cassette'],
+            'best_for'  => ['vinyl', 'cd', 'cassette'],
+            'params'    => [
+                'endpoint' => 'https://musicbrainz.org/ws/2',
+                'contact'  => '',
                 'timeout'  => 15,
             ],
         ],
@@ -1400,6 +1423,11 @@ function metadata_to_item_fields(array $candidate): array
     if (!empty($candidate['release_date'])) $fields['release_date'] = (string) $candidate['release_date'];
     if (!empty($candidate['developer']))    $fields['developer_name'] = mb_substr((string) $candidate['developer'], 0, 160);
     if (!empty($candidate['publisher']))    $fields['publisher_name'] = mb_substr((string) $candidate['publisher'], 0, 160);
+    // The barcode field has sat on items since a few rounds back with no
+    // metadata source ever populating it - the first source with a real
+    // one to offer (a release's own UPC/EAN) closes that gap rather than
+    // leaving it for whichever provider happened to add it next.
+    if (!empty($candidate['barcode']))       $fields['barcode'] = mb_substr((string) $candidate['barcode'], 0, 40);
     // No genre. Genres stopped being their own thing when they were folded into
     // the category tree - `items` has no genre column and nothing reads one - so
     // producing the field meant offering somebody a row that could not be applied,
@@ -3990,6 +4018,135 @@ function tvdb_ensure_token(array $params, string $endpoint, int $timeout): array
 }
 
 /**
+ * MusicBrainz - a genuine release-level search, unlike TheAudioDB's
+ * artist-only free tier: title, artist, year, label, catalogue number,
+ * and where the release actually has one, a real barcode - the first
+ * source this catalogue has that can fill in that field at all.
+ *
+ * Two things MusicBrainz's own docs are explicit about, both honoured
+ * here rather than assumed harmless to skip:
+ *   - a meaningful User-Agent is required, with enough in it to reach
+ *     whoever runs the instance - an anonymous or generic one is
+ *     throttled specifically for being anonymous, separately from the
+ *     ordinary rate limit everyone gets.
+ *   - roughly one request per second per IP is the real limit, the
+ *     strictest of the three checks their docs describe (User-Agent,
+ *     IP, and global) - so the rate limit here is deliberately closer
+ *     to a full second than the ~0.3s other providers use, rather than
+ *     reusing a delay tuned for a source with a more generous limit.
+ */
+function metadata_search_musicbrainz(array $params, string $title, ?string $remotePlatform): array
+{
+    $base = rtrim((string) ($params['endpoint'] ?? 'https://musicbrainz.org/ws/2'), '/');
+    $timeout = (int) ($params['timeout'] ?? 15);
+    $contact = trim((string) ($params['contact'] ?? ''));
+    if ($contact === '') {
+        return [[], 'MusicBrainz: no contact URL or email configured for the User-Agent - '
+                   . 'required by their own API terms, not optional here.'];
+    }
+    $userAgent = 'RetroHive/1.0 (' . $contact . ')';
+    $headers = ['Accept: application/json', 'User-Agent: ' . $userAgent];
+
+    metadata_rate_limit('musicbrainz', (float) ($params['min_delay'] ?? 1.1));
+    $url = $base . '/release?' . http_build_query([
+        'query' => $title, 'fmt' => 'json', 'limit' => (int) ($params['detail_pages'] ?? 8),
+    ]);
+    metadata_debug('musicbrainz: search', $url);
+
+    [$body, $err] = metadata_http_get($url, $headers, $timeout);
+    if ($body === null) {
+        return [[], 'MusicBrainz: ' . $err];
+    }
+    $json = json_decode($body, true);
+    if (isset($json['error'])) {
+        return [[], 'MusicBrainz: ' . (string) $json['error']];
+    }
+    $hits = $json['releases'] ?? [];
+    if (!is_array($hits) || $hits === []) {
+        metadata_debug('musicbrainz: hits', 0);
+        return [[], null];
+    }
+    metadata_debug('musicbrainz: hits', count($hits));
+
+    $out = [];
+    foreach ($hits as $hit) {
+        $candidate = musicbrainz_release_to_candidate($hit);
+        if ($candidate !== null) {
+            $out[] = $candidate;
+        }
+    }
+    return [$out, null];
+}
+
+/** One MusicBrainz release search hit, as a candidate - the search index already carries everything needed, no second lookup per result. */
+function musicbrainz_release_to_candidate(array $r): ?array
+{
+    $title = trim((string) ($r['title'] ?? ''));
+    if ($title === '') {
+        return null;
+    }
+
+    $year = null;
+    $dateRaw = (string) ($r['date'] ?? '');
+    if ($dateRaw !== '' && preg_match('/^(\d{4})/', $dateRaw, $m) === 1) {
+        $year = (int) $m[1];
+    }
+
+    // The first credited artist, not the full joined string with join
+    // phrases like "feat." folded in - the same "one answer, not a
+    // list" this field means everywhere else in this catalogue.
+    $artist = null;
+    $credits = (array) ($r['artist-credit'] ?? []);
+    if ($credits !== [] && isset($credits[0]['artist']['name'])) {
+        $artist = (string) $credits[0]['artist']['name'];
+    }
+
+    // The first label, and its own catalogue number alongside it -
+    // label-info is a list because a release can be co-issued, but one
+    // answer is what this field means here, the same as artist above.
+    $label = null;
+    $catalogNumber = null;
+    $labelInfo = (array) ($r['label-info'] ?? []);
+    if ($labelInfo !== []) {
+        $label = isset($labelInfo[0]['label']['name']) ? (string) $labelInfo[0]['label']['name'] : null;
+        $catalogNumber = isset($labelInfo[0]['catalog-number']) ? (string) $labelInfo[0]['catalog-number'] : null;
+    }
+
+    $specs = [];
+    if (!empty($r['country'])) {
+        $specs['Country'] = (string) $r['country'];
+    }
+    if (!empty($r['status'])) {
+        $specs['Status'] = (string) $r['status'];
+    }
+    if (!empty($r['packaging'])) {
+        $specs['Packaging'] = (string) $r['packaging'];
+    }
+    $media = (array) ($r['media'] ?? []);
+    if ($media !== [] && !empty($media[0]['format'])) {
+        $specs['Format'] = (string) $media[0]['format'];
+    }
+
+    $id = (string) ($r['id'] ?? '');
+
+    return [
+        'remote_id'  => $id,
+        'title'      => $title,
+        'year'       => $year,
+        'developer'  => $artist,
+        'publisher'  => $label,
+        'platform'   => null,
+        'barcode'    => !empty($r['barcode']) ? (string) $r['barcode'] : null,
+        'url'        => $id !== '' ? 'https://musicbrainz.org/release/' . $id : null,
+        'summary'    => null,
+        'images'     => [],
+        'documents'  => [],
+        'hardware'   => [],
+        'specs'      => $catalogNumber !== null ? $specs + ['Catalogue number' => $catalogNumber] : $specs,
+    ];
+}
+
+/**
  * TheAudioDB - for music. The free key ("123") is genuinely more
  * limited than the documentation describes: searchalbum.php and
  * discography.php both return next to nothing on it in practice
@@ -4319,6 +4476,15 @@ function tmdb_movie_details(string $base, string $imgBase, int $id, string $lang
         $specs['Director'] = implode(', ', $directors);
     }
 
+    // Structured, alongside the text spec above rather than instead of
+    // it - the spec row is what a source with no structured credit
+    // concept at all (Wikipedia, an infobox) already falls back to,
+    // and staying consistent with that costs nothing here. This is
+    // the one metadata_apply_credits() actually reads: a real,
+    // linked credit rather than a line of text nobody but a human
+    // reading the review screen can act on.
+    $credits = array_map(fn($name) => ['role_slug' => 'director', 'name' => $name], $directors);
+
     return [
         'remote_id'  => (string) $id,
         'title'      => (string) ($m['title'] ?? ''),
@@ -4335,6 +4501,7 @@ function tmdb_movie_details(string $base, string $imgBase, int $id, string $lang
         'documents'  => [],
         'hardware'   => [],
         'specs'      => $specs,
+        'credits'    => $credits,
     ];
 }
 
@@ -4541,9 +4708,18 @@ function metadata_spec_rows(array $candidate, ?int $itemId): array
 
     // What is on the entry now, by label, so each offered row can say whether it
     // would be filling a gap or changing an answer.
+    //
+    // Hardware's own detail row first, since that is where a hardware
+    // entry's specs genuinely live; a non-hardware entry has no
+    // item_hardware row at all, so this simply finds nothing and falls
+    // through to the entry's own specs column instead - no domain check
+    // needed, since only one of the two places can ever have a row.
     $current = [];
     if ($itemId !== null) {
         $raw = scalar('SELECT specs FROM item_hardware WHERE item_id = ?', [$itemId]);
+        if ($raw === null) {
+            $raw = scalar('SELECT specs FROM items WHERE id = ?', [$itemId]);
+        }
         foreach ((array) (json_decode((string) $raw, true) ?: []) as $row) {
             $label = trim((string) ($row['label'] ?? ''));
             if ($label !== '') {
@@ -4584,7 +4760,20 @@ function metadata_apply_specs(int $itemId, array $rows): int
     if ($rows === []) {
         return 0;
     }
-    $raw      = scalar('SELECT specs FROM item_hardware WHERE item_id = ?', [$itemId]);
+    // Which table actually holds this entry's specs - hardware's own
+    // detail row, or the entry's own column for everything else. Read
+    // from the domain rather than guessing from whether a row already
+    // exists, since a brand-new hardware entry's very first lookup has
+    // no item_hardware row yet either.
+    $isHardware = scalar(
+        'SELECT s.slug FROM items i JOIN categories c ON c.id = i.category_id
+          JOIN sections s ON s.id = c.section_id WHERE i.id = ?',
+        [$itemId]
+    ) === 'hardware';
+
+    $raw = $isHardware
+        ? scalar('SELECT specs FROM item_hardware WHERE item_id = ?', [$itemId])
+        : scalar('SELECT specs FROM items WHERE id = ?', [$itemId]);
     $existing = (array) (json_decode((string) $raw, true) ?: []);
 
     $byLabel = [];
@@ -4618,12 +4807,108 @@ function metadata_apply_specs(int $itemId, array $rows): int
         return 0;
     }
 
-    // The row may not exist yet: a lookup can be the first thing that puts
-    // hardware detail on an entry.
-    q('INSERT INTO item_hardware (item_id, specs) VALUES (?, ?)
-       ON DUPLICATE KEY UPDATE specs = VALUES(specs)',
-      [$itemId, json_encode(array_values($existing), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)]);
+    $encoded = json_encode(array_values($existing), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($isHardware) {
+        // The row may not exist yet: a lookup can be the first thing that
+        // puts hardware detail on an entry.
+        q('INSERT INTO item_hardware (item_id, specs) VALUES (?, ?)
+           ON DUPLICATE KEY UPDATE specs = VALUES(specs)', [$itemId, $encoded]);
+    } else {
+        q('UPDATE items SET specs = ? WHERE id = ?', [$encoded, $itemId]);
+    }
     return $changed;
+}
+
+/**
+ * A metadata candidate's director, composer, or other credit - written
+ * as a real, linked row (a person, a role, a title), not a line of
+ * text nobody but a human reading the review screen could act on.
+ *
+ * Credits belong to a title, not an item, so a copy with nothing
+ * linked yet gets one created from its own current fields first -
+ * exactly what save_title() would be given by hand, filled in from
+ * what the item already carries. A title made this way stays linked
+ * afterward: crediting a second copy of the same release finds it by
+ * name and platform rather than making another.
+ */
+function metadata_apply_credits(int $itemId, array $item, array $candidate, array $wantedIndexes): int
+{
+    $offered = (array) ($candidate['credits'] ?? []);
+    if ($offered === [] || $wantedIndexes === []) {
+        return 0;
+    }
+
+    $libraryId = (int) ($item['library_id'] ?? 0);
+    if ($libraryId <= 0) {
+        return 0;
+    }
+
+    $titleId = isset($item['title_id']) ? (int) $item['title_id'] : 0;
+    if ($titleId <= 0) {
+        [$newTitleId, $errors] = save_title(null, [
+            'name'         => (string) ($item['title'] ?? ''),
+            'platform_id'  => (int) ($item['platform_id'] ?? 0),
+            'category_id'  => $item['category_id'] ?? null,
+            'developer'    => $item['developer_name'] ?? null,
+            'publisher'    => $item['publisher_name'] ?? null,
+            'release_year' => $item['release_year'] ?? null,
+        ]);
+        // Nothing to credit without somewhere to attach it - a title
+        // needs at minimum a name and a real platform, both of which
+        // an item already has, so this failing means something is
+        // wrong with the item itself rather than a real edge case.
+        if ($errors !== [] || $newTitleId === null) {
+            return 0;
+        }
+        $titleId = (int) $newTitleId;
+        update_row('items', $itemId, ['title_id' => $titleId]);
+    }
+
+    $added = 0;
+    foreach ($wantedIndexes as $index) {
+        $row = $offered[(int) $index] ?? null;
+        if (!is_array($row)) {
+            continue;
+        }
+        $roleSlug = trim((string) ($row['role_slug'] ?? ''));
+        $name     = trim((string) ($row['name'] ?? ''));
+        if ($roleSlug === '' || $name === '') {
+            continue;
+        }
+
+        $role = one('SELECT id FROM credit_roles WHERE slug = ? AND library_id = ?', [$roleSlug, $libraryId]);
+        if ($role === null) {
+            // Not a failure worth stopping over - a library that has
+            // deleted or never had this role simply cannot record this
+            // one credit, the same way a hardware field with nowhere
+            // to go is silently skipped elsewhere in this same import.
+            continue;
+        }
+        $roleId = (int) $role['id'];
+
+        $personId = person_id_for_name($name, $libraryId);
+        if ($personId === null) {
+            continue;
+        }
+
+        $dupe = one(
+            'SELECT id FROM credits WHERE title_id = ? AND role_id = ? AND person_id = ?',
+            [$titleId, $roleId, $personId]
+        );
+        if ($dupe !== null) {
+            continue;                          // already credited, not a second row
+        }
+
+        insert_row('credits', [
+            'library_id' => $libraryId,
+            'title_id'   => $titleId,
+            'role_id'    => $roleId,
+            'person_id'  => $personId,
+        ]);
+        $added++;
+    }
+
+    return $added;
 }
 
 /**

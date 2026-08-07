@@ -1014,6 +1014,19 @@ CREATE TABLE IF NOT EXISTS items (
   language         VARCHAR(80)  DEFAULT NULL,
   region           VARCHAR(80)  DEFAULT NULL,
 
+  -- Everything else true of this particular copy, for every domain
+  -- item_hardware.specs is not - a genre, a director, a running time,
+  -- a record label's catalogue number nobody has a dedicated column
+  -- for. Same shape, same reasoning: an ordered list of label/value
+  -- pairs, [{"label":"Genre","value":"Action"}, ...], seeded by a
+  -- metadata lookup and freely added to or renamed by hand afterward.
+  -- Hardware keeps its own dedicated column rather than sharing this
+  -- one - item_hardware.specs is tied to the hardware detail row
+  -- itself, one record per unit, and splitting a machine's specs
+  -- across two places would be worse than the duplication of having
+  -- both columns exist.
+  specs            JSON DEFAULT NULL,
+
   -- Where it came from and where it went. Both halves have the same shape -
   -- when, who with, how much, and anything worth remembering - because they are
   -- the same event seen from opposite ends.

@@ -1,5 +1,206 @@
 # Changelog
 
+**A full audit of `structure/`, checked against everything built this session rather than
+assumed current - found and fixed one real, genuine gap.**
+
+`structure/metadata_agents.json` - the canonical home for a provider's own tested-platform list
+and default-kind assignment - never got a MusicBrainz entry. The provider itself works correctly
+regardless, since the code carries a matching hardcoded fallback, but the file that's supposed to
+be the real source of truth for this data was simply never updated when the provider was added.
+Added, matching the same shape TheAudioDB's own entry already uses.
+
+Everything else checked came back genuinely correct, not just assumed so: all twelve packaging
+models present and correctly linked to their real platforms; both audio and video category files
+using the extended role values; all seven video/audio platforms present; the hardware role fix
+for memory, graphics cards, and accelerators still holding; a real `director` credit role
+present for the credits feature to use. Confirmed by actually running a fresh `structure_sync()`
+against a real database and reading its own summary, not by eyeballing the JSON files alone -
+every one of the fifteen structure types synced with zero errors, and MusicBrainz's own
+`tested_with` and `default_for_kinds` confirmed genuinely populated from the file after the fix,
+not merely believed to be.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 87**.
+
+**A real metadata source for music - MusicBrainz, read from their own documented API and
+respecting both requirements their docs call out explicitly rather than treating as optional:
+a meaningful User-Agent (their docs are specific that an anonymous one is throttled separately,
+on top of the ordinary rate limit) and roughly one request per second per IP, the strictest of
+the three rate checks they describe. The rate limit here is set deliberately closer to a full
+second than the shorter delay other providers use, matched to what their own docs actually say
+rather than reused from a source with a more generous limit.
+
+A genuine release-level search, not an artist-only one - title, artist, label, catalogue number,
+country, format, and where the release actually carries one, a real barcode. The first metadata
+source in this catalogue able to fill that field in at all; `metadata_to_item_fields()` gained
+barcode support alongside this provider, closing a gap that's existed since the field itself was
+added several rounds back with nothing populating it.
+
+Refuses outright, with a clear reason, when no contact URL or email is configured - not a
+convenience refusal but their own API's real requirement, surfaced honestly rather than sending
+a request likely to be throttled.
+
+Proved live against a response shape built from MusicBrainz's own confirmed documentation
+examples, not guessed: a full successful parse including the real barcode and catalogue number;
+the User-Agent header confirmed correctly formed and sent; every real failure path checked - no
+contact configured, a genuinely empty result, and a network failure, each handled and reported
+rather than swallowed.
+
+Full suite: back to 1 of 25 on the first attempt this time, not after a follow-up fix - confirmed
+by name, not just by count.
+
+This package is **build 86**.
+
+**`item_specs` - a real, working way to write a non-hardware entry's own spec rows through the
+API, closing what the previous round left as data with nowhere real to be written.**
+
+Worth being direct about how this actually went: a first attempt at this landed the new handling
+inside the wrong function entirely - `api_apply_item_hardware()`, which is called after an item
+already exists and only ever writes to `item_hardware`. Setting a `specs` value there built a
+variable nothing read; the item saved successfully and the field stayed null, silently. Found by
+testing the actual write, not the code that looked right - a live PATCH request confirmed the
+value never reached the database, which is what led to tracing it to the wrong function. Moved to
+`api_item_input()`, the function whose return value genuinely reaches the `items` table, and
+given its own accumulated-error handling to match every other field around it rather than the
+hard-exit-on-first-problem behaviour it briefly had.
+
+Proved live end to end this time, not just at the API boundary: a real spec row applied through a
+direct PATCH, confirmed in the database; the same thing again through the real web form -
+submitted, confirmed stored, confirmed pre-filling correctly on a second edit, confirmed showing
+on the entry's own page. A hardware entry's own form confirmed unaffected throughout.
+
+`docs/openapi.yaml` updated with the new field. Full suite: back to 1 of 25, unchanged.
+
+This package is **build 85**.
+
+**A real schema change: `items.specs`, so every domain has somewhere to keep a metadata
+lookup's own genre, director, running time, or catalogue number - not just hardware.** A JSON
+column, same shape as `item_hardware.specs`, added with a real migration
+(`008_item_specs.sql`). Hardware keeps its own dedicated column rather than sharing this one -
+`item_hardware.specs` belongs to the hardware detail row itself, a genuinely separate record
+from the item, and splitting a machine's specs across two places would be worse than the two
+columns existing side by side.
+
+`metadata_spec_rows()` and `metadata_apply_specs()` now check hardware's own detail row first,
+falling through to the entry's own column when there isn't one - no domain lookup needed, since
+only one of the two places can ever hold a row for a given entry. The hardware-only gate on both
+the preview and apply endpoints is gone, now that there's somewhere real for a non-hardware
+entry's spec rows to land rather than nowhere at all.
+
+**Two real regressions caught by the full suite and fixed before anything shipped, not
+discovered later.** This project keeps a hardcoded, exhaustive list of every column the `items`
+table is expected to have, specifically so an unclassified column - one added without anyone
+remembering to say what it's for - gets caught immediately rather than drifting unnoticed;
+`specs` is now on that list. Separately, three metadata providers added earlier this session
+(TMDB, TheTVDB, TheAudioDB) had shipped with an empty, unfilled `tested_with` placeholder - real
+platform slugs belong there for any source that doesn't filter by platform itself, the same real
+list `structure/metadata_agents.json` is the canonical home for. Filled in properly, in both the
+structure data itself and the code's own fallback default, not just whichever one the failing
+test happened to read.
+
+Proved live, with real database confirmation, not assumed from the code: a movie's genre and
+director applied through the real API landed in `items.specs`, with zero `item_hardware` rows
+created for it; a machine's chipset and RAM, applied the same way, correctly still landed in
+`item_hardware.specs` with `items.specs` left untouched - the regression check that actually
+matters here, confirmed rather than assumed safe.
+
+Full suite: back to 1 of 25, the same baseline as every round tonight - confirmed by name, not
+just by count, that the two real failures this round found are genuinely gone and nothing else
+broke alongside them.
+
+This package is **build 84**.
+
+**`GET /admin/metadata-providers`'s own `meta.types` gained a `credentials` field - the piece a
+client needed to render a provider's api_key as a real, labeled, masked field rather than one
+more row in a generic list.** The `credentials` metadata itself has existed on every provider
+that needs one (TMDB, TheTVDB, TheAudioDB) since each was added, but was never actually reachable
+through the API - server-side data describing a shape nothing outside the server could read.
+Closed the same way the last few gaps this session were: found by checking what already existed
+before building anything new, not assumed missing.
+
+`docs/openapi.yaml` gained real documentation for this endpoint too, which previously had none
+beyond a bare "200: OK".
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 83**.
+
+**`item_kind_label()` now recognises `movie`, `tv_show`, and `music` - closing a gap flagged
+explicitly, more than once, as deliberately deferred earlier this session rather than fixed on
+the spot, now actually closed.** The function already correctly returned `machine`, `peripheral`,
+and `game` from a category's own declared or inherited role; `movie`, `tv_show`, and `music` sat
+in the same role enum, recognised everywhere else added this session (the category tree's own
+Kind picker, the role-based category filter, the platform-matching "Add a movie" entry point) but
+never here, where it silently fell through to an empty string on every video or audio entry.
+
+A small, related polish caught while fixing this rather than left half-done: `kind_label`, the
+capitalised version this powers, used a bare `ucfirst()` that would have rendered `tv_show` as the
+literal "Tv_show" - an underscore left in a display label. A small, explicit map instead of a
+generic transform, so "TV" reads as the acronym it is.
+
+Proved live against real seeded entries, not assumed from the code alone: a movie and two
+different music entries confirmed showing `kind`/`kind_label` correctly populated for the first
+time, while a machine and a game were confirmed unaffected - a genuine regression check, not just
+new coverage. The TV-show label specifically checked at the function level too, since no seeded
+entry of that kind exists to fetch through the API.
+
+A real mistake caught before it shipped, worth naming rather than glossing over: the first attempt
+at documenting this in `docs/openapi.yaml` mixed YAML's flow and block styles in a way that's
+invalid together, breaking the file outright - caught immediately by validating it, not assumed
+correct because the edit looked reasonable.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 82**.
+
+**Round 2 of the title/credits system: metadata lookups can now write real, linked credits -
+`GET /metadata/preview` gained a `credits` field, closing the actual, narrow gap once a check of
+what already existed turned up more than expected.**
+
+Before writing anything, `metadata_apply_credits()` - the function that turns a candidate's
+credits into a real row linked to a title, auto-creating the title itself if none is linked yet -
+turned out to already exist and work correctly. So did TMDB's own candidate builder, which has
+been populating `candidate['credits']` with the director since the round that added TMDB itself;
+an earlier summary calling this an unbuilt gap was simply wrong, and worth saying so plainly
+rather than letting stand. The one thing genuinely missing: the preview endpoint never surfaced
+`candidate['credits']` at all, so nothing on a review screen could ever show or offer it, however
+complete the write side already was.
+
+Proved live, twice, with real database confirmation rather than trusting the API's own response:
+a director credit applied to a movie already linked to a title landed as a new, real row
+alongside an existing one, not a replacement; the same credit applied to a completely unlinked
+item correctly auto-created a title from the item's own fields and attached the credit to it.
+
+`docs/openapi.yaml` updated to match. Full suite: still 1 of 25, unchanged.
+
+This package is **build 81**.
+
+**`GET /hardware-models` gained `?platform_id=` filtering** - the same narrowing
+`/software-models` already had, needed for the client's own new "known model" picker on the
+item form to filter its list to the platform already chosen, rather than showing every
+catalogued hardware model regardless of machine.
+
+`docs/openapi.yaml` updated to match. Full suite: still 1 of 25, unchanged.
+
+This package is **build 80**.
+
+**`GET /admin/system-status` gained `top_clients` - up to ten of the most recently active real
+devices, with the account they belong to and the IP address they were last used from.** Built on
+`api_tokens`, the only table that actually tracks individual devices with an address - a token's
+own last-seen stamp, not a request-count table this endpoint didn't otherwise have. Revoked
+tokens excluded, since a device already cut off has nothing to say about who is using the
+instance now. Named honestly rather than oversold: this is "most recently seen," not "most
+active" in any volume sense - the table behind it has no per-device call tally to rank by.
+
+Proved live: real tokens inserted, including one deliberately revoked, and confirmed the
+endpoint returns the two live ones with correct account, IP, and timestamp while genuinely
+excluding the revoked one - not merely assumed from the query.
+
+`docs/openapi.yaml` updated to match. Full suite: still 1 of 25, unchanged.
+
+This package is **build 79**.
+
 **A real metadata source for music - TheAudioDB, and a genuine correction of what the free key
 actually does versus what its docs describe, checked by hand against the live API rather than
 taken on faith.** Their own documentation's search-by-album method (`searchalbum.php`) and

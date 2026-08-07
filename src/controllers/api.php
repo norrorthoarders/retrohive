@@ -490,6 +490,36 @@ function api_item_input(array $in, bool $partial, ?array $existing = null): arra
             }
         }
     }
+
+    // The non-hardware counterpart to item_hardware.specs, handled
+    // separately above by api_apply_item_hardware() - a distinct input
+    // key on purpose, not the same "specs" name reused, since that name
+    // is already spoken for by hardware's own detail row and routing
+    // both through one key would mean guessing which table a caller
+    // meant. Same {label, value} shape, same validation, written here
+    // instead since this is the function whose $data actually reaches
+    // the items table - api_apply_item_hardware() only ever writes to
+    // item_hardware, and a first attempt at this that set $data there
+    // silently went nowhere.
+    if ($has('item_specs')) {
+        if (!is_array($in['item_specs'])) {
+            $errors['item_specs'] = 'Must be an array.';
+        } else {
+            $rows = [];
+            foreach ($in['item_specs'] as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $label = mb_substr(trim((string) ($row['label'] ?? '')), 0, 80);
+                $value = mb_substr(trim((string) ($row['value'] ?? '')), 0, 400);
+                if ($label !== '') {
+                    $rows[] = ['label' => $label, 'value' => $value];
+                }
+            }
+            $data['specs'] = $rows === [] ? null : json_encode($rows, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+    }
+
     if ($has('category_id')) {
         $data['category_id'] = (int) $in['category_id'];
         if (one('SELECT id FROM categories WHERE id = ?', [$data['category_id']]) === null) {
@@ -2656,6 +2686,7 @@ function api_hardware_models_index(): void
         $libraryId = $lib === null ? 0 : (int) $lib['id'];
     }
     $role = isset($_GET['role']) && in_array($_GET['role'], ['machine', 'peripheral'], true) ? $_GET['role'] : null;
+    $platformId = isset($_GET['platform_id']) && (int) $_GET['platform_id'] > 0 ? (int) $_GET['platform_id'] : null;
 
     $sql = "SELECT m.*, c.name AS category_name, c.slug AS category_slug, c.role AS category_role,
                    p.name AS platform_name, p.slug AS platform_slug,
@@ -2669,6 +2700,10 @@ function api_hardware_models_index(): void
     if ($role !== null) {
         $sql .= ' AND c.role = ?';
         $params[] = $role;
+    }
+    if ($platformId !== null) {
+        $sql .= ' AND m.platform_id = ?';
+        $params[] = $platformId;
     }
     $sql .= ' ORDER BY p.name, m.sort_order, m.name';
 
@@ -3671,7 +3706,14 @@ function api_metadata_preview(): void
     $hwFields = $isHardware
         ? metadata_to_hardware_fields($candidate, $item !== null ? (int) $item['platform_id'] : null)
         : [];
-    $specRows = $isHardware ? metadata_spec_rows($candidate, $itemId) : [];
+    // Not hardware-only - a genre or a director carries the same way on
+    // a film or a record as a memory size does on a card, and now has
+    // somewhere real to be written for either: items.specs for
+    // everything else, alongside item_hardware.specs for hardware
+    // itself. The hardware *fields* above stay gated (interface, board
+    // revision - nothing a non-hardware entry could ever use), but a
+    // spec row is a domain-agnostic {label, value} pair.
+    $specRows = metadata_spec_rows($candidate, $itemId);
     $alreadyHere = metadata_images_already_here($candidate, $itemId);
 
     // What the entry currently has, named the same way the fields
@@ -3709,6 +3751,11 @@ function api_metadata_preview(): void
             'field' => $f, 'label' => $hwLabels[$f] ?? $f, 'value' => $v, 'current' => $hwCurrent[$f] ?? null,
         ], array_keys($hwFields), array_values($hwFields)),
         'spec_rows' => $specRows,
+        'credits' => array_values(array_map(fn($i, $c) => [
+            'index'     => (string) $i,
+            'role_slug' => $c['role_slug'] ?? '',
+            'name'      => $c['name'] ?? '',
+        ], array_keys((array) ($candidate['credits'] ?? [])), array_values((array) ($candidate['credits'] ?? [])))),
         'documents' => array_values($candidate['documents'] ?? []),
         'images' => array_map(fn($i, $img) => array_merge($img, ['already_here' => !empty($alreadyHere[(int) $i])]),
                               array_keys($candidate['images'] ?? []), array_values($candidate['images'] ?? [])),
@@ -3745,11 +3792,13 @@ function api_metadata_apply(): void
 
     $wanted     = is_array($in['apply'] ?? null) ? array_map('strval', $in['apply']) : [];
     $wantedHw   = is_array($in['apply_hw'] ?? null) ? array_map('strval', $in['apply_hw']) : [];
+    $wantedCredits = is_array($in['apply_credits'] ?? null) ? array_map('strval', $in['apply_credits']) : [];
     $wantedSpec = is_array($in['apply_spec'] ?? null) ? array_map('strval', $in['apply_spec']) : [];
     $wantedDoc  = is_array($in['documents'] ?? null) ? array_map('strval', $in['documents']) : [];
     $wantedArt  = is_array($in['artwork'] ?? null) ? array_map('strval', $in['artwork']) : [];
 
-    if ($wanted === [] && $wantedHw === [] && $wantedSpec === [] && $wantedDoc === [] && $wantedArt === []) {
+    if ($wanted === [] && $wantedHw === [] && $wantedSpec === [] && $wantedDoc === [] && $wantedArt === []
+        && $wantedCredits === []) {
         api_error('validation_failed', 'Tick at least one field, image, document or hardware detail to import.', 422);
     }
 
@@ -3823,10 +3872,15 @@ function api_metadata_apply(): void
     }
 
     $specsAdded = 0;
-    if ($isHardware && $wantedSpec !== []) {
+    if ($wantedSpec !== []) {
         $offered = metadata_spec_rows($candidate, $itemId);
         $chosen = array_values(array_filter($offered, fn($row) => in_array((string) $row['index'], $wantedSpec, true)));
         $specsAdded = metadata_apply_specs($itemId, $chosen);
+    }
+
+    $creditsAdded = 0;
+    if ($wantedCredits !== []) {
+        $creditsAdded = metadata_apply_credits($itemId, $item, $candidate, $wantedCredits);
     }
 
     $docs = 0;
@@ -3843,11 +3897,12 @@ function api_metadata_apply(): void
     }
 
     log_event('metadata', 'import.applied',
-        sprintf('entry %d: %d field(s), %d hardware, %d image(s), %d doc(s), %d spec row(s)',
-                $itemId, count($data), count($hwFields), $art, $docs, $specsAdded),
+        sprintf('entry %d: %d field(s), %d hardware, %d image(s), %d doc(s), %d spec row(s), %d credit(s)',
+                $itemId, count($data), count($hwFields), $art, $docs, $specsAdded, $creditsAdded),
         LOG_INFO, ['item' => $itemId, 'source' => (string) ($candidate['provider'] ?? ''),
                    'fields' => count($data), 'hardware' => count($hwFields), 'images' => $art,
-                   'images_already_there' => $artSame, 'links' => $docs, 'specs' => $specsAdded]);
+                   'images_already_there' => $artSame, 'links' => $docs, 'specs' => $specsAdded,
+                   'credits' => $creditsAdded]);
 
     api_ok([
         'fields_applied'   => count($data),
@@ -3856,6 +3911,7 @@ function api_metadata_apply(): void
         'images_already_there' => $artSame,
         'documents_added'  => $docs,
         'spec_rows_added'  => $specsAdded,
+        'credits_added'    => $creditsAdded,
         'provider_label'   => $candidate['provider_label'] ?? null,
     ]);
 }
@@ -4825,7 +4881,17 @@ function api_metadata_providers_index(): void
     $taken = array_column($configured, 'type');
     $types = [];
     foreach (metadata_provider_types() as $key => $def) {
-        $types[$key] = ['label' => (string) ($def['label'] ?? $key), 'configured' => in_array($key, $taken, true)];
+        $types[$key] = [
+            'label'       => (string) ($def['label'] ?? $key),
+            'configured'  => in_array($key, $taken, true),
+            // What each provider actually asks for and how it should
+            // be shown - a nice label, and whether the value belongs
+            // masked. Without this a client editing an already-added
+            // source has no way to tell "api_key" apart from an
+            // ordinary tuning knob like "timeout", and would show
+            // both as the same bare, unlabelled text row.
+            'credentials' => $def['credentials'] ?? [],
+        ];
     }
     api_ok(array_map(static function (array $r): array {
         return [
@@ -5390,6 +5456,21 @@ function api_admin_system_status(): void
         ];
     }
 
+    // The most recently active real devices, not a request count -
+    // api_tokens has no per-call tally of its own, only a last-seen
+    // stamp each authenticated call already updates, so "most active"
+    // here honestly means "most recently seen" rather than a volume
+    // this table was never built to track. Revoked tokens dropped:
+    // a device somebody has already cut off has nothing to tell an
+    // administrator checking who is currently using the instance.
+    $topClients = all(
+        'SELECT t.name, t.platform, t.scope, t.last_used_at, t.last_used_ip,
+                t.created_at, u.username, u.display_name
+           FROM api_tokens t JOIN users u ON u.id = t.user_id
+          WHERE t.revoked_at IS NULL AND t.last_used_at IS NOT NULL
+       ORDER BY t.last_used_at DESC LIMIT 10'
+    );
+
     api_ok([
         'php' => [
             'version'          => PHP_VERSION,
@@ -5463,6 +5544,16 @@ function api_admin_system_status(): void
                 'timeline'       => $recentTimeline,
             ],
         ],
+        'top_clients' => array_map(fn($r) => [
+            'name'         => $r['name'],
+            'platform'     => $r['platform'],
+            'scope'        => $r['scope'],
+            'username'     => $r['username'],
+            'display_name' => $r['display_name'],
+            'last_used_at' => api_datetime($r['last_used_at']),
+            'last_used_ip' => $r['last_used_ip'],
+            'created_at'   => api_datetime($r['created_at']),
+        ], $topClients),
     ]);
 }
 

@@ -487,8 +487,13 @@ paths:
             looks_right (bool), fields, hardware_fields (each entry:
             field, label, value, current - hardware_fields always empty
             for a non-hardware entry or no item_id), spec_rows (each:
-            label, value, current, index), documents (passed through
-            unchanged), images (each candidate image plus already_here).
+            label, value, current, index), credits (each: index,
+            role_slug, name - a candidate's own structured credits,
+            passed through with an index so apply can be told which
+            ones were ticked; empty for a source with no structured
+            credit concept, the same as spec_rows), documents (passed
+            through unchanged), images (each candidate image plus
+            already_here).
         "403": { description: A read-only token }
         "404": { description: item_id names no entry this token may read }
         "422": { description: candidate was missing or not an object }
@@ -508,7 +513,13 @@ paths:
         detection the real handler already has, specification rows
         merged into what the entry already has rather than overwritten,
         documents kept as links only - nothing is downloaded but the
-        artwork itself.
+        artwork itself. apply_credits writes a real, linked credit (a
+        person or a company, a role, a title) rather than a line of
+        text - the entry gains a title first if it has none yet, made
+        from its own current fields, since a credit belongs to a title
+        and not to a copy. Silently skipped rather than erroring: a
+        credit whose role does not exist in this library, or one
+        already recorded for that person and role on that title.
       requestBody:
         required: true
         content:
@@ -522,6 +533,7 @@ paths:
                 apply: { type: array, items: { type: string }, description: Item field names from a preview's own fields array. }
                 apply_hw: { type: array, items: { type: string }, description: Hardware field names - ignored entirely on a non-hardware entry. }
                 apply_spec: { type: array, items: { type: string }, description: Spec row index values, as strings, from a preview's own spec_rows. }
+                apply_credits: { type: array, items: { type: string }, description: "Index values, as strings, into the candidate's own credits array (each a role_slug/name pair)." }
                 documents: { type: array, items: { type: string }, description: Document index values, as strings, from the candidate's own documents array. }
                 artwork: { type: array, items: { type: string }, description: Image index values, as strings, from the candidate's own images array. }
       responses:
@@ -529,11 +541,11 @@ paths:
           description: >-
             fields_applied, hardware_applied, images_added,
             images_already_there, documents_added, spec_rows_added,
-            provider_label - counts, not the data itself, since the
-            caller already has everything it just sent.
+            credits_added, provider_label - counts, not the data itself,
+            since the caller already has everything it just sent.
         "403": { description: A read-only token, or that library is not one this account may write }
         "404": { description: item_id names no entry }
-        "422": { description: candidate was missing or not an object, or nothing at all was ticked across apply/apply_hw/apply_spec/documents/artwork }
+        "422": { description: candidate was missing or not an object, or nothing at all was ticked across apply/apply_hw/apply_spec/apply_credits/documents/artwork }
 
   /admin/users:
     get:
@@ -1666,6 +1678,16 @@ paths:
     get:
       tags: [Admin]
       summary: Configured sources, and every type available to add
+      description: >-
+        data is the configured sources - id, type, name, is_enabled,
+        priority, params (the type's own defaults merged with any
+        stored override), last_error. meta.types is every type this
+        instance knows how to speak to, keyed the same way params
+        would reference them: label, configured (already added or
+        not), and credentials - the handful of params, if any, that
+        are real secrets or account-specific values rather than
+        tuning knobs, each with its own label and whether it should
+        be shown masked. Empty for a source that needs no key at all.
       responses: { "200": { description: OK } }
     post:
       tags: [Admin]
@@ -1938,7 +1960,14 @@ paths:
             with requests, errors, and by_source as {source: count} -
             closer to real time than the hourly timeline above, kept
             for a much shorter window on purpose since that is all the
-            table behind it is pruned down to hold).
+            table behind it is pruned down to hold), and top_clients as
+            up to ten of the most recently active real devices (revoked
+            tokens excluded) - name, platform, scope, the owning user's
+            username and display_name, last_used_at, last_used_ip, and
+            created_at. "Most active" here means most recently seen, not
+            a call count - api_tokens carries no per-device request
+            tally of its own, only the timestamp every authenticated
+            call already updates.
         "403": { description: That area is for administrators }
 
   /platforms:
@@ -2745,6 +2774,7 @@ paths:
       parameters:
         - { name: library_id, in: query, schema: { type: integer } }
         - { name: role, in: query, schema: { type: string, enum: [machine, peripheral] } }
+        - { name: platform_id, in: query, schema: { type: integer } }
       responses: { "200": { description: OK } }
     post:
       tags: [Taxonomy]
@@ -3381,10 +3411,11 @@ components:
         kind:
           type: string
           description: >-
-            game, software (meaning application), machine, or peripheral -
-            the category's own declared or inherited role. Empty string
-            when nothing above the leaf has ever said.
-        kind_label: { type: string, description: kind, capitalised - what a table column header shows. }
+            game, software (meaning application), machine, peripheral,
+            movie, tv_show, or music - the category's own declared or
+            inherited role. Empty string when nothing above the leaf
+            has ever said.
+        kind_label: { type: string, description: "kind, in a form fit to show - capitalised for a single word, \"TV show\" (not the literal \"Tv_show\") for the one kind that isn't one - what a table column header shows." }
         genre: { oneOf: [{ $ref: "#/components/schemas/Ref" }, { type: "null" }] }
         developer: { oneOf: [{ $ref: "#/components/schemas/Ref" }, { type: "null" }] }
         publisher: { oneOf: [{ $ref: "#/components/schemas/Ref" }, { type: "null" }] }
@@ -3461,6 +3492,22 @@ components:
         barcode: { type: [string, "null"] }
         language: { type: [string, "null"] }
         region: { type: [string, "null"] }
+        item_specs:
+          type: array
+          description: >-
+            The non-hardware counterpart to hardware's own specs -
+            a genre, a director, a running time, whatever this
+            particular domain calls its own. {label, value} rows,
+            same shape and same reasoning as hardware's own specs
+            field, written to the entry itself rather than a
+            hardware detail row. A distinct key on purpose: "specs"
+            already belongs to item_hardware, and an entry is never
+            both at once.
+          items:
+            type: object
+            properties:
+              label: { type: string, maxLength: 80 }
+              value: { type: string, maxLength: 400 }
         acquired_on: { type: [string, "null"], format: date }
         acquired_price: { type: [number, "null"] }
         currency: { type: string, maxLength: 3 }
