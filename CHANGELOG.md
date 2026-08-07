@@ -1,5 +1,71 @@
 # Changelog
 
+**"Can this person sign in, and as what?" is an API question now.**
+
+`ldap_inspect_user()` has existed throughout and was reachable from the engine's
+own directory screen and nowhere else - so the question an administrator actually
+asks when somebody cannot get in could only be asked from one place.
+
+`POST /admin/auth-methods/inspect`, taking the same shape as the test beside it:
+a saved directory by id, or whatever is on an unsaved form, or both merged. A
+directory can be interrogated before it is saved rather than only after.
+
+**`found` and `allowed` come back separately**, and that is the whole value. An
+entry the search cannot see is a base DN or a filter problem; one it finds but
+refuses is a group membership problem. Those are different afternoons, and a
+single "cannot sign in" sends somebody down the wrong one.
+
+Always 200. "Not found" and "found but refused" are successful lookups reporting
+bad news, and a 404 there would make a client show a broken-request error for a
+working request.
+
+Logged as a security event: reading who a directory says somebody is - their
+name, their address, their groups - is reading personal data out of another
+system, and a log that recorded only the sign-ins would not show it happening.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 126**.
+
+**The log can be pruned through the API, and the list says how much a prune would
+take.**
+
+`log_prune()` has existed since the beginning, reachable from the engine's own
+settings screen and from the nightly `bin/notify.php` and from nowhere else - so
+a client could read the log and never tidy it.
+
+`POST /admin/logs/prune`. **The rule is not a parameter.** Retention is an
+instance setting, and letting a request name its own cutoff would put "delete the
+whole log" one request away from anybody who can read it. Retention set to keep
+everything is refused with a 422 rather than succeeding and removing nothing: a
+button that reports success and does nothing is worse than one that explains
+itself.
+
+`GET /admin/logs` now sends `prunable` and `retention_days` alongside the
+entries, so a client can label the button with its effect instead of asking
+somebody to press it and find out. New `log_prunable_count()` asks the same
+question `log_prune()` answers by acting.
+
+The prune is itself logged, after the delete so the entry survives it.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 125**.
+
+**A company can be given a logo through the API.**
+
+`store_company_logo()` has existed throughout with no endpoint in front of it, so
+the only way a logo ever arrived was the engine's own screen - and any other
+client could show one and never set one.
+
+`POST /companies/{id}/logo` and `DELETE` beside it. Same gate as editing the
+company itself: a logo is a property of the company, not a separate kind of thing
+with a looser rule.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 124**.
+
 **`GET /companies` accepted neither the library nor the side of the shop, so the
 Companies screen was empty and every manufacturer picker with it.**
 

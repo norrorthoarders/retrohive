@@ -187,6 +187,22 @@ function log_known_events(string $channel): array
 }
 
 /** Trim the log to its configured age. Called from bin/notify.php. */
+/**
+ * How many entries a prune would remove, without removing them.
+ *
+ * The same rule log_prune() applies, asked as a question - so a screen can offer
+ * the button with its effect on it rather than making somebody press it to find
+ * out. Zero when retention keeps everything, whatever the log holds.
+ */
+function log_prunable_count(): int
+{
+    $days = (int) setting('log_retention_days', '90');
+    if ($days <= 0) {
+        return 0;
+    }
+    return (int) scalar('SELECT COUNT(*) FROM logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)', [$days]);
+}
+
 function log_prune(): int
 {
     $days = (int) setting('log_retention_days', '90');

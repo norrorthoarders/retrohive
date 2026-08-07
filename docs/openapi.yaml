@@ -2600,6 +2600,78 @@ paths:
         "422": { description: That photo is not waiting for a decision }
         "403": { description: Curator access on its library is required }
 
+  /companies/{id}/logo:
+    post:
+      tags: [Taxonomy]
+      summary: Give a company a logo
+      description: >-
+        Multipart, in a field named `logo`. Replaces any previous one and removes
+        its files. Same gate as editing the company itself - a logo is a property
+        of the company, not a separate kind of thing with a looser rule.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The company, with its new logo }
+        "422": { description: Nothing arrived, or the file was not a usable image }
+        "403": { description: Curator access on its library is required }
+    delete:
+      tags: [Taxonomy]
+      summary: Remove a company's logo
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: The company, with no logo }
+        "403": { description: Curator access on its library is required }
+
+  /admin/auth-methods/inspect:
+    post:
+      tags: [Admin]
+      summary: Can this person sign in, and as what?
+      description: >-
+        Answers the question an administrator actually asks when somebody cannot
+        get in, without making them try. Takes the same shape as the test beside
+        it - a saved directory by `id`, or whatever is on an unsaved form in
+        `params`, or both merged - so a directory can be interrogated before it
+        is saved.
+
+
+        `found` and `allowed` are reported separately, and the difference is the
+        point: an entry the search cannot see is a base DN or a filter problem,
+        and one it finds but refuses is a group membership problem. Always 200 -
+        "not found" and "found but refused" are successful lookups reporting bad
+        news, and a 404 there would make a client show a broken-request error for
+        a working request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier]
+              properties:
+                identifier: { type: string, description: "Username, email, DOMAIN\\user or user@domain." }
+                id:         { type: integer, description: A saved directory to use. }
+                type:       { type: string, enum: [ldap, ad] }
+                params:     { type: object, description: Overrides, for testing an unsaved form. }
+      responses:
+        "200": { description: found, allowed, dn, username, name, email, groups, role, access, reason }
+        "422": { description: No identifier sent }
+
+  /admin/logs/prune:
+    post:
+      tags: [Admin]
+      summary: Remove entries older than the retention setting
+      description: >-
+        The rule is not a parameter. Retention is an instance setting, and
+        letting a request name its own cutoff would put "delete the whole log"
+        one request away from anybody who can read it. Refused with 422 when
+        retention is set to keep everything, rather than succeeding and removing
+        nothing. `GET /admin/logs` reports `prunable` and `retention_days` so a
+        client can label the button with what it will actually do.
+      responses:
+        "200": { description: removed, retention_days }
+        "422": { description: Retention is set to keep everything }
+
   /admin/mail:
     get:
       tags: [Account]

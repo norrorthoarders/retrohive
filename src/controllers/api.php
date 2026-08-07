@@ -2681,6 +2681,45 @@ function api_companies_create(): void
     api_ok(company_to_api(one('SELECT * FROM companies WHERE id = ?', [$id])), null, 201);
 }
 
+/**
+ * A company's logo, and removing one.
+ *
+ * `store_company_logo()` has existed throughout with no endpoint in front of it,
+ * so the only way a logo ever arrived was the engine's own screen. Same gate as
+ * editing the company itself - a logo is a property of the company, not a
+ * separate kind of thing with a looser rule.
+ */
+function api_companies_logo(int $id): void
+{
+    api_require_write();
+    $company = one('SELECT * FROM companies WHERE id = ?', [$id]);
+    if ($company === null) {
+        api_error('not_found', 'No company with that id.', 404);
+    }
+    $libraryId = (int) $company['library_id'];
+    if (!is_admin_user(acting_user()) && !can_structure_library($libraryId)) {
+        api_error('forbidden', 'Curator access on that library is required.', 403);
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
+        delete_company_logo($id);
+        api_ok(company_to_api(one('SELECT * FROM companies WHERE id = ?', [$id])));
+    }
+
+    $field = isset($_FILES['logo']) ? 'logo' : (isset($_FILES['file']) ? 'file' : null);
+    if ($field === null) {
+        api_error('validation_failed', 'Send the logo as a multipart field named "logo".', 422);
+    }
+    [$name, $error] = store_company_logo($id, $field);
+    if ($error !== null) {
+        api_error('upload_failed', $error, 422);
+    }
+    if ($name === null) {
+        api_error('validation_failed', 'No logo arrived.', 422);
+    }
+    api_ok(company_to_api(one('SELECT * FROM companies WHERE id = ?', [$id])));
+}
+
 function api_companies_update(int $id): void
 {
     api_require_write();
@@ -5817,6 +5856,66 @@ function api_auth_methods_test(): void
     ]);
 
     api_ok(['ok' => $ok, 'message' => $message, 'details' => $details]);
+}
+
+/**
+ * "Can this person sign in, and as what?" - answered without making them try.
+ *
+ * The one directory action the engine's own screen had and the API did not, so
+ * the question an administrator actually asks when somebody cannot get in was
+ * reachable from exactly one place.
+ *
+ * Takes the same shape as the test beside it: a saved method by id, or whatever
+ * is on an unsaved form, or both merged - so a directory can be interrogated
+ * before it is saved rather than only after.
+ *
+ * `ldap_inspect_user()` reports `found` and `allowed` separately, and the
+ * difference is the whole value of this: an entry the search cannot see is a
+ * base DN or a filter problem, and an entry it finds but refuses is a group
+ * membership problem. Those are different afternoons.
+ */
+function api_auth_methods_inspect(): void
+{
+    api_require_admin();
+
+    $in = api_body();
+    $identifier = trim((string) ($in['identifier'] ?? $in['username'] ?? ''));
+    if ($identifier === '') {
+        api_error('validation_failed', 'Send the username or email address to look up.', 422,
+                   ['identifier' => 'Required.']);
+    }
+
+    $type = in_array($in['type'] ?? 'ldap', ['ldap', 'ad'], true) ? (string) $in['type'] : 'ldap';
+    $id   = isset($in['id']) ? (int) $in['id'] : 0;
+
+    $existing = $id > 0 ? one('SELECT * FROM auth_methods WHERE id = ?', [$id]) : null;
+    if ($id > 0 && $existing === null) {
+        api_error('not_found', 'No such directory.', 404);
+    }
+    $existingParams = $existing === null ? [] : ldap_params($existing);
+    $params = api_metadata_merge_params(
+        $existingParams === [] ? ldap_default_params($type) : $existingParams,
+        (array) ($in['params'] ?? [])
+    );
+
+    $report = ldap_inspect_user([
+        'id'     => $id,
+        'type'   => $type,
+        'params' => json_encode($params, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+    ], $identifier);
+
+    // Logged as a security event, because looking up who a directory says
+    // somebody is - their name, their address, their groups - is reading
+    // personal data out of another system, and a log that only records the
+    // sign-ins would not show it happening.
+    log_security('auth.method.inspected',
+                 sprintf('Directory lookup for "%s"%s', $identifier,
+                         $report['found'] ? '' : ' (not found)'), LOG_INFO);
+
+    // 200 whatever the answer. "Not found" and "found but refused" are both
+    // successful lookups reporting bad news, and returning 404 for the first
+    // would make a client show a broken-request error for a working request.
+    api_ok($report);
 }
 
 function api_auth_methods_delete(int $id): void

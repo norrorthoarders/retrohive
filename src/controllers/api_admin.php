@@ -417,6 +417,47 @@ function api_logs_index(): void
         // Only the events that have happened, so a filter is a list rather than
         // guesswork.
         'events'   => log_known_events($channel),
+        // What a prune would remove, and the rule it would apply.
+        //
+        // Sent with the list so a client can offer the button honestly - "remove
+        // 1,204 entries older than 90 days" rather than a button whose effect
+        // nobody can see until it has happened. Zero days means keep
+        // everything, and `prunable` is then zero however old the log is.
+        'retention_days' => (int) setting('log_retention_days', '90'),
+        'prunable'       => log_prunable_count(),
+    ]);
+}
+
+/**
+ * Throw away what the retention rule says to.
+ *
+ * `log_prune()` has existed throughout and was reachable from the engine's own
+ * settings screen and from the nightly `bin/notify.php`, and from nowhere else -
+ * so a client could read the log and never tidy it. The rule itself is not a
+ * parameter here: retention is an instance setting, and letting a request name
+ * its own cutoff would make "delete the log" one request away from anybody who
+ * could read it.
+ */
+function api_logs_prune(): void
+{
+    api_require_admin();
+
+    $days = (int) setting('log_retention_days', '90');
+    if ($days <= 0) {
+        api_error('validation_failed',
+                  'Retention is set to keep everything, so there is nothing to remove. '
+                . 'Set a number of days under Logging first.', 422);
+    }
+
+    $removed = log_prune();
+    // Recorded, and deliberately after the delete so the entry survives it.
+    log_server('logs.pruned', sprintf('%d log %s older than %d days removed',
+               $removed, $removed === 1 ? 'entry' : 'entries', $days), LOG_NOTICE);
+
+    api_ok(['removed' => $removed, 'retention_days' => $days], [
+        'message' => $removed === 0
+            ? 'Nothing was old enough to remove.'
+            : sprintf('%d %s removed.', $removed, $removed === 1 ? 'entry' : 'entries'),
     ]);
 }
 
