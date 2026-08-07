@@ -2381,6 +2381,15 @@ paths:
           in: query
           description: One machine's own branches.
           schema: { type: integer }
+        - name: non_empty
+          in: query
+          description: >-
+            Any value: keep only branches that hold something, counting anything
+            filed at or beneath them. Combine with `platform_id` to ask it of one
+            machine. Off by default - a picker for *filing* an entry needs the
+            empty branches most of all, and this is for the other kind of picker,
+            where an empty branch is an option that can only return nothing.
+          schema: { type: string }
         - name: role
           in: query
           description: >-

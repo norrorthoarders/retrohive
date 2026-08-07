@@ -1,5 +1,53 @@
 # Changelog
 
+**The video and audio examples file themselves into a genre.**
+
+They landed on Movies, TV Shows and Music - the branch head, not a genre -
+because that was as deep as the tree went when they were written. It goes deeper
+now, and an example sitting at the branch head is a worked example of the wrong
+thing: it is the first entry anybody sees, and it teaches where entries go.
+
+    Metropolis Nights      Movies    > Thriller
+    Late Shift Detective   TV Shows  > Crime
+    Nightbound Sessions    Music     > Jazz
+    Analogue Horizon       Music     > Electronic
+
+The audio seeder had `recordings` hardcoded for both records rather than reading
+the example's own row, so it could not have filed them differently even with the
+genres present. It reads the row now, like the video one.
+
+Both seeders fall back to the branch above when the genre is missing. An instance
+whose structure feed predates the genres has Movies and TV Shows and nothing
+under them, and `continue` alone meant it got no examples at all - filing one
+level up is worse than filing properly and much better than skipping. The
+fallback is per kind, so a series lands on TV Shows rather than on Movies.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 105**.
+
+**`non_empty` on the category list: only branches that hold something.**
+
+An empty branch is exactly what a picker for *filing* an entry needs most - you
+cannot file the first pinball game under Pinball if Pinball is not offered. It is
+exactly what a picker for *filtering* does not need: an option that can only ever
+return nothing. One endpoint serves both, so this is a parameter rather than a
+change of behaviour, and it is off by default.
+
+Computed from the distinct `category_path` values rather than by joining
+categories to items on `LOCATE()`. There are a handful of distinct paths and no
+index can serve that join, so this is one cheap scan and a set-membership test
+instead of a row comparison per category per item. A branch counts as occupied
+when anything is filed at it *or* beneath it - which is what makes Adventure
+offer itself when everything under it is filed as Point and click.
+
+Scoped by the caller's library access, and by `platform_id` when one is given, so
+"which genres does the Amiga actually have" is one request.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 104**.
+
 **A genre filter that spans formats, and Movies/TV Shows as a kind.**
 
 ## `genre=` asks about the branch, not one platform's copy of it

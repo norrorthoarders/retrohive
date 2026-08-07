@@ -2965,7 +2965,14 @@ function seed_library_video_examples(int $libraryId): int
         [
             'name'      => 'Metropolis Nights',
             'platform'  => 'blu-ray',
-            'category'  => 'movies',
+            // A genre, not the kind branch above it.
+            //
+            // These filed under 'movies' and 'tv-shows' because that was as deep
+            // as the tree went when they were written. It goes deeper now, and
+            // an example sitting at the branch head rather than in a genre is a
+            // worked example of the wrong thing - it is the first entry anybody
+            // sees, and it teaches where entries go.
+            'category'  => 'movie-thriller',
             'studio'    => 'Silverreel Pictures',
             'director'  => 'Corinne Vasquez',
             'year'      => 1998,
@@ -2975,7 +2982,7 @@ function seed_library_video_examples(int $libraryId): int
         [
             'name'      => 'Late Shift Detective',
             'platform'  => 'vhs',
-            'category'  => 'tv-shows',
+            'category'  => 'tv-crime',
             'studio'    => 'Harborlight Television',
             'director'  => 'Marcus Idoia',
             'year'      => 1991,
@@ -2992,6 +2999,15 @@ function seed_library_video_examples(int $libraryId): int
         }
         $cat = one('SELECT id FROM categories WHERE library_id = ? AND platform_id = ? AND source_slug = ?',
                    [$libraryId, $plat['id'], $ex['category']]);
+        if ($cat === null) {
+            // An instance whose structure feed predates the genres has Movies
+            // and TV Shows and nothing under them. Filing one level up is worse
+            // than filing it properly and much better than skipping the example
+            // entirely, which is what `continue` alone did.
+            $fallback = str_starts_with((string) $ex['category'], 'tv-') ? 'tv-shows' : 'movies';
+            $cat = one('SELECT id FROM categories WHERE library_id = ? AND platform_id = ? AND source_slug = ?',
+                       [$libraryId, $plat['id'], $fallback]);
+        }
         if ($cat === null) {
             continue;
         }
@@ -3064,6 +3080,7 @@ function seed_library_music_examples(int $libraryId): int
         [
             'name'      => 'Nightbound Sessions',
             'platform'  => 'cd',
+            'category'  => 'music-jazz',
             'artist'    => 'The Coastline Drifters',
             'composer'  => 'Naomi Fentress',
             'label'     => 'Amberlane Records',
@@ -3073,6 +3090,7 @@ function seed_library_music_examples(int $libraryId): int
         [
             'name'      => 'Analogue Horizon',
             'platform'  => 'vinyl',
+            'category'  => 'music-electronic',
             'artist'    => 'Solvent Skies',
             'composer'  => 'Erik Halvorsen',
             'label'     => 'Amberlane Records',
@@ -3089,8 +3107,17 @@ function seed_library_music_examples(int $libraryId): int
         if ($plat === null) {
             continue;
         }
+        // Per record now, rather than 'recordings' for both - see the note on
+        // the video examples. Falls back to the branch above when the genre is
+        // missing, which is what an instance whose structure feed predates the
+        // genres will find: an example filed one level up is worse than a
+        // perfect one and much better than none.
         $cat = one('SELECT id FROM categories WHERE library_id = ? AND platform_id = ? AND source_slug = ?',
-                   [$libraryId, $plat['id'], 'recordings']);
+                   [$libraryId, $plat['id'], $ex['category']]);
+        if ($cat === null) {
+            $cat = one('SELECT id FROM categories WHERE library_id = ? AND platform_id = ? AND source_slug = ?',
+                       [$libraryId, $plat['id'], 'recordings']);
+        }
         if ($cat === null) {
             continue;
         }

@@ -1937,6 +1937,38 @@ function api_categories_index(): void
         }));
     }
 
+    // Only branches that actually hold something.
+    //
+    // For a filter, an empty branch is an option that can only ever return
+    // nothing - "Amiga has no pinball games" is worth knowing, but a picker is
+    // the wrong place to learn it. Off by default, because a picker for *filing*
+    // an entry needs the empty branches most of all.
+    //
+    // Done from the distinct paths rather than by joining categories to items on
+    // LOCATE(): there are a handful of distinct paths and no index could serve
+    // that join, so this is one cheap scan and a set membership test instead of
+    // a row comparison per category per item. A branch counts as occupied when
+    // anything is filed at it *or* beneath it, which is what makes selecting
+    // Adventure offer itself when everything under it is a Point and click.
+    if (($_GET['non_empty'] ?? '') !== '' && $rows !== []) {
+        [$acl, $aclP] = library_filter_sql('library_id', ACCESS_VIEWER);
+        $sql  = "SELECT DISTINCT category_path FROM v_items WHERE $acl";
+        $args = $aclP;
+        if (isset($_GET['platform_id'])) {
+            $sql .= ' AND platform_id = ?';
+            $args[] = (int) $_GET['platform_id'];
+        }
+        $live = [];
+        foreach (all($sql, $args) as $r) {
+            foreach (explode('/', (string) $r['category_path']) as $id) {
+                if ($id !== '') {
+                    $live[(int) $id] = true;
+                }
+            }
+        }
+        $rows = array_values(array_filter($rows, fn($c) => isset($live[(int) $c['id']])));
+    }
+
     api_ok(array_map('category_to_api', $rows));
 }
 
