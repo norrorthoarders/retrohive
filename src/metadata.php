@@ -1329,6 +1329,15 @@ function metadata_search_all(string $title, ?int $platformId = null, ?string $do
         'unmapped' => $unmapped,
         'skipped'  => $skipped,
         'asked'    => $asked,
+        // Whether anything was asked at all.
+        //
+        // "Nothing found" and "nobody was asked" are different facts and the
+        // screen said the first when it meant the second - the source of a real
+        // and confusing failure, because it is a claim about what the sources
+        // answered when in truth there had been no question. A branch with no
+        // source switched on for it looks, from the result alone, exactly like
+        // a title that genuinely is not in any database.
+        'consulted' => count($ask),
     ];
 }
 

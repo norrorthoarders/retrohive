@@ -3331,6 +3331,17 @@ function software_model_contents(int $modelId): array
     return all('SELECT * FROM software_model_contents WHERE model_id = ? ORDER BY sort_order, id', [$modelId]);
 }
 
+/**
+ * What a release made from this model comes on - a row per medium, because a
+ * boxed release is often more than one. The third of the three child lists, and
+ * the one that had no accessor of its own: both callers wrote the query out
+ * inline, which is why the API had no obvious thing to call.
+ */
+function software_model_media(int $modelId): array
+{
+    return all('SELECT * FROM software_model_media WHERE model_id = ? ORDER BY sort_order, id', [$modelId]);
+}
+
 function seed_library_categories(int $libraryId): void
 {
     // Built set-wise, not one platform at a time.
@@ -5421,8 +5432,22 @@ function seed_library_provider_scopes(int $libraryId): int
         return 0;
     }
 
-    $kinds = ['machine', 'peripheral', 'game', 'application'];
-    $rows  = all('SELECT id, role, path FROM categories WHERE library_id = ? AND role IN (?, ?, ?, ?)',
+    // Every kind a category can declare, not the four the hardware and software
+    // sections happen to use.
+    //
+    // This is the same gap category_effective_role() had and had fixed: movie,
+    // tv_show and music were added to the template data, and the lists that
+    // enumerate kinds were not extended to match. The consequence here was
+    // total and silent. A video branch got no provider_scopes row, so
+    // providers_for() returned an empty set for it, so metadata_search_all()
+    // asked nobody at all - and the screen said "No source recognised that
+    // title", which is a claim about the sources' answer rather than about
+    // there having been no question. Looking up The Big Lebowski against an
+    // instance with TMDB configured and working found nothing, logged nothing,
+    // and gave no hint that nothing had been asked.
+    $kinds = ['machine', 'peripheral', 'game', 'application', 'movie', 'tv_show', 'music'];
+    $rows  = all('SELECT id, role, path FROM categories WHERE library_id = ? AND role IN ('
+                 . implode(',', array_fill(0, count($kinds), '?')) . ')',
                  array_merge([$libraryId], $kinds));
 
     // The topmost of each kind: a branch whose kind is already declared by

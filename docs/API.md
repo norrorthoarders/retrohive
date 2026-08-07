@@ -260,8 +260,10 @@ An item looks like this:
   "notes": "The Chris Huelsbeck soundtrack alone.",
   "image_count": 3,
   "cover": {
-    "thumb":   "https://host/uploads/thumb_42_ab12cd.jpg",
-    "display": "https://host/uploads/disp_42_ab12cd.jpg"
+    "thumb":      "https://host/uploads/thumb_42_ab12cd.jpg",
+    "display":    "https://host/uploads/disp_42_ab12cd.jpg",
+    "is_default": false,
+    "source":     "photo"
   },
   "media": [
     { "medium": "3.5\" floppy", "quantity": 2 }
@@ -380,6 +382,27 @@ straight from `UIImagePickerController` or a camera capture:
 A `data:image/jpeg;base64,` prefix is tolerated. JPEG, PNG, WebP and GIF are
 accepted, validated by inspecting the file rather than trusting its name. The
 first photo on an item becomes the cover automatically.
+
+### What `cover` falls back to
+
+`cover` is resolved in three steps, and `source` says which one answered:
+
+| `source`   | What it is |
+|------------|------------|
+| `photo`    | A real photograph of this copy - uploaded, or brought in by a metadata agent. |
+| `category` | The picture set on the branch this entry is filed under, or on the nearest ancestor that has one. |
+| `stock`    | A generic picture of the format, shipped with the package and served from `/stock/`. |
+| `null`     | Nothing to show. |
+
+Stock pictures are chosen from what the entry already says about itself - its
+kind, what it comes on, and whether it says it has a case - and are never stored
+against it. An entry that gains a real photograph tomorrow simply stops
+resolving to one. `GET /stock-images` lists them. An instance can switch them
+off entirely with the `stock_images` setting, after which those entries report
+`source: null`.
+
+`is_default` is unchanged and is true for both `category` and `stock`, so a
+client that only needs to know whether the picture is real needs no change.
 
 Each image comes back with three URLs:
 

@@ -12,7 +12,7 @@
 
 <div class="pagehead">
   <div>
-    <h1>Maintenance</h1>
+    <h1>Instance Status</h1>
     <p class="lede">
       Checks that read, and repairs that act only where a check found something.
       Nothing here runs on its own.

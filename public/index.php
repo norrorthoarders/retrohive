@@ -360,6 +360,7 @@ if (str_starts_with($path, '/api/')) {
         ['PATCH',  '#^/api/v1/locations/(\d+)$#',          fn($id) => api_locations_update((int) $id)],
         ['PUT',    '#^/api/v1/locations/(\d+)$#',          fn($id) => api_locations_update((int) $id)],
         ['DELETE', '#^/api/v1/locations/(\d+)$#',          fn($id) => api_locations_delete((int) $id)],
+        ['GET',    '#^/api/v1/stock-images$#',            fn() => api_stock_images_index()],
         ['GET',    '#^/api/v1/categories$#',              fn() => api_categories_index()],
         ['POST',   '#^/api/v1/categories$#',              fn() => api_categories_create()],
         ['PATCH',  '#^/api/v1/categories/(\d+)$#',         fn($id) => api_categories_update((int) $id)],

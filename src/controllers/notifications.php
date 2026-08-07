@@ -554,7 +554,7 @@ function logs_index(): void
     $per  = 100;
 
     render('auth/logs', [
-        'pageTitle' => 'Logs',
+        'pageTitle' => 'Instance Logs',
         'channel'   => $channel,
         'filters'   => $filters,
         'rows'      => log_entries($channel, $filters, $per, ($page - 1) * $per),

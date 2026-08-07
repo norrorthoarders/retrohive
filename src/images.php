@@ -259,16 +259,41 @@ function store_category_default_image(int $categoryId, string $field): array
     return [$basename, null];
 }
 
+/**
+ * Point a branch at one of the pictures that ship with the package, instead of
+ * uploading one.
+ *
+ * Stored in the same column as an uploaded filename, as a `stock:` reference.
+ * That keeps one column, one inheritance walk and one delete path rather than a
+ * second nullable column and a rule about which wins - and image_url() already
+ * resolves both, so nothing downstream has to know which kind it is holding.
+ */
+function set_category_stock_image(int $categoryId, string $slug): ?string
+{
+    if (!isset(stock_images()[$slug])) {
+        return 'No stock picture is called that.';
+    }
+    delete_category_default_image($categoryId);
+    update_row('categories', $categoryId, ['default_image_filename' => STOCK_REF_PREFIX . $slug]);
+    return null;
+}
+
 function delete_category_default_image(int $categoryId): void
 {
     $row = one('SELECT default_image_filename FROM categories WHERE id = ?', [$categoryId]);
     if ($row === null || empty($row['default_image_filename'])) {
         return;
     }
-    foreach (['', 'thumb_'] as $prefix) {
-        $path = uploads_dir() . '/' . $prefix . $row['default_image_filename'];
-        if (is_file($path)) {
-            @unlink($path);
+    // A reference is not a file. Unlinking one would either do nothing or,
+    // worse, resolve somewhere unintended - so the reference is simply
+    // forgotten and the shipped file left exactly where it is, for every other
+    // branch still pointing at it.
+    if (!is_stock_ref((string) $row['default_image_filename'])) {
+        foreach (['', 'thumb_'] as $prefix) {
+            $path = uploads_dir() . '/' . $prefix . $row['default_image_filename'];
+            if (is_file($path)) {
+                @unlink($path);
+            }
         }
     }
     update_row('categories', $categoryId, ['default_image_filename' => null]);

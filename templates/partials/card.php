@@ -1,6 +1,16 @@
 <?php
 /** @var array $it a row from v_items */
-$cover = image_url($it['cover_filename'] ?? null, 'thumb');
+// The same three steps the API's own cover field takes, in the same order: a
+// real photograph, then the branch's own picture, then a generic one for the
+// format. See item_to_api() and src/stock.php.
+$coverName = $it['cover_filename'] ?? null;
+if (($coverName === null || $coverName === '') && !empty($it['category_id'])) {
+    $coverName = category_effective_default_image((int) $it['category_id']);
+}
+if ($coverName === null || $coverName === '') {
+    $coverName = stock_image_for_item($it);
+}
+$cover = image_url($coverName, 'thumb');
 ?>
 <article class="card" style="--spine: <?= e($it['platform_color'] ?: '#cba6f7') ?>">
   <a class="card__link" href="<?= e(url('/items/' . $it['id'])) ?>">

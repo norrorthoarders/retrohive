@@ -1,0 +1,19 @@
+# Pictures that ship with the package. Data, never code - the same rules the
+# uploads directory carries, for the same reason.
+php_flag engine off
+Options -Indexes -ExecCGI
+AddType text/plain .php .phtml .php3 .php4 .php5 .php7 .phps .cgi .pl .py .sh
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set Content-Security-Policy "default-src 'none'; img-src 'self'"
+</IfModule>
+
+# A given slug's file never changes within a release, so a long cache is safe
+# and these are served on nearly every page. A release that replaces one gets a
+# new deployment, and thirty days is short enough that a stale copy corrects
+# itself without anybody being told to clear a cache.
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/webp "access plus 30 days"
+</IfModule>

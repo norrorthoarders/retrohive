@@ -129,6 +129,23 @@ function settings_schema(): array
             ],
         ],
 
+        'catalogue' => [
+            'label' => 'Catalogue',
+            'help'  => 'How entries look when nobody has told the catalogue what they look like.',
+            'fields' => [
+                'stock_images' => [
+                    'kind'    => 'bool',
+                    'label'   => 'Generic pictures for entries with no photograph',
+                    'help'    => 'A blank big box, jewel case, VHS slip or record sleeve, chosen from '
+                               . 'what the entry says it is and what it comes on. Never shown ahead of '
+                               . 'a real photograph, or of a picture set on the entry\'s own branch. '
+                               . 'Off means those entries show nothing at all, which is the honest '
+                               . 'alternative: a generic picture describes a format, not the object.',
+                    'default' => '1',
+                ],
+            ],
+        ],
+
         'logging' => [
             'label' => 'Logging',
             'help'  => 'The log is always written to the database. These decide what else happens to it.',

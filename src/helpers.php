@@ -1,6 +1,13 @@
 <?php
 declare(strict_types=1);
 
+// image_url() below resolves `stock:` references, and helpers.php is the one
+// file every entry point loads - the front controller, the installer, and each
+// of the bin/ scripts. Requiring it here rather than listing it in index.php is
+// what stops a CLI tool that shows a filename from fataling on a reference it
+// was never told about, the same way models.php pulls in rules.php.
+require_once __DIR__ . '/stock.php';
+
 /** Read a config key, optionally dotted: config('db.host'). */
 function config(?string $key = null, $default = null)
 {
@@ -56,11 +63,24 @@ function asset_url(string $path): string
     return BASE_PATH . $path . ($stamp ? '?v=' . $stamp : '');
 }
 
-/** URL for an uploaded image variant: 'thumb', 'display' or 'orig'. */
+/**
+ * URL for an uploaded image variant: 'thumb', 'display' or 'orig'.
+ *
+ * Also resolves a `stock:` reference to one of the pictures that ship with the
+ * package. Both kinds go through here on purpose: every caller that shows an
+ * image already calls this function with a nullable string, and having the one
+ * function understand both meant the fallback chain could be written as "the
+ * first of these that is not null" rather than as a branch repeated in a dozen
+ * templates. See src/stock.php.
+ */
 function image_url(?string $filename, string $variant = 'display'): ?string
 {
     if ($filename === null || $filename === '') {
         return null;
+    }
+    $slug = stock_ref_slug($filename);
+    if ($slug !== null) {
+        return stock_image_url($slug, $variant === 'thumb' ? 'thumb' : 'display');
     }
     $map = ['thumb' => 'thumb_', 'display' => 'disp_', 'orig' => ''];
     $prefix = $map[$variant] ?? '';

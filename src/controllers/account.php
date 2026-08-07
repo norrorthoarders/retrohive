@@ -1506,7 +1506,8 @@ function metadata_lookup(): void
                                      WHERE c.id = ?', [(int) $item['category_id']]) ?: 'software');
     }
 
-    $out = ['results' => [], 'errors' => [], 'unmapped' => [], 'skipped' => [], 'asked' => []];
+    $out = ['results' => [], 'errors' => [], 'unmapped' => [], 'skipped' => [], 'asked' => [],
+            'consulted' => null];
     if (trim($title) !== '') {
         // The entry's own branch decides which sources are asked, which is what
         // the On/Off buttons in the category editor are for.
@@ -1534,6 +1535,10 @@ function metadata_lookup(): void
         // to "did it look there?", which has no other way of being answered when
         // a source that found nothing has no row on the page.
         'asked'     => $out['asked'] ?? [],
+        // How many sources were consulted. Zero and "none of them found it"
+        // are different answers, and the screen used to give the second when
+        // it meant the first.
+        'consulted' => $out['consulted'] ?? null,
         'providers' => enabled_metadata_providers(),
         // No platform list: the screen no longer offers one. It used to be
         // readable_libraries() under the name $platforms, which is where the
@@ -3493,7 +3498,7 @@ function maintenance_index(): void
     }
 
     render('auth/maintenance', [
-        'pageTitle' => 'Maintenance',
+        'pageTitle' => 'Instance Status',
         'instance'  => $instance,
         'results'   => $results,
     ]);

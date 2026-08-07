@@ -45,7 +45,11 @@ function referenced_filenames(): array
     $names = [];
     foreach (['SELECT filename AS f FROM item_images',
               'SELECT logo_filename AS f FROM companies WHERE logo_filename IS NOT NULL',
-              'SELECT avatar_filename AS f FROM users WHERE avatar_filename IS NOT NULL'] as $sql) {
+              'SELECT avatar_filename AS f FROM users WHERE avatar_filename IS NOT NULL',
+              // The fourth, missing since category default pictures were added:
+              // without it, --delete removed every branch's own picture and left
+              // the rows pointing at nothing.
+              'SELECT default_image_filename AS f FROM categories WHERE default_image_filename IS NOT NULL'] as $sql) {
         try {
             foreach (all($sql) as $row) {
                 if (!empty($row['f'])) {

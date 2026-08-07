@@ -1157,6 +1157,14 @@ paths:
     get:
       tags: [Images]
       summary: List an entry's photos
+      description: >-
+        `kind` says what a picture shows; `provenance` says where it came from.
+        Filter on the latter to draw the publisher's artwork and somebody's own
+        photographs as two separate galleries.
+      parameters:
+        - name: provenance
+          in: query
+          schema: { type: string, enum: [official, personal] }
       responses:
         "200":
           description: OK
@@ -1178,6 +1186,7 @@ paths:
               properties:
                 file: { type: string, format: binary }
                 kind: { $ref: "#/components/schemas/ImageKind" }
+                provenance: { $ref: "#/components/schemas/ImageProvenance" }
           application/json:
             schema:
               type: object
@@ -1185,6 +1194,7 @@ paths:
               properties:
                 file_base64: { type: string, description: "Raw base64 or a data: URL" }
                 kind: { $ref: "#/components/schemas/ImageKind" }
+                provenance: { $ref: "#/components/schemas/ImageProvenance" }
                 caption: { type: string }
                 filename: { type: string }
       responses:
@@ -1210,6 +1220,13 @@ paths:
               type: object
               properties:
                 kind: { $ref: "#/components/schemas/ImageKind" }
+                provenance:
+                  allOf: [{ $ref: "#/components/schemas/ImageProvenance" }]
+                  description: >-
+                    Moves the picture between the two galleries. Unlike the
+                    upload, an unknown value here is refused rather than rounded
+                    to personal - a move that silently did nothing would read as
+                    the request having been ignored.
                 caption: { type: [string, "null"] }
                 sort_order: { type: integer }
                 is_primary: { type: boolean }
@@ -2442,6 +2459,40 @@ paths:
         "403": { description: Curator access on this library is required }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /stock-images:
+    get:
+      tags: [Taxonomy]
+      summary: The generic pictures that ship with the package
+      description: >-
+        Fifteen blank mock-ups of packaging - a big box, a jewel case, a VHS
+        slip, a record sleeve. An entry with no photograph of its own and no
+        picture on its branch already falls back to whichever of these matches
+        what it is and what it comes on; this endpoint exists so a client can
+        also offer them as something to set deliberately on a branch. Readable
+        by anyone signed in - the same fifteen files on every install.
+      responses:
+        "200":
+          description: The catalogue, plus whether the instance has them switched on
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        slug: { type: string }
+                        label: { type: string }
+                        note: { type: string }
+                        thumb: { type: string, format: uri }
+                        display: { type: string, format: uri }
+                  meta:
+                    type: object
+                    properties:
+                      enabled: { type: boolean }
+
   /categories/{id}/image:
     parameters: [{ $ref: "#/components/parameters/Id" }]
     post:
@@ -2465,9 +2516,21 @@ paths:
               required: [image]
               properties:
                 image: { type: string, format: binary }
+          application/json:
+            schema:
+              type: object
+              required: [stock]
+              properties:
+                stock:
+                  type: string
+                  description: >-
+                    Slug of one of the pictures that ship with the package, from
+                    GET /stock-images, instead of uploading a file. Stored as a
+                    reference rather than a copy, so nothing is written to the
+                    uploads directory and removing it later deletes no file.
       responses:
         "200": { description: id and image (thumb, display) }
-        "422": { description: No file arrived, or it failed validation }
+        "422": { description: Neither a file nor a known stock slug arrived }
         "403": { description: Curator access on this library is required }
         "404": { $ref: "#/components/responses/NotFound" }
     delete:
@@ -2838,8 +2901,13 @@ paths:
     get:
       tags: [Taxonomy]
       summary: Boxed-release templates - what a title made from one starts already filled in with
+      description: >-
+        Carries field_count, content_count and media_count per row, but not the
+        lists themselves - three child queries per row would be a hundred and
+        twenty of them for a table of forty. Fetch one model to get its lists.
       parameters:
         - { name: library_id, in: query, schema: { type: integer } }
+        - { name: platform_id, in: query, schema: { type: integer } }
       responses: { "200": { description: OK } }
     post:
       tags: [Taxonomy]
@@ -2850,14 +2918,16 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [library_id, name]
-              properties:
-                library_id: { type: integer }
-                platform_id: { type: integer, nullable: true }
-                category_id: { type: integer, nullable: true }
-                name: { type: string }
-                notes: { type: string, nullable: true }
+              allOf:
+                - type: object
+                  required: [library_id, name]
+                  properties:
+                    library_id: { type: integer }
+                    platform_id: { type: integer, nullable: true }
+                    category_id: { type: integer, nullable: true }
+                    name: { type: string }
+                    notes: { type: string, nullable: true }
+                - $ref: "#/components/schemas/SoftwareModelLists"
       responses:
         "201": { description: Created }
         "422": { description: A missing name, or a platform/category outside this library }
@@ -2874,6 +2944,24 @@ paths:
     patch:
       tags: [Taxonomy]
       summary: Update a software model
+      description: >-
+        A child list is rewritten wholesale when its key is present and left
+        entirely alone when it is absent. Absent and empty are different
+        instructions: send `"contents": []` to empty the list, and omit the key
+        to change only the name.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  properties:
+                    platform_id: { type: integer, nullable: true }
+                    category_id: { type: integer, nullable: true }
+                    name: { type: string }
+                    notes: { type: string, nullable: true }
+                - $ref: "#/components/schemas/SoftwareModelLists"
       responses:
         "200": { description: Updated }
         "403": { description: Owner access on this library is required }
@@ -3457,21 +3545,153 @@ components:
         image_count: { type: integer }
         cover:
           type: object
+          description: |
+            What to show for this entry, resolved in three steps: a real
+            photograph, then the picture set on the branch it is filed under
+            (inherited from the nearest ancestor that has one), then a generic
+            picture of the format that ships with the package. A stock picture
+            is never shown ahead of a real one.
           properties:
             thumb: { type: [string, "null"], format: uri }
             display: { type: [string, "null"], format: uri }
+            is_default:
+              type: boolean
+              description: >-
+                True whenever what is shown is not a photograph of this object.
+            source:
+              type: [string, "null"]
+              enum: [photo, category, stock, null]
+              description: >-
+                Which of the three steps answered. Null when there is nothing
+                to show at all. A client that only needs "is this real" can keep
+                reading is_default.
         images: { type: array, items: { $ref: "#/components/schemas/Image" } }
         tags: { type: array, items: { type: string } }
+        compatibility:
+          type: object
+          description: |
+            Which machine models this entry fits, and where that answer came
+            from. A peripheral's model wins over the card's own list - a copy of
+            a BigRAM 2008 cannot fit something a BigRAM 2008 does not - but the
+            card's own list is kept either way, so detaching the model does not
+            lose it. Enforced: a link into a machine is refused against this.
+          properties:
+            model_ids:
+              type: array
+              items: { type: integer }
+              description: The effective answer, whichever source it came from.
+            names: { type: array, items: { type: string } }
+            from:
+              type: string
+              enum: [model, item, none]
+            own_model_ids:
+              type: array
+              items: { type: integer }
+              description: >-
+                What this entry itself says, ignoring anything inherited. A
+                client drawing tick boxes wants this one - the boxes edit the
+                item's own list, and pre-ticking an inherited answer would make
+                clearing a box appear to do nothing.
+        environments:
+          type: array
+          description: What it runs under. Several, deliberately - a 1995 PC release often ran on MS-DOS and Windows 3.x both.
+          items:
+            type: object
+            properties:
+              id:   { type: integer }
+              name: { type: string }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         url: { type: string, format: uri }
+
+    ItemCompatibilityWrite:
+      type: object
+      description: |
+        Both lists are replaced wholesale when their key is present and left
+        entirely alone when it is absent, so an empty array clears and an
+        omitted key preserves. Ids that do not name a machine model, or an
+        environment, belonging to the entry's own library are dropped rather
+        than refused - the only way to send one is a stale form or a crafted
+        request, and neither wants an error page.
+      properties:
+        compatibility:
+          type: array
+          items: { type: integer }
+          description: Hardware model ids. Must be machines, in the same library as the entry.
+        environments:
+          type: array
+          items: { type: integer }
+          description: Environment ids, from this library's own operating_systems.
+
+    ImageProvenance:
+      type: string
+      enum: [official, personal]
+      default: personal
+      description: |
+        Where a picture came from, which is a different axis from `kind`. The
+        publisher's artwork - scans of the box, or anything a metadata agent
+        fetched - is `official`; a photograph of somebody's own copy is
+        `personal`. On upload anything that is not exactly `official` is treated
+        as `personal`, because mistaking a snapshot for the publisher's artwork
+        misrepresents it while the reverse merely under-claims.
+
+    SoftwareModelLists:
+      type: object
+      description: |
+        A packaging model's three child lists. Each is optional; present means
+        "replace this list with exactly these rows", absent means "leave it".
+        A row with a blank label is dropped rather than refused, because the
+        forms that post these keep a spare row at the bottom to type into.
+      properties:
+        fields:
+          type: array
+          description: What a title made from this model is asked.
+          items:
+            type: object
+            required: [label]
+            properties:
+              label:         { type: string, maxLength: 60 }
+              default_value: { type: [string, "null"], maxLength: 200 }
+              hint:          { type: [string, "null"], maxLength: 160 }
+        contents:
+          type: array
+          description: What the box should hold.
+          items:
+            type: object
+            required: [label]
+            properties:
+              label: { type: string, maxLength: 120 }
+              note:  { type: [string, "null"], maxLength: 255 }
+        media_list:
+          type: array
+          description: >-
+            What a release comes on, a row per medium. `medium` must be one of
+            the values in GET /meta's `media` groups; anything else is dropped
+            and named back in meta.media_ignored rather than refused, so one
+            unrecognised row does not lose the whole save.
+          items:
+            type: object
+            required: [medium]
+            properties:
+              medium:   { type: string }
+              quantity: { type: integer, minimum: 1, maximum: 999, default: 1 }
 
     ItemWrite:
       type: object
       description: |
         Required on create: title, platform_id, category_id. On PATCH every key
-        is optional and only what you send is changed.
+        is optional and only what you send is changed. `compatibility` and
+        `environments` follow the same rule and are described in
+        ItemCompatibilityWrite.
       properties:
+        compatibility:
+          type: array
+          items: { type: integer }
+          description: See ItemCompatibilityWrite - hardware model ids, replaced wholesale.
+        environments:
+          type: array
+          items: { type: integer }
+          description: See ItemCompatibilityWrite - environment ids, replaced wholesale.
         title: { type: string, maxLength: 220 }
         subtitle: { type: [string, "null"] }
         sort_title: { type: [string, "null"] }

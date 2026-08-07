@@ -5,7 +5,7 @@
 <div class="pagehead">
   <div>
     <span class="eyebrow">Server</span>
-    <h1>Logs</h1>
+    <h1>Instance Logs</h1>
   </div>
 </div>
 

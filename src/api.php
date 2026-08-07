@@ -312,11 +312,15 @@ function api_require_auth(): array
     return $identity;
 }
 
-/** Authenticated, allowed to write, and not using a read-only token. */
-function api_require_write(): array
+/**
+ * The two checks that apply to any state-changing call, whoever makes it.
+ *
+ * Split out of api_require_write() so the administrator gate can apply exactly
+ * these and not the library-membership check, which has nothing to do with
+ * administering an instance. See api_require_admin().
+ */
+function api_guard_mutation(?array $token): void
 {
-    [$user, $token] = api_require_auth();
-
     // A session-authenticated write is a browser request, and a browser
     // request that carries no proof of intent is a CSRF. SameSite=Lax happens
     // to block the form-post case today, but that is a browser default rather
@@ -340,6 +344,23 @@ function api_require_write(): array
         }
     }
 
+    // A read-only token may read anything its holder may read. It is only a
+    // write it cannot do - which is why this is asked per method rather than
+    // per endpoint. Asking it of every admin call meant the admin *pages*, all
+    // of them GETs, were refused to a read token that was entitled to them.
+    if ($token !== null && $token['scope'] === 'read'
+        && !in_array($_SERVER['REQUEST_METHOD'] ?? 'GET', ['GET', 'HEAD', 'OPTIONS'], true)) {
+        api_error('forbidden', 'This token was issued with read-only scope.', 403);
+    }
+}
+
+/** Authenticated, allowed to write, and not using a read-only token. */
+function api_require_write(): array
+{
+    [$user, $token] = api_require_auth();
+
+    api_guard_mutation($token);
+
     // The role no longer decides this. Membership does, and can_edit_anything()
     // reads it from library_members.
     if (!can_edit_anything()) {
@@ -351,10 +372,31 @@ function api_require_write(): array
     return [$user, $token];
 }
 
+/**
+ * Administering the instance, which is not the same thing as writing to a
+ * library and must not be gated on it.
+ *
+ * This used to call api_require_write() first, and that was wrong in a way that
+ * only showed up once accounts started arriving from a directory. Library access
+ * is membership and nothing else - acl.php says so deliberately, so that an
+ * administrator does not silently acquire the ability to read everybody's
+ * private shelves. But an account promoted to administrator by an LDAP group
+ * mapping has no membership anywhere, so can_edit_anything() was false, so every
+ * instance-level endpoint - users, maintenance, settings, the log - answered 403
+ * "This account has no library it is allowed to change" to a genuine
+ * administrator. The web interface showed the admin menus, because it asks the
+ * role; the API refused them, because it asked membership. The two disagreed and
+ * the message named the wrong thing entirely.
+ *
+ * So: authenticated, an administrator, and subject to the same CSRF and
+ * write-scope rules as any other call. Membership is not consulted, because none
+ * of these endpoints touch a library's contents.
+ */
 function api_require_admin(): array
 {
-    [$user, $token] = api_require_write();
-    if ($user['role'] !== 'admin') {
+    [$user, $token] = api_require_auth();
+    api_guard_mutation($token);
+    if (!is_admin_user($user)) {
         api_error('forbidden', 'Administrator access is required.', 403);
     }
     return [$user, $token];
@@ -611,21 +653,45 @@ function item_to_api(array $r, bool $withImages = false): array
         'image_count' => (int) ($r['image_count'] ?? 0),
         'cover'       => (function () use ($r): array {
             $filename = $r['cover_filename'] ?? null;
-            $isDefault = false;
+            $source   = $filename === null || $filename === '' ? null : 'photo';
+
+            // Three steps, tried in this order, and the order is the whole
+            // design: a real photograph, then whatever this branch of the
+            // category tree was given, then a generic picture of the format.
+            //
             // A category's own default only stands in when there is
             // genuinely no photograph of the entry's own - the walk up
             // the branch this entry's own category sits in, the same
             // inheritance kind already uses, nearest ancestor with an
             // answer wins. Never shown ahead of a real photo, whatever
             // was uploaded or brought in by a metadata agent.
-            if (empty($filename) && !empty($r['category_id'])) {
+            if ($source === null && !empty($r['category_id'])) {
                 $filename = category_effective_default_image((int) $r['category_id']);
-                $isDefault = $filename !== null;
+                $source   = $filename === null ? null : 'category';
             }
+
+            // And last, one of the pictures that ship with the package,
+            // chosen from what the entry says it is and what it comes on.
+            // Below the category default rather than above it, because
+            // setting a picture on a branch is a deliberate act by
+            // somebody who looked at that branch, and this is an
+            // automatic guess - the deliberate one should win, or it
+            // would be an override that overrides nothing.
+            if ($source === null) {
+                $filename = stock_image_for_item($r);
+                $source   = $filename === null ? null : 'stock';
+            }
+
             return [
                 'thumb'      => absolute_url(image_url($filename, 'thumb')),
                 'display'    => absolute_url(image_url($filename, 'display')),
-                'is_default' => $isDefault,
+                // Kept as it was: true whenever what is shown is not a
+                // photograph of this object. A client that only wants to
+                // know "is this real" needs no change.
+                'is_default' => $source !== null && $source !== 'photo',
+                // Which of the three it came from, for a client that wants
+                // to caption it. Null when there is nothing to show at all.
+                'source'     => $source,
             ];
         })(),
 
@@ -653,6 +719,42 @@ function item_to_api(array $r, bool $withImages = false): array
             // Which lookup found it, or null when somebody typed it in.
             'source' => $d['source'] === null ? null : (string) $d['source'],
         ], item_documents((int) $r['id']));
+
+        // What this runs on, and what it runs under.
+        //
+        // Both tables have existed throughout and both are already enforced -
+        // api_link_refusal() consults effective_compatibility() before letting a
+        // card into a machine. What was missing was any way to read or set them
+        // from outside the engine's own interface, so the fitting rules were
+        // running against lists no client could supply. A rule enforced on data
+        // nobody can edit is worse than no rule: it refuses, and the person
+        // refused has nowhere to go and correct it.
+        //
+        // `from` says which of the two answered - see effective_compatibility().
+        // A model's list wins over a card's own, because a copy of a BigRAM 2008
+        // cannot fit something a BigRAM 2008 does not; the card's own list is
+        // kept either way, so detaching the model does not lose what was typed.
+        $compat = effective_compatibility((int) $r['id'], (int) ($r['model_id'] ?? 0));
+        $out['compatibility'] = [
+            'model_ids' => $compat['ids'],
+            'names'     => $compat['names'],
+            'from'      => $compat['from'],
+            // What this entry itself says, as against what it inherits. A client
+            // drawing tick boxes needs this one: the boxes edit the item's list,
+            // and showing the model's inherited answer as though it were ticked
+            // here would make clearing a box appear to do nothing.
+            'own_model_ids' => item_compatibility_ids((int) $r['id']),
+        ];
+
+        $out['environments'] = array_map(static fn(array $e): array => [
+            'id'   => (int) $e['id'],
+            'name' => (string) $e['name'],
+        ], all(
+            'SELECT o.id, o.name FROM item_environments e
+               JOIN operating_systems o ON o.id = e.os_id
+              WHERE e.item_id = ? ORDER BY o.name',
+            [(int) $r['id']]
+        ));
     }
 
     return $out;
@@ -886,6 +988,12 @@ function hardware_model_to_api(array $r): array
         'interface'   => $r['interface'],
         'notes'       => $r['notes'],
         'sort_order'  => (int) ($r['sort_order'] ?? 0),
+        // Which machines a peripheral model fits. The authoritative half of
+        // compatibility: effective_compatibility() prefers this over anything a
+        // single card says about itself, because a copy of a part cannot fit
+        // something the part does not. Always present, and empty for a machine -
+        // a machine does not fit into anything, it is what things fit into.
+        'compatible_model_ids' => model_compatibility_ids((int) $r['id']),
     ];
 }
 
@@ -897,9 +1005,9 @@ function hardware_model_to_api(array $r): array
  * software_model_media) left for later, the same restraint applied to
  * hardware models' own compatibility and vocabulary features.
  */
-function software_model_to_api(array $r): array
+function software_model_to_api(array $r, bool $withLists = false): array
 {
-    return [
+    $out = [
         'id'          => (int) $r['id'],
         'name'        => $r['name'],
         'slug'        => $r['slug'],
@@ -917,9 +1025,42 @@ function software_model_to_api(array $r): array
             'slug' => $r['platform_slug'] ?? null,
         ] : null,
         'notes'       => $r['notes'],
+        // The old single string, kept readable. `media` the list is the answer
+        // now; this column is whatever was in it before the list existed and is
+        // never written any more.
         'media'       => $r['media'] ?? null,
         'year_from'   => isset($r['year_from']) ? (int) $r['year_from'] : null,
     ];
+
+    // How many of each, always - a list screen wants to say "4 fields, 3 items"
+    // without fetching three child tables per row.
+    $id = (int) $r['id'];
+    $out['field_count']   = (int) ($r['field_count']   ?? scalar('SELECT COUNT(*) FROM software_model_fields WHERE model_id = ?', [$id]));
+    $out['content_count'] = (int) ($r['content_count'] ?? scalar('SELECT COUNT(*) FROM software_model_contents WHERE model_id = ?', [$id]));
+    $out['media_count']   = (int) ($r['media_count']   ?? scalar('SELECT COUNT(*) FROM software_model_media WHERE model_id = ?', [$id]));
+
+    // The lists themselves only when asked, because they are three queries per
+    // row and an index of forty models would otherwise run a hundred and twenty
+    // of them to draw a table that shows none of it.
+    if ($withLists) {
+        $out['fields'] = array_map(static fn(array $f): array => [
+            'label'         => (string) $f['label'],
+            'default_value' => $f['default_value'],
+            'hint'          => $f['hint'],
+        ], software_model_fields($id));
+
+        $out['contents'] = array_map(static fn(array $c): array => [
+            'label' => (string) $c['label'],
+            'note'  => $c['note'],
+        ], software_model_contents($id));
+
+        $out['media_list'] = array_map(static fn(array $m): array => [
+            'medium'   => (string) $m['medium'],
+            'quantity' => (int) $m['quantity'],
+        ], software_model_media($id));
+    }
+
+    return $out;
 }
 
 /**
@@ -1032,6 +1173,49 @@ function api_apply_item_lists(int $itemId, array $in): array
                 // address, so a client cannot store a javascript: link by
                 // calling the API instead of using the form.
                 set_item_documents($itemId, $labels, $urls);
+            }
+        }
+    }
+
+    // Which machine models this card fits. Ids, replaced wholesale - the form
+    // that posts these shows every box, so what comes back is the whole answer
+    // and a box somebody cleared has to actually clear.
+    //
+    // set_item_compatibility() does the checking that matters: a model must
+    // exist, be a machine, and belong to the same library as the entry. Ids that
+    // fail are dropped rather than refused, because the only way to send one is
+    // a stale form or a crafted request and neither wants an error page - but
+    // sending something that is not a list at all is a client bug worth naming.
+    if (array_key_exists('compatibility', $in)) {
+        if (!is_array($in['compatibility'])) {
+            $errors['compatibility'] = 'Must be an array of hardware model ids.';
+        } else {
+            set_item_compatibility($itemId, array_map('intval', array_values($in['compatibility'])));
+        }
+    }
+
+    // What it runs under - MS-DOS and Windows 3.x both, for a 1995 PC release.
+    // Same shape, and the reason it is a list at all: this was one column once,
+    // and whichever environment somebody picked, the catalogue then implied the
+    // others were untrue.
+    if (array_key_exists('environments', $in)) {
+        if (!is_array($in['environments'])) {
+            $errors['environments'] = 'Must be an array of environment ids.';
+        } else {
+            $want = array_values(array_unique(array_filter(
+                array_map('intval', array_values($in['environments'])),
+                static fn(int $v): bool => $v > 0
+            )));
+            $libraryId = (int) (scalar('SELECT library_id FROM items WHERE id = ?', [$itemId]) ?? 0);
+            q('DELETE FROM item_environments WHERE item_id = ?', [$itemId]);
+            if ($want !== [] && $libraryId > 0) {
+                // Only this library's own environments, the same rule
+                // sync_item_environments() enforces for the web form.
+                $ph = implode(',', array_fill(0, count($want), '?'));
+                q("INSERT IGNORE INTO item_environments (item_id, os_id)
+                   SELECT ?, o.id FROM operating_systems o
+                    WHERE o.id IN ($ph) AND o.library_id = ?",
+                  array_merge([$itemId], $want, [$libraryId]));
             }
         }
     }

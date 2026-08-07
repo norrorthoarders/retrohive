@@ -365,7 +365,20 @@
     Open this from an entry's edit page to import into it.
   </div>
 <?php elseif (trim($query) !== ''): ?>
-  <div class="empty"><h2>Nothing found</h2><p>No source recognised that title. Try a shorter or more exact spelling.</p></div>
+  <?php if (($consulted ?? 1) === 0): ?>
+    <div class="empty">
+      <h2>No source was asked</h2>
+      <p>
+        No metadata source is switched on for the branch this entry is filed
+        under, so nothing was consulted - this is not a title the sources failed
+        to recognise. Switch one on for the branch under Manage › Metadata
+        sources, or run "Branches no source is switched on for" from Instance
+        Status to switch on the usual ones everywhere at once.
+      </p>
+    </div>
+  <?php else: ?>
+    <div class="empty"><h2>Nothing found</h2><p>No source recognised that title. Try a shorter or more exact spelling.</p></div>
+  <?php endif; ?>
 <?php endif; ?>
 
 <?php endif; ?>

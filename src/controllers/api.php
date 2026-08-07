@@ -46,6 +46,20 @@ function api_meta(): void
             fn($k) => ['value' => $k, 'label' => status_label($k)],
             status_options()
         ),
+        // What a release can come on, grouped exactly as the engine's own
+        // select groups it. A client building the media rows of a packaging
+        // model needs this list, and the alternative - hardcoding twenty
+        // strings in each client - is how two of them end up disagreeing about
+        // whether it is "3.5-inch disk" or "3.5\" disk", which the server then
+        // rejects with no way for anybody to see why.
+        'media' => array_map(
+            static fn(string $group, array $values): array => [
+                'group'  => $group,
+                'values' => array_values($values),
+            ],
+            array_keys(media_options()),
+            array_values(media_options())
+        ),
     ]);
 }
 
@@ -97,9 +111,14 @@ function api_login(): void
     }
 
     // An account with nothing it may change can never hold a write token,
-    // whatever it asked for. That is a membership question, not a role one.
+    // whatever it asked for. That is a membership question, not a role one -
+    // except for an administrator, who has instance-level work that no
+    // membership grants and no membership should have to. This is the path the
+    // web client signs in through, so it is the one that was handing a
+    // directory-promoted administrator a read token and then refusing them
+    // every admin screen with a message about libraries.
     set_acting_user($row);
-    if (!can_edit_anything()) {
+    if (!can_edit_anything() && !is_admin_user($row)) {
         $scope = 'read';
     }
 
@@ -200,8 +219,18 @@ function api_tokens_create(): void
     if ($name === '') {
         api_error('validation_failed', 'Give the token a name so you can recognise the device later.', 422);
     }
+    // An account that can change nothing gets a token that can change nothing,
+    // rather than one that fails on first use.
+    //
+    // An administrator is the exception, and missing it is what made the
+    // directory case so confusing: an LDAP account promoted by group mapping
+    // has no library membership, so can_edit_anything() was false, so signing
+    // in silently issued a read token - and every admin screen then failed with
+    // a message about libraries. The downgrade is right for an ordinary account
+    // with no memberships; it is wrong for somebody who administers the
+    // instance, whose token has instance-level work to do.
     $scope = ($in['scope'] ?? 'write') === 'read' ? 'read' : 'write';
-    if ($scope === 'write' && !can_edit_anything()) {
+    if ($scope === 'write' && !can_edit_anything() && !is_admin_user($user)) {
         $scope = 'read';
     }
 
@@ -845,7 +874,19 @@ function api_item_images_index(int $itemId): void
     if ($parent === null || !can_read_library((int) $parent['library_id'])) {
         api_error('not_found', 'No catalogue entry with that id.', 404);
     }
-    api_ok(array_map('image_to_api', item_images($itemId)));
+    // Optionally one side or the other. `kind` says what a picture shows and
+    // `provenance` says where it came from, and they are genuinely different
+    // questions - a client drawing the publisher's artwork and somebody's own
+    // photographs as two separate galleries wants to ask this one.
+    $rows = item_images($itemId);
+    $want = $_GET['provenance'] ?? null;
+    if ($want === 'official' || $want === 'personal') {
+        $rows = array_values(array_filter(
+            $rows,
+            static fn(array $r): bool => ($r['provenance'] ?? 'personal') === $want
+        ));
+    }
+    api_ok(array_map('image_to_api', $rows));
 }
 
 /**
@@ -859,6 +900,15 @@ function api_item_images_upload(int $itemId): void
     api_guard_image_write($itemId);
 
     $kind = $_POST['kind'] ?? $_GET['kind'] ?? 'other';
+
+    // Where the picture came from, which store_item_images() has always taken
+    // and nothing has ever been able to say. Scrapers set 'official' from
+    // inside the engine; a person scanning their own box art had no way to file
+    // it as anything but their own snapshot. Anything that is not exactly
+    // 'official' is personal, which is the safe direction: mistaking somebody's
+    // photograph for the publisher's artwork misrepresents it, and the reverse
+    // merely under-claims.
+    $provenance = $_POST['provenance'] ?? $_GET['provenance'] ?? 'personal';
     $before = array_column(item_images($itemId), 'id');
 
     $stored = 0;
@@ -869,7 +919,7 @@ function api_item_images_upload(int $itemId): void
         if ($field === null) {
             api_error('validation_failed', 'Send the photo as a multipart field named "file".', 422);
         }
-        [$stored, $errors] = store_item_images($itemId, $field, (string) $kind);
+        [$stored, $errors] = store_item_images($itemId, $field, (string) $kind, (string) $provenance);
     } else {
         $in = api_body();
         if (!isset($in['file_base64'])) {
@@ -880,7 +930,8 @@ function api_item_images_upload(int $itemId): void
             (string) $in['file_base64'],
             (string) ($in['kind'] ?? $kind),
             isset($in['filename']) ? (string) $in['filename'] : null,
-            isset($in['caption']) ? (string) $in['caption'] : null
+            isset($in['caption']) ? (string) $in['caption'] : null,
+            (string) ($in['provenance'] ?? $provenance)
         );
     }
 
@@ -897,8 +948,10 @@ function api_item_images_upload(int $itemId): void
 }
 
 /** Decode and store a base64 photo. Returns [storedCount, errors]. */
-function api_store_base64_image(int $itemId, string $b64, string $kind, ?string $filename, ?string $caption): array
+function api_store_base64_image(int $itemId, string $b64, string $kind, ?string $filename,
+                                ?string $caption, string $provenance = 'personal'): array
 {
+    $provenance = $provenance === 'official' ? 'official' : 'personal';
     // Tolerate a data: URL prefix.
     if (preg_match('#^data:[^;]+;base64,#', $b64)) {
         $b64 = (string) preg_replace('#^data:[^;]+;base64,#', '', $b64);
@@ -950,6 +1003,7 @@ function api_store_base64_image(int $itemId, string $b64, string $kind, ?string 
         'content_hash'  => hash('sha256', $binary),
         'original_name' => $filename === null ? null : mb_substr($filename, 0, 255),
         'kind'          => in_array($kind, image_kind_options(), true) ? $kind : 'other',
+        'provenance'    => $provenance,
         'caption'       => $caption === null || $caption === '' ? null : mb_substr($caption, 0, 255),
         'width'         => (int) $info[0],
         'height'        => (int) $info[1],
@@ -979,6 +1033,18 @@ function api_images_update(int $imageId): void
             api_error('validation_failed', 'Unknown photo kind.', 422, ['kind' => 'Not a known value.']);
         }
         $data['kind'] = $kind;
+    }
+    if (array_key_exists('provenance', $in)) {
+        // Moving a picture between the two galleries, which is the correction
+        // somebody makes after uploading a scan of the box into the wrong one.
+        // Only the two values; anything else is a typo, and silently reading it
+        // as 'personal' would look like the move having been ignored.
+        $prov = (string) $in['provenance'];
+        if (!in_array($prov, ['official', 'personal'], true)) {
+            api_error('validation_failed', 'Provenance is either "official" or "personal".', 422,
+                      ['provenance' => 'Not a known value.']);
+        }
+        $data['provenance'] = $prov;
     }
     if (array_key_exists('caption', $in)) {
         $data['caption'] = $in['caption'] === null || $in['caption'] === '' ? null : mb_substr((string) $in['caption'], 0, 255);
@@ -1894,10 +1960,25 @@ function api_categories_index(): void
  * either, in create or rename, so this does not add a capability the
  * original never had.
  */
+/**
+ * Curator on this library, or an administrator.
+ *
+ * Not api_require_write() first, and that is the whole point. That function
+ * requires a *membership* somewhere - and an administrator promoted by an LDAP
+ * group has none, so it refused before the `is_admin_user()` exemption on the
+ * next line ever got a turn. The exemption was written and then made
+ * unreachable for exactly the accounts it was written for. The same shape of
+ * bug api_require_admin() carried, in the two per-library gates beside it.
+ *
+ * So: authenticated, CSRF and write-scope guarded like any other call, and then
+ * either an administrator or a curator here. Membership is still what grants a
+ * non-administrator access, which is the part acl.php means to be strict about.
+ */
 function api_require_curates_library(int $libraryId): array
 {
-    [$user, $token] = api_require_write();
-    if (!is_admin_user(acting_user()) && !can_structure_library($libraryId)) {
+    [$user, $token] = api_require_auth();
+    api_guard_mutation($token);
+    if (!is_admin_user($user) && !can_structure_library($libraryId)) {
         api_error('forbidden', 'You can arrange the tree of a library you curate. This is not one of them.', 403);
     }
     return [$user, $token];
@@ -1906,8 +1987,11 @@ function api_require_curates_library(int $libraryId): array
 /** Hardware models need owner-level access, the same bar the real web screen's own require_manage() plus can_own_library() checks set - stricter than the curator level everything else in this taxonomy family uses. */
 function api_require_owns_library(int $libraryId): array
 {
-    [$user, $token] = api_require_write();
-    if (!is_admin_user(acting_user()) && !can_own_library($libraryId)) {
+    // Same correction as api_require_curates_library() above, at the stricter
+    // level: the administrator exemption has to be reachable.
+    [$user, $token] = api_require_auth();
+    api_guard_mutation($token);
+    if (!is_admin_user($user) && !can_own_library($libraryId)) {
         api_error('forbidden', 'You can define hardware for a library you own. This is not one of them.', 403);
     }
     return [$user, $token];
@@ -2125,6 +2209,21 @@ function api_categories_delete(int $id): void
  * shown across every entry in a branch is closer to shaping the
  * catalogue than to describing one item in it.
  */
+/**
+ * The pictures that ship with the package, so a client can offer them as
+ * something to set on a branch rather than only accepting an upload.
+ *
+ * Readable by anyone signed in: they are the same fifteen files on every
+ * install, they are already served to every browser that renders an entry, and
+ * a picker that needs curator rights to *look* at the list would be a strange
+ * shape.
+ */
+function api_stock_images_index(): void
+{
+    api_require_auth();
+    api_ok(stock_images_to_api(), ['enabled' => stock_images_enabled()]);
+}
+
 function api_category_image_upload(int $id): void
 {
     $existing = one('SELECT * FROM categories WHERE id = ?', [$id]);
@@ -2133,8 +2232,29 @@ function api_category_image_upload(int $id): void
     }
     api_require_curates_library((int) $existing['library_id']);
 
+    // Either a file or the slug of one that ships with the package. The same
+    // endpoint for both because they set the same thing, and a client offering
+    // "upload one, or pick one of these" should not have to know it is two
+    // different routes underneath. api_body() returns $_POST for a multipart
+    // request, so this reads a JSON body and a form field alike.
+    $slug = trim((string) (api_body()['stock'] ?? ''));
+    if ($slug !== '') {
+        $error = set_category_stock_image($id, $slug);
+        if ($error !== null) {
+            api_error('validation_failed', $error, 422, ['stock' => $error]);
+        }
+        api_ok([
+            'id'    => $id,
+            'image' => [
+                'thumb'   => absolute_url(stock_image_url($slug, 'thumb')),
+                'display' => absolute_url(stock_image_url($slug, 'display')),
+            ],
+        ]);
+    }
+
     if (!isset($_FILES['image']) || (int) ($_FILES['image']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
-        api_error('validation_failed', 'No file arrived.', 422, ['image' => 'Required.']);
+        api_error('validation_failed', 'Send a file, or the slug of a stock picture.', 422,
+                  ['image' => 'Required unless "stock" names one.']);
     }
 
     [$filename, $error] = store_category_default_image($id, 'image');
@@ -2777,6 +2897,32 @@ function api_hardware_model_payload(array $in, int $libraryId, ?array $existing 
     ];
 }
 
+/**
+ * Which machines this peripheral model fits, when the request says.
+ *
+ * Replaced wholesale, absent means leave alone - the same rule every other list
+ * on this API follows, and the one that lets an empty array clear the list while
+ * a PATCH of the name alone preserves it.
+ *
+ * set_model_compatibility() does the checking. A machine is not offered the
+ * question at all: a machine is what things fit into, and a compatibility list
+ * on one would be recording the relationship backwards.
+ */
+function api_apply_model_compatibility(int $modelId, array $in, string $role): ?string
+{
+    if (!array_key_exists('compatible_model_ids', $in)) {
+        return null;
+    }
+    if (!is_array($in['compatible_model_ids'])) {
+        return 'Must be an array of machine model ids.';
+    }
+    if ($role === 'machine') {
+        return 'A machine does not fit into anything. Record this on the peripheral instead.';
+    }
+    set_model_compatibility($modelId, array_map('intval', array_values($in['compatible_model_ids'])));
+    return null;
+}
+
 function api_hardware_models_create(): void
 {
     $in = api_body();
@@ -2797,8 +2943,13 @@ function api_hardware_models_create(): void
     $data['name']       = mb_substr($name, 0, 160);
     $data['slug']       = unique_slug('hardware_models', slugify($name));
 
-    $id = insert_row('hardware_models', $data);
-    api_ok(hardware_model_to_api(hardware_model_fetch((int) $id)), null, 201);
+    $id = (int) insert_row('hardware_models', $data);
+    $row = hardware_model_fetch($id);
+    $err = api_apply_model_compatibility($id, $in, (string) ($row['category_role'] ?? ''));
+    if ($err !== null) {
+        api_error('validation_failed', $err, 422, ['compatible_model_ids' => $err]);
+    }
+    api_ok(hardware_model_to_api(hardware_model_fetch($id)), null, 201);
 }
 
 function api_hardware_models_update(int $id): void
@@ -2821,6 +2972,11 @@ function api_hardware_models_update(int $id): void
     $data['slug'] = unique_slug('hardware_models', slugify($name), $id);
 
     update_row('hardware_models', $id, $data);
+    $row = hardware_model_fetch($id);
+    $err = api_apply_model_compatibility($id, $in, (string) ($row['category_role'] ?? ''));
+    if ($err !== null) {
+        api_error('validation_failed', $err, 422, ['compatible_model_ids' => $err]);
+    }
     api_ok(hardware_model_to_api(hardware_model_fetch($id)));
 }
 
@@ -2868,9 +3024,16 @@ function api_software_models_index(): void
         $where   .= ' AND m.platform_id = ?';
         $params[] = (int) $_GET['platform_id'];
     }
+    // The three counts come down with the list rather than being computed per
+    // row afterwards: the serializer falls back to a query each when they are
+    // absent, and an index of forty models would have run a hundred and twenty
+    // of them to fill in three numbers.
     $rows = all(
         "SELECT m.*, c.name AS category_name, c.slug AS category_slug,
-                p.name AS platform_name, p.slug AS platform_slug
+                p.name AS platform_name, p.slug AS platform_slug,
+                (SELECT COUNT(*) FROM software_model_fields f   WHERE f.model_id = m.id) AS field_count,
+                (SELECT COUNT(*) FROM software_model_contents k WHERE k.model_id = m.id) AS content_count,
+                (SELECT COUNT(*) FROM software_model_media   d  WHERE d.model_id = m.id) AS media_count
            FROM software_models m
       LEFT JOIN categories c ON c.id = m.category_id
       LEFT JOIN platforms p  ON p.id = m.platform_id
@@ -2878,7 +3041,7 @@ function api_software_models_index(): void
        ORDER BY p.name, m.sort_order, m.name",
         $params
     );
-    api_ok(array_map('software_model_to_api', $rows));
+    api_ok(array_map(static fn(array $r): array => software_model_to_api($r), $rows));
 }
 
 function software_model_fetch(int $id): ?array
@@ -2901,7 +3064,10 @@ function api_software_models_show(int $id): void
     if ($row === null || !can_read_library((int) $row['library_id'])) {
         api_error('not_found', 'No software model with that id.', 404);
     }
-    api_ok(software_model_to_api($row));
+    // Everything, including the three child lists - this is the endpoint an
+    // edit form loads from, and a form that had to make four calls to draw
+    // itself would be four chances to draw a model half-populated.
+    api_ok(software_model_to_api($row, true));
 }
 
 /** Shared by create and update. Platform and category, when given, must belong to the same library - the real screen's own quiet assumption, checked here rather than trusted. */
@@ -2933,6 +3099,92 @@ function api_software_model_payload(array $in, int $libraryId, ?array $existing 
     ];
 }
 
+/**
+ * Write a model's three child lists, when the request mentions them.
+ *
+ * Replaced wholesale, exactly like the engine's own form and the hardware model
+ * editor beside it: what arrives is the model's complete answer, and merging it
+ * with what was there would invent a third list nobody wrote. A key that is
+ * absent from the body is left alone, which is what makes PATCH of a single
+ * column safe - absent and empty are different instructions, and conflating
+ * them would mean renaming a model silently emptied it.
+ *
+ * A row with no label is dropped rather than refused. The forms that post these
+ * keep a blank row at the bottom to add to, so an empty trailing row is the
+ * ordinary case and not a mistake worth an error about.
+ */
+function api_software_model_write_lists(int $id, array $in): array
+{
+    $notes = [];
+
+    if (array_key_exists('fields', $in)) {
+        q('DELETE FROM software_model_fields WHERE model_id = ?', [$id]);
+        $order = 0;
+        foreach ((array) $in['fields'] as $row) {
+            $label = trim((string) ($row['label'] ?? ''));
+            if ($label === '') {
+                continue;
+            }
+            $order += 10;
+            q('INSERT IGNORE INTO software_model_fields (model_id, label, default_value, hint, sort_order)
+               VALUES (?, ?, ?, ?, ?)',
+              [$id, mb_substr($label, 0, 60),
+               nullify($row['default_value'] ?? null),
+               nullify($row['hint'] ?? null), $order]);
+        }
+    }
+
+    if (array_key_exists('contents', $in)) {
+        q('DELETE FROM software_model_contents WHERE model_id = ?', [$id]);
+        $order = 0;
+        foreach ((array) $in['contents'] as $row) {
+            $label = trim((string) ($row['label'] ?? ''));
+            if ($label === '') {
+                continue;
+            }
+            $order += 10;
+            q('INSERT IGNORE INTO software_model_contents (model_id, label, note, sort_order)
+               VALUES (?, ?, ?, ?)',
+              [$id, mb_substr($label, 0, 120), nullify($row['note'] ?? null), $order]);
+        }
+    }
+
+    if (array_key_exists('media_list', $in)) {
+        q('DELETE FROM software_model_media WHERE model_id = ?', [$id]);
+        $order    = 0;
+        $rejected = [];
+        foreach ((array) $in['media_list'] as $row) {
+            $medium = trim((string) ($row['medium'] ?? ''));
+            if ($medium === '') {
+                continue;
+            }
+            // Only what the vocabulary offers, the same rule the engine's own
+            // form enforces on its select. Free text here is how a library ends
+            // up holding both `3.5" disk` and `3.5 inch disk` and being unable
+            // to count either.
+            if (!in_array($medium, media_option_values(), true)) {
+                $rejected[] = $medium;
+                continue;
+            }
+            $order += 10;
+            insert_row('software_model_media', [
+                'model_id'   => $id,
+                'medium'     => $medium,
+                'quantity'   => max(1, min(999, (int) ($row['quantity'] ?? 1))),
+                'sort_order' => $order,
+            ]);
+        }
+        // Said rather than swallowed. A client sending a medium this catalogue
+        // does not have gets a saved model with a shorter list than it sent,
+        // and silence there looks exactly like the save having failed.
+        if ($rejected !== []) {
+            $notes['media_ignored'] = array_values(array_unique($rejected));
+        }
+    }
+
+    return $notes;
+}
+
 function api_software_models_create(): void
 {
     $in = api_body();
@@ -2953,8 +3205,9 @@ function api_software_models_create(): void
     $data['name']       = mb_substr($name, 0, 160);
     $data['slug']       = unique_slug('software_models', slugify($name));
 
-    $id = insert_row('software_models', $data);
-    api_ok(software_model_to_api(software_model_fetch((int) $id)), null, 201);
+    $id = (int) insert_row('software_models', $data);
+    $notes = api_software_model_write_lists($id, $in);
+    api_ok(software_model_to_api(software_model_fetch($id), true), $notes ?: null, 201);
 }
 
 function api_software_models_update(int $id): void
@@ -2977,7 +3230,8 @@ function api_software_models_update(int $id): void
     $data['slug'] = unique_slug('software_models', slugify($name), $id);
 
     update_row('software_models', $id, $data);
-    api_ok(software_model_to_api(software_model_fetch($id)));
+    $notes = api_software_model_write_lists($id, $in);
+    api_ok(software_model_to_api(software_model_fetch($id), true), $notes ?: null);
 }
 
 /**
@@ -3181,8 +3435,11 @@ function api_tags_index(): void
  */
 function api_require_curates_any(): array
 {
-    [$user, $token] = api_require_write();
-    if (!is_admin_user(acting_user()) && accessible_library_ids($user, ACCESS_CURATOR) === []) {
+    // The third of the three gates that put an unreachable administrator
+    // exemption behind api_require_write()'s membership check. Same correction.
+    [$user, $token] = api_require_auth();
+    api_guard_mutation($token);
+    if (!is_admin_user($user) && accessible_library_ids($user, ACCESS_CURATOR) === []) {
         api_error('forbidden', 'You can arrange a library you curate. This is not one of them.', 403);
     }
     return [$user, $token];
@@ -3656,6 +3913,10 @@ function api_metadata_search(): void
         // cost an evening: with every source working the answer was an array, and
         // disabling a single provider turned it into an object.
         'errors'   => (object) $out['errors'],
+        // How many sources were actually consulted for this entry's branch.
+        // Zero means nobody was asked, which a client must be able to tell
+        // apart from every source having been asked and found nothing.
+        'consulted' => $out['consulted'] ?? null,
         'providers' => array_map(
             fn($p) => ['id' => (int) $p['id'], 'name' => $p['name'], 'type' => $p['type']],
             enabled_metadata_providers()
@@ -5804,6 +6065,32 @@ function api_link_refusal(array $machine, array $part): ?string
         // rename entirely, into text a person actually reads.
         return sprintf('%s is not listed as compatible with %s.',
                        (string) $part['title'], (string) $machine['title']);
+    }
+
+    // Already fitted somewhere.
+    //
+    // A physical object is inside one machine or none - the database says so
+    // itself, with the uq_fitted_once key on item_links - but nothing asked the
+    // question here, so the picker offered every peripheral in the library
+    // including the ones already installed. Choosing one did not merely give a
+    // wrong answer: it hit that unique key and failed, which is a poor way to
+    // learn a rule the interface could simply not have offered.
+    //
+    // Asked of the part in every direction, because the same wrongness reads
+    // both ways: a card in an A2000 should not appear in the A3000's picker,
+    // and an A3000 should not appear as somewhere to move it to without the
+    // A2000 being told. Taking it out first is the deliberate act.
+    $fittedIn = one(
+        "SELECT l.parent_item_id, i.title
+           FROM item_links l
+           JOIN items i ON i.id = l.parent_item_id
+          WHERE l.child_item_id = ? AND l.relation = 'installed_in'
+          LIMIT 1",
+        [(int) $part['id']]
+    );
+    if ($fittedIn !== null && (int) $fittedIn['parent_item_id'] !== (int) $machine['id']) {
+        return sprintf('%s is already installed in %s. Remove it from there first.',
+                       (string) $part['title'], (string) $fittedIn['title']);
     }
 
     // And the platform, which catches the case where neither has a model: an

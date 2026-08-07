@@ -1,5 +1,286 @@
 # Changelog
 
+**Compatibility is editable at last - both halves of it. The three tables have
+been enforced since they were added, against lists nothing outside the engine's
+own interface could supply.**
+
+`api_link_refusal()` consults `effective_compatibility()` before letting a card
+into a machine, and has done throughout. But `item_to_api()` reported neither
+`item_compatibility` nor `item_environments`, and `hardware_model_to_api()`
+reported no `model_compatibility` - so the rule was running against data no
+client could read or write. A rule enforced on data nobody can edit is worse
+than no rule at all: it refuses, and the person refused has nowhere to go and
+correct it.
+
+- `item_to_api()` gains `compatibility` and `environments` behind the detail
+  flag, with the rest of the per-row lists. `compatibility` carries the
+  effective answer, the names, `from` (`model`/`item`/`none`), and
+  `own_model_ids` - what the entry itself says as against what it inherits. A
+  client drawing tick boxes needs that last one: the boxes edit the item's own
+  list, and pre-ticking an inherited answer would make clearing a box appear to
+  do nothing.
+- `POST`/`PATCH /items` accept `compatibility` and `environments` as id arrays,
+  through `api_apply_item_lists()` beside media and links. Replaced wholesale
+  when the key is present, left alone when absent - so an empty array clears and
+  an omitted key preserves. Environments are constrained to the entry's own
+  library, matching what `sync_item_environments()` enforces for the web form.
+- `hardware_model_to_api()` gains `compatible_model_ids`, and both write
+  endpoints accept it. This is the authoritative half: a model's list beats a
+  card's own, because a copy of a BigRAM 2008 cannot fit something a BigRAM 2008
+  does not. A machine sending one is **refused** rather than ignored - a machine
+  is what things fit into, and accepting the list would be recording the
+  relationship backwards.
+
+Silence still means "any machine on its platform" everywhere, which is what it
+has always meant here - ticking nothing is not the same as fitting nothing, and
+reading it that way would refuse every properly-filed card in a fresh catalogue.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 92**.
+
+**Three more gates carrying the same unreachable administrator exemption the
+admin gate had - found by looking for the shape rather than waiting for the
+symptom.**
+
+`api_require_admin()` was fixed in build 88: it called `api_require_write()`
+first, which requires a library *membership*, so an administrator promoted by an
+LDAP group was refused before the role was ever consulted. Three more functions
+had the identical structure, and each had an explicit administrator exemption
+written on the line immediately after the check that made it unreachable:
+
+- `api_require_curates_library()` - the category tree, locations, companies
+- `api_require_owns_library()` - hardware and packaging models
+- `api_require_curates_any()` - tags
+
+Every one reads `if (!is_admin_user(...) && !can_...)`. The exemption was
+written, deliberately, for exactly the accounts that could never reach it. All
+three now take `api_require_auth()` plus `api_guard_mutation()` - the same CSRF
+and write-scope rules as any other call - and then ask the question they meant to
+ask. Membership is still the whole of a non-administrator's access, which is the
+part `acl.php` means to be strict about, and the gate was checked against an
+ordinary account with no memberships to confirm it still refuses.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 91**.
+
+**Pictures can now be filed as the publisher's artwork or as somebody's own
+photograph, from outside the engine - the axis `item_images.provenance` has
+carried since it was added, and which nothing but a metadata agent could ever
+set.**
+
+`store_item_images()` has taken a `$provenance` argument throughout and
+`image_to_api()` has reported it throughout. What was missing was any way in:
+`api_item_images_upload()` read `kind` from the request and hardcoded the other
+half, so a scraper could file the publisher's box art as official and a person
+scanning that same box by hand could not. One of the two axes was writable and
+the other was not.
+
+- `POST /items/{id}/images` accepts `provenance`, on both the multipart and the
+  base64 paths. Anything that is not exactly `official` is `personal` - the safe
+  direction, since mistaking somebody's snapshot for the publisher's artwork
+  misrepresents it while the reverse merely under-claims. The base64 path was
+  also never writing the column at all, so every picture that arrived that way
+  took the schema default regardless of what was asked for.
+- `GET /items/{id}/images?provenance=` filters to one side, for a client drawing
+  two galleries.
+- `PATCH /images/{id}` accepts `provenance`, so a picture can be moved between
+  the two without being deleted and re-uploaded - it keeps its id, its caption,
+  and its place as the cover. Here an unknown value is **refused** rather than
+  rounded down: a move that silently did nothing would read as the request being
+  ignored, which is a different bug to chase than a validation error.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 90**.
+
+**Packaging models can now say what they are for. The three child lists the
+`software_models` table was designed around - the fields a title is asked, what
+the box should hold, and what it comes on - are exposed by the API and writable
+through it for the first time.**
+
+The tables have existed throughout and the engine's own screen has edited them
+throughout. What was missing was the API: `software_model_to_api()` returned a
+name, a platform, a category and a note, and `api_software_model_payload()`
+accepted the same four. So every client other than the engine's own interface
+saw a packaging model as a label with nothing behind it - which is what a
+"Packaging models" page with no packaging on it amounts to.
+
+`GET /software-models/{id}` now carries `fields`, `contents` and `media_list`.
+The index carries `field_count`, `content_count` and `media_count` but not the
+lists: three child queries per row would be a hundred and twenty of them to draw
+a table of forty models that shows none of it. The counts come down as
+subqueries on the one statement rather than being filled in per row afterwards.
+
+POST and PATCH accept all three. Each list is replaced wholesale when its key is
+present and left entirely alone when it is absent - the engine's own rule, and
+the hardware model editor's beside it: the rows that arrive are the model's
+complete answer, and merging them with what was there would invent a third list
+nobody wrote. Absent and empty stay different instructions, which is what makes
+`PATCH {"name": "..."}` safe and still lets a list be emptied with `[]`.
+
+A row with a blank label is dropped rather than refused, because a form that
+keeps a spare row at the bottom to type into posts an empty trailing row every
+time and that is the ordinary state of the thing.
+
+Media rows are checked against `media_option_values()`, the same vocabulary the
+engine's own select is built from - free text there is how a library ends up
+holding both `3.5" disk` and `3.5 inch disk` and being able to count neither. An
+unrecognised medium is dropped and **named back** in `meta.media_ignored` rather
+than refusing the whole save: a model that saves with one row fewer than was sent
+looks exactly like a save that failed, and silence there is the worst of both.
+
+`GET /meta` now carries the media vocabulary, grouped as the engine groups it, so
+a client can build the same select instead of hardcoding twenty strings and
+drifting out of step with the validator that will silently drop them.
+
+`software_model_media()` joins its two siblings in models.php. Both existing
+callers had written the query inline, which is part of why the API had no obvious
+thing to call.
+
+`media` and `year_from` remain readable and remain unwritable, matching the
+engine's own form: the media list is a child table now, and the year belongs to
+the title rather than to a shape of release. The columns stay so an old value is
+still readable.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 89**.
+
+**Fifteen generic packaging pictures now ship with the package, and an entry with
+no photograph of its own falls back to whichever one matches what it is - plus
+four real bugs found and fixed along the way, three of them pre-existing and one
+of them the reason metadata lookups on films and records found nothing at all.**
+
+## Generic pictures for entries with no photograph
+
+A catalogue with no photographs in it is a wall of grey rectangles saying "no
+photo yet", and most catalogues start that way: an agent finds cover art for the
+famous releases and nothing for the rest, and photographing two hundred boxes is
+a weekend nobody has. `public/stock/` now holds fifteen blank mock-ups of the
+packaging itself - a big box, a jewel case, a VHS in its slip, a record half out
+of its sleeve - re-encoded as WebP with their transparency intact, 21 MB of PNG
+down to 2.1 MB with no visible loss. Quantised PNG was tried first and rejected:
+the gradients and drop shadows posterise.
+
+`cover` now resolves in three steps rather than two - a real photograph, then the
+branch's own picture, then a generic one - and reports which answered in a new
+`source` field (`photo`, `category`, `stock`, or null). `is_default` keeps its
+old meaning exactly, so a client reading only that needs no change.
+
+The stock step sits *below* the branch's own picture deliberately. Setting a
+picture on a branch is something somebody did on purpose; this is an automatic
+guess, and if the guess won, the deliberate act would be an override that
+overrode nothing.
+
+Nothing is written to the database. A `stock:` reference is resolved at read
+time by `image_url()`, so an entry that gains a real photograph tomorrow stops
+resolving to one on its own and there is no cleanup to forget. The files sit
+outside the uploads directory entirely: they are part of the package, identical
+on every install, restored by a redeploy for free, and invisible to everything
+that manages uploads.
+
+Which picture is chosen comes from what the entry already says - its kind, what
+it comes on (media rows first, then `media_type`, then the platform, which for
+the video and audio sections *is* the format), and whether `completeness` says
+`loose`, which is the whole reason the bare-tape and bare-disc pictures exist.
+Twenty cases were run against the real matcher rather than reasoned about,
+including the two that collide by substring: a game on CD-ROM correctly gets the
+big box rather than being caught by the music CD rule, and "VHS tape" correctly
+matches VHS rather than cassette.
+
+Hardware gets nothing, on purpose. A generic picture of "a computer" is a lie
+about a specific machine in a way that a generic picture of a DVD case is not.
+Software gets one picture per kind rather than one per era, because the big box
+is what boxed software looked like across every platform this catalogue covers.
+
+`GET /stock-images` lists them, and `POST /categories/{id}/image` now accepts a
+`stock` slug as well as a file, so a branch can be pointed at one deliberately
+without uploading a copy. Stored as a reference, so removing it later deletes no
+file and leaves every other branch pointing at the same one alone. The whole
+feature can be switched off with the new `stock_images` setting, which is an
+honest position: a generic picture describes a format, not an object.
+
+## Metadata lookups on films, series and records asked no source at all
+
+Looking up a film against an instance with TMDB configured and working found
+nothing, and logged nothing - which read as a broken source and was in fact a
+question that was never asked.
+
+`seed_library_provider_scopes()` enumerated four kinds: machine, peripheral,
+game, application. Video and audio branches were never given a `provider_scopes`
+row, so `providers_for()` returned an empty set for them, so `metadata_search_all()`
+consulted nobody. This is the same gap `category_effective_role()` had and had
+fixed - roles were added to the template data and the lists that enumerate them
+were not extended to match - and it is the third time that particular omission
+has surfaced.
+
+The kinds list is fixed, but that only helps libraries seeded afterwards, so
+there is now a maintenance job - **Branches no source is switched on for** - that
+reports every top-of-kind branch nothing is switched on for and repairs them by
+running the same seeding, which only ever adds and never overrides a decision
+somebody has made.
+
+And the message was wrong in a way that hid the cause. "No source recognised that
+title" is a claim about what the sources answered; the truth was that there had
+been no question. `metadata_search_all()` now returns a `consulted` count, and
+both lookup screens say "No source was asked" when it is zero, naming the two
+places to fix it.
+
+## An administrator from a directory could reach no admin screen
+
+`api_require_admin()` called `api_require_write()` first, which requires library
+membership. That is deliberate for libraries - `acl.php` says so, so that an
+administrator does not silently acquire the ability to read everybody's private
+shelves - but instance administration has nothing to do with it. An account
+promoted to administrator by an LDAP group mapping has no membership anywhere, so
+every instance endpoint answered 403 "This account has no library it is allowed
+to change" to a genuine administrator. The web interface showed the admin menus,
+because it asks the role; the API refused them, because it asked membership.
+
+Worse, the same fact had already downgraded their token: both sign-in paths
+issued a read-only token to any account that `can_edit_anything()` said no to, so
+the token was refused even for reads on those screens.
+
+Fixed in three places. `api_require_admin()` now applies the CSRF and write-scope
+guards - factored out as `api_guard_mutation()` - and the admin role, and does
+not consult membership. The write-scope guard is asked per method rather than per
+endpoint, so a read-only token may now read admin screens, which are all GETs,
+and still cannot write. And both token paths make an administrator an exception
+to the downgrade.
+
+## A peripheral already installed somewhere was still offered
+
+`api_link_refusal()` checked domain, kind, compatibility and platform, and never
+asked whether the part was already fitted. So the picker on a machine's edit page
+listed every peripheral in the library including the ones already inside other
+machines - and choosing one did not merely record something false, it hit the
+`uq_fitted_once` key the schema already carries and failed. The rule was
+enforced; it was just enforced at the worst possible moment. Now refused by name,
+saying where the part currently is, which corrects the picker and the write path
+together.
+
+## Category default pictures were deleted by the orphan sweep
+
+Both `bin/cleanup-uploads.php` and `maintenance_upload_is_orphan()` built their
+set of referenced filenames from three tables and there are four:
+`categories.default_image_filename` was never counted. A picture uploaded as a
+branch default read as an orphan, and the repair deletes what the check reports -
+so uploading one and later running the sweep deleted the file and left the row
+pointing at nothing. Pre-existing, unrelated to the stock pictures, and found
+while checking that the new shipped files could not be eaten the same way. They
+cannot: they are not in the uploads directory.
+
+## Renames
+
+**Logs** is now **Instance Logs** and **Maintenance** is now **Instance Status**,
+in both the engine's own interface and the web client.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 88**.
+
 **A full audit of `structure/`, checked against everything built this session rather than
 assumed current - found and fixed one real, genuine gap.**
 

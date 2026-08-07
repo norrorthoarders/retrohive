@@ -235,8 +235,8 @@ if (!empty($noindex) || !search_indexing_allowed()):
                     // has over them. It existed and was reachable only by typing the
                     // address. ?>
               <a href="<?= e(url('/manage/libraries')) ?>">Library management</a>
-              <a href="<?= e(url('/admin/logs')) ?>">Logs</a>
-              <a href="<?= e(url('/manage/maintenance')) ?>">Maintenance</a>
+              <a href="<?= e(url('/admin/logs')) ?>">Instance Logs</a>
+              <a href="<?= e(url('/manage/maintenance')) ?>">Instance Status</a>
             <?php endif; ?>
             <form method="post" action="<?= e(url('/logout')) ?>">
               <?= csrf_field() ?>

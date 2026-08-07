@@ -206,6 +206,24 @@ function maintenance_jobs(): array
             'repair_label' => 'Remove them',
         ],
 
+        'unasked_branches' => [
+            'label'  => 'Branches no source is switched on for',
+            'scope'  => 'instance',
+            'access' => 'admin',
+            'blurb'  => 'A lookup asks the sources switched on for the branch the entry is '
+                      . 'filed under, and nothing is switched on until something switches it. '
+                      . 'A branch nobody has been switched on for answers "nothing found" to '
+                      . 'every lookup, having asked nobody - which reads as the sources being '
+                      . 'broken rather than as never having been consulted. Video and audio '
+                      . 'branches were affected on every instance built before this version: '
+                      . 'the seeding step only ever considered machines, peripherals, games '
+                      . 'and applications, so a Movies branch was never given a row however '
+                      . 'many times a source was added.',
+            'check'  => 'maintenance_check_unasked_branches',
+            'repair' => 'maintenance_repair_unasked_branches',
+            'repair_label' => 'Switch on the usual sources',
+        ],
+
         'unfiled' => [
             'label'  => 'Entries filed somewhere that is gone',
             'scope'  => 'library',
@@ -416,7 +434,110 @@ function maintenance_upload_is_orphan(string $name): bool
     if ((int) scalar('SELECT COUNT(*) FROM companies WHERE logo_filename = ?', [$bare]) > 0) {
         return false;
     }
+    // A branch's own default picture, which this had never counted.
+    //
+    // Three tables were listed here and there are four. A picture uploaded as a
+    // category default was referred to by nothing this function knew about, so
+    // it read as an orphan - and the repair below deletes what this reports.
+    // Uploading a default picture for Movies and then running the orphan sweep
+    // deleted it, leaving the row pointing at a file that was no longer there.
+    // Pre-existing, and unrelated to the stock pictures that now cover the same
+    // ground automatically: those are shipped files outside the uploads
+    // directory entirely and were never at risk from this.
+    if ((int) scalar('SELECT COUNT(*) FROM categories WHERE default_image_filename = ?', [$bare]) > 0) {
+        return false;
+    }
     return (int) scalar('SELECT COUNT(*) FROM users WHERE avatar_filename = ?', [$bare]) === 0;
+}
+
+/**
+ * Branches that would ask nobody.
+ *
+ * The topmost branch of each kind is the one seeding gives a row to, because
+ * both the kind and the source inherit downward - so that is the level this
+ * asks about too. A branch whose kind no configured source claims as a default
+ * is not reported: nothing is wrong with a Blank media branch that no metadata
+ * source is good for, and a line saying so every time somebody opens this page
+ * is noise.
+ */
+function maintenance_check_unasked_branches(): array
+{
+    if (!function_exists('metadata_provider_definition')) {
+        return maintenance_result(0, [], 'Metadata sources are not loaded here.');
+    }
+
+    // Which kinds any configured source would be switched on for. Without at
+    // least one, there is nothing this repair could do and nothing to report.
+    $claimed = [];
+    foreach (all('SELECT type FROM metadata_providers WHERE is_enabled = 1') as $p) {
+        $def = metadata_provider_definition((string) $p['type']);
+        foreach ((array) ($def['default_for_kinds'] ?? []) as $kind) {
+            $claimed[$kind] = true;
+        }
+    }
+    if ($claimed === []) {
+        return maintenance_result(0, [],
+            'No metadata source is configured, so there is nothing to switch on anywhere.');
+    }
+
+    $kinds = array_keys($claimed);
+    $rows  = all('SELECT c.id, c.role, c.path, c.name, l.name AS library_name
+                    FROM categories c
+                    JOIN libraries l ON l.id = c.library_id
+                   WHERE c.library_id IS NOT NULL
+                     AND c.role IN (' . implode(',', array_fill(0, count($kinds), '?')) . ')',
+                 $kinds);
+
+    $roleById = [];
+    foreach ($rows as $r) {
+        $roleById[(int) $r['id']] = (string) $r['role'];
+    }
+
+    $out = [];
+    foreach ($rows as $r) {
+        // Only the topmost branch of its kind, matching what seeding writes.
+        $ids = array_map('intval', array_values(array_filter(
+            explode('/', (string) $r['path']), 'strlen')));
+        array_pop($ids);
+        foreach ($ids as $ancestor) {
+            if (($roleById[$ancestor] ?? '') === (string) $r['role']) {
+                continue 2;
+            }
+        }
+
+        $on = (int) scalar('SELECT COUNT(*) FROM provider_scopes
+                             WHERE category_id = ? AND enabled = 1', [(int) $r['id']]);
+        if ($on > 0) {
+            continue;
+        }
+        $out[] = [
+            'what'   => (string) $r['library_name'] . ' › ' . (string) $r['name'],
+            'detail' => 'nothing switched on for this ' . str_replace('_', ' ', (string) $r['role'])
+                      . ' branch, so a lookup here asks no source at all',
+            'id'     => (int) $r['id'],
+        ];
+    }
+
+    return maintenance_result(count($out), $out,
+        $out === [] ? 'Every branch a source is good for has one switched on.' : '');
+}
+
+/**
+ * Run the same seeding a new library gets, which only ever adds and never
+ * overrides a decision somebody has made - a branch deliberately switched off
+ * has a row saying so, and this skips it.
+ */
+function maintenance_repair_unasked_branches(): array
+{
+    $added = 0;
+    foreach (all('SELECT id FROM libraries') as $lib) {
+        $added += seed_library_provider_scopes((int) $lib['id']);
+    }
+    return ['done' => true, 'message' => match (true) {
+        $added === 0 => 'Nothing to switch on.',
+        $added === 1 => '1 source switched on.',
+        default      => $added . ' sources switched on.',
+    }];
 }
 
 /** Slots pointing at a connector from a different machine. */
