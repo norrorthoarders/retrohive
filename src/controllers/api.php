@@ -1179,7 +1179,17 @@ function api_platforms_index(): void
     // rewriting generated SQL by search-and-replace is how a filter ends up
     // pointing at the wrong column without anyone noticing.
     if ($scoped) {
-        [$viAcl, $viAclP] = library_filter_sql('vi.library_id', ACCESS_VIEWER);
+        // Scoped to the named library when there is one. `vi.platform_id = p.id`
+        // already confines this to a single library's rows, because a platform
+        // belongs to one and its entries reference that one - but a count that
+        // is only correct because of a join elsewhere is a count that breaks
+        // when the join changes.
+        if ($onlyLibrary !== null) {
+            $viAcl  = 'vi.library_id = ?';
+            $viAclP = [$onlyLibrary];
+        } else {
+            [$viAcl, $viAclP] = library_filter_sql('vi.library_id', ACCESS_VIEWER);
+        }
         $countSql  = '(SELECT COUNT(*) FROM v_items vi
                         WHERE vi.platform_id = p.id AND vi.status = \'owned\'
                           AND vi.domain = ? AND ' . $viAcl . ')';
@@ -1999,11 +2009,22 @@ function api_categories_index(): void
     // every branch of every platform and sort it out itself.
     //
     //   ?domain=software   the software side
+    //   ?library_id=2      one library's own tree
     //   ?parent_id=17      the children of one node - a genre list, among other things
     //   ?platform_id=4     one machine's branches
     //   ?role=machine      machine kinds, peripheral kinds, game, application,
     //                      movie, tv_show, music, or other
-    $rows = all_categories();
+    //   ?non_empty=1       only branches that hold something
+    //
+    // Without library_id this returns every tree the account can read, which is
+    // right for a picker that has not been told which shelf it is filling and
+    // wrong for a browser, which always has. See non_empty below for what that
+    // cost before the parameter existed.
+    $onlyLibrary = api_query_int('library_id');
+    if ($onlyLibrary !== null && !can_read_library($onlyLibrary)) {
+        api_error('forbidden', 'That library is not one you may read.', 403);
+    }
+    $rows = all_categories($onlyLibrary);
 
     $domain = (string) ($_GET['domain'] ?? '');
     if (in_array($domain, ['hardware', 'software', 'video', 'audio'], true)) {
@@ -2053,7 +2074,21 @@ function api_categories_index(): void
     // anything is filed at it *or* beneath it, which is what makes selecting
     // Adventure offer itself when everything under it is a Point and click.
     if (($_GET['non_empty'] ?? '') !== '' && $rows !== []) {
-        [$acl, $aclP] = library_filter_sql('library_id', ACCESS_VIEWER);
+        // Scoped to one library when one was named, and to everything the
+        // account can read otherwise.
+        //
+        // This asked only the second question, and a browser always means the
+        // first. An empty private library therefore offered the genres of every
+        // *other* library the account could read - "Applications > Graphics and
+        // CAD" on a shelf with nothing on it, because a different shelf had a
+        // copy of Deluxe Paint. The categories themselves were another library's
+        // rows too, so picking one could not have matched anything.
+        if ($onlyLibrary !== null) {
+            $acl  = 'library_id = ?';
+            $aclP = [$onlyLibrary];
+        } else {
+            [$acl, $aclP] = library_filter_sql('library_id', ACCESS_VIEWER);
+        }
         $sql  = "SELECT DISTINCT category_path FROM v_items WHERE $acl";
         $args = $aclP;
 

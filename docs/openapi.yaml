@@ -2395,6 +2395,15 @@ paths:
         client asking a specific question is answered directly rather
         than fetching everything and sorting it out itself.
       parameters:
+        - name: library_id
+          in: query
+          schema: { type: integer }
+          description: >-
+            One library's own tree. Without it, every tree the account can read
+            comes back - which is right for a picker that has not been told which
+            shelf it is filling, and wrong for anything that has. `non_empty` is
+            scoped to the same library, so an empty shelf offers nothing rather
+            than the branches of whichever other shelf happens to hold something.
         - name: domain
           in: query
           schema: { type: string, enum: [hardware, software, video, audio] }

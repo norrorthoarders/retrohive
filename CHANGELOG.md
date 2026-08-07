@@ -1,5 +1,32 @@
 # Changelog
 
+**`GET /categories` can be asked for one library's tree, and `non_empty` now
+counts only that library's entries.**
+
+The endpoint returned every tree the account could read and had no way to narrow
+it. That is right for a picker not yet told which shelf it is filling, and wrong
+for anything that has been - and `non_empty` inherited the same scope, so it
+answered "does anything anywhere use this branch" when the question was always
+"does anything *here*".
+
+An empty private library therefore offered the genres of every other library the
+account could read - Applications › Graphics and CAD on a shelf with nothing on
+it, because a different shelf had a copy of Deluxe Paint. The branches offered
+were that other library's rows too, so choosing one could not have matched a
+single entry.
+
+`library_id` narrows both, and refuses a library the account cannot read rather
+than quietly returning nothing.
+
+The platform count is scoped to the same library when one is named. It was
+already confined to one by `vi.platform_id = p.id` - a platform belongs to one
+library and its entries reference that one - but a count that is only correct
+because of a join elsewhere is a count that breaks when the join changes.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 109**.
+
 **A platform can finally say which sections it belongs to.**
 
 `platforms.domains` decides which browsers offer a platform, and the write path
