@@ -503,6 +503,20 @@ function library_invitable_levels(int $libraryId): array
     return $out;
 }
 
+/**
+ * The levels an invitation to this library may grant, taking a row.
+ *
+ * A thin shape around library_invitable_levels() above, kept because the API
+ * calls it with a library row in hand. It lived in the own-UI controller until
+ * that was removed - it was the one function in there the API genuinely needed,
+ * and a rule about who may be granted what belongs beside the other rules about
+ * who may do what.
+ */
+function library_grantable_levels(array $library): array
+{
+    return library_invitable_levels((int) $library['id']);
+}
+
 /** Public shelves this account could join, and has not. */
 function joinable_libraries(): array
 {

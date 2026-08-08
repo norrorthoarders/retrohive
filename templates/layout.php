@@ -1,9 +1,12 @@
 <?php
 /** @var string $content */
 /** @var string $pageTitle */
+// Both pages this layout still wraps are bare, so the flag is what it always is.
+// Kept rather than removed: it is what the head and body classes read, and
+// hard-coding it would hide why there is no navigation below.
 $bare = $bare ?? false;
 $flashes = take_flashes();
-$user = current_user();
+// $user is no longer read - the navigation that needed it is gone.
 ?>
 <!doctype html>
 <html lang="en">
@@ -29,228 +32,18 @@ if (!empty($noindex) || !search_indexing_allowed()):
 </head>
 <body class="<?= $bare ? 'is-bare' : '' ?>">
 
-<?php if (!$bare): ?>
-<header class="topbar">
-  <div class="topbar__inner">
-    <a class="wordmark" href="<?= e(url('/')) ?>">
-      <span class="wordmark__spines" aria-hidden="true"><i></i><i></i><i></i></span>
-      <span class="wordmark__text"><?= e(config('app_name')) ?></span>
-    </a>
-
-    <nav class="mainnav" aria-label="Sections">
-      <?php
-        // Which library everything on the page is about. Carried across the
-        // section links so switching Software to Hardware does not silently
-        // widen the view back out, and read by Manage so editing locations or
-        // models happens in one library rather than in all of them at once.
-        $navLibrary = trim((string) ($_GET['library'] ?? ''));
-        if ($navLibrary === '' && current_user() !== null) {
-            // The library they are working in, not their personal one - so a page
-            // reached without ?library= keeps showing where they actually are.
-            $mine = working_library();
-            $navLibrary = $mine === null ? '' : (string) $mine['slug'];
-        }
-        $navQuery      = $navLibrary === '' ? [] : ['library' => $navLibrary];
-        // The shelves you have taken on, not everything you may read.
-        //
-        // A published library used to appear here the moment somebody made one, which
-        // reads as having been added to something you never agreed to. Joining is a
-        // choice now; reading one you have not joined still works by link.
-        $navLibraries  = current_user() === null ? [] : joined_libraries();
-        // Accept an id as well as a slug. The options are keyed by slug, so a URL
-        // carrying ?library=3 used to match nothing and the browser showed the first
-        // option - which reads as the app having switched libraries behind your back.
-        // Normalising here means one stray redirect cannot cause that.
-        if ($navLibrary !== '' && ctype_digit($navLibrary)) {
-            foreach ($navLibraries as $navL) {
-                if ((int) $navL['id'] === (int) $navLibrary) {
-                    $navLibrary = (string) $navL['slug'];
-                    break;
-                }
-            }
-        }
-      ?>
-      <a href="<?= e(url('/collection', $navQuery)) ?>">Collection</a>
-      <a href="<?= e(url('/software', $navQuery)) ?>">Software</a>
-      <a href="<?= e(url('/hardware', $navQuery)) ?>">Hardware</a>
-      <?php // Titles are reached through Software, which is where somebody
-            // looking for a game actually goes. A separate entry made the bar
-            // longer and answered the same question twice. ?>
-      <?php
-      // Only while you are working in a library you may arrange.
-      //
-      // This was on the bar for everybody, so a read-only member of somebody
-      // else's shelf saw Manage and was refused at every screen behind it. It
-      // follows the library selector: switch to one you curate and it comes
-      // back, which is the behaviour that was asked for and the behaviour the
-      // gate on those screens already had.
-      ?>
-      <?php if (can_manage_library()): ?>
-        <a href="<?= e(url('/manage', $navQuery)) ?>">Manage</a>
-      <?php endif; ?>
-
-      <?php if (count($navLibraries) > 0): ?>
-        <?php // Which library you are working in. Everything downstream reads
-              // it, so it belongs where it is always visible rather than
-              // repeated as a filter on each page. ?>
-        <form method="get" action="" class="libraryswitch" data-library-switch>
-          <?php foreach ($_GET as $k => $v): if ($k === 'library' || !is_scalar($v)) continue; ?>
-            <input type="hidden" name="<?= e((string) $k) ?>" value="<?= e((string) $v) ?>">
-          <?php endforeach; ?>
-          <label class="visually-hidden" for="nav-library">Library</label>
-          <select id="nav-library" name="library">
-            <?php foreach ($navLibraries as $lib): ?>
-              <option value="<?= e($lib['slug']) ?>" <?= $navLibrary === $lib['slug'] ? 'selected' : '' ?>>
-                <?= e($lib['name']) ?>
-              </option>
-            <?php endforeach; ?>
-            <?php // No "everything" here. Collection is that view, and having
-                  // both meant two ways to say the same thing that could
-                  // disagree with each other. ?>
-          </select>
-          <noscript><button class="btn btn--sm" type="submit">Go</button></noscript>
-        </form>
-        <?php
-        // Edit and New sit beside the switcher rather than inside it. A select is
-        // for choosing which library you are working in; an option that navigates
-        // somewhere else instead is a different kind of thing wearing the same
-        // clothes, and picking it by accident with the keyboard would change the
-        // page rather than the scope.
-        //
-        // Outside the form as well, or they would submit it.
-        $navCurrent = null;
-        foreach ($navLibraries as $lib) {
-            if ($navLibrary === $lib['slug']) {
-                $navCurrent = $lib;
-                break;
-            }
-        }
-        ?>
-        <?php
-        // Two separate pages, not one form with a hidden id. Editing goes straight
-        // to this library; creating goes to the page that asks what a new one should
-        // start out holding, which is a question only creation can answer.
-        ?>
-        <span class="libraryactions">
-          <?php if ($navCurrent !== null && can_own_library((int) $navCurrent['id'])): ?>
-            <a class="btn btn--sm" title="Edit <?= e((string) $navCurrent['name']) ?>"
-               href="<?= e(url('/libraries/' . (int) $navCurrent['id'] . '/edit')) ?>">Edit</a>
-          <?php endif; ?>
-          <a class="btn btn--sm" title="Create a library"
-             href="<?= e(url('/libraries/new')) ?>">Create</a>
-        </span>
-      <?php endif; ?>
-    </nav>
-
-    <?php
-    // Searching from the software or hardware browser stays there.
-    //
-    // The header box is the same control on every page, so it searched everything from
-    // everywhere - which is right on the dashboard and wrong two clicks into Software,
-    // where the answer came back full of machines. The domain travels with the query
-    // when there is one to travel.
-    // From the page being rendered, not from the query string: /software carries its
-    // domain in the route rather than in a parameter, so reading $_GET would have kept
-    // the filter only when somebody had already typed it into the URL.
-    $searchDomain = (string) ($domain ?? ($_GET['domain'] ?? ''));
-    if (!in_array($searchDomain, ['software', 'hardware'], true)) {
-        $searchDomain = '';
-    }
-    ?>
-    <form class="quicksearch" method="get" action="<?= e(url('/items')) ?>" role="search">
-      <?php if ($searchDomain !== ''): ?>
-        <input type="hidden" name="domain" value="<?= e($searchDomain) ?>">
-      <?php endif; ?>
-      <input type="search" name="q"
-             placeholder="<?= $searchDomain === 'software' ? 'Search software' : ($searchDomain === 'hardware' ? 'Search hardware' : 'Search titles, studios, catalog no.') ?>"
-             value="<?= e($_GET['q'] ?? '') ?>"
-             aria-label="<?= $searchDomain === '' ? 'Search the collection' : 'Search ' . e($searchDomain) ?>">
-    </form>
-
-    <div class="topbar__actions">
-      <?php if (can_edit()): ?>
-        <a class="btn btn--accent" href="<?= e(url('/items/new')) ?>">Add title</a>
-      <?php endif; ?>
-      <?php if ($user): ?>
-        <details class="usermenu">
-          <summary aria-label="Your account">
-            <?php partial('avatar', ['user' => $user, 'size' => 'sm']); ?>
-          </summary>
-          <div class="usermenu__panel">
-            <div class="usermenu__who">
-              <?php partial('avatar', ['user' => $user, 'size' => 'md']); ?>
-              <span>
-                <strong><?= e($user['display_name'] ?: $user['username']) ?></strong>
-                <span class="usermenu__role"><?= e(ucfirst($user['role'])) ?></span>
-              </span>
-            </div>
-            <?php // Yours, then the instance's. Two different jobs, and running
-                  // them together made it easy to reach for one meaning the
-                  // other. ?>
-            <span class="usermenu__label">My profile</span>
-            <a href="<?= e(url('/profile')) ?>">Your profile</a>
-            <?php $unread = unread_notification_count(); ?>
-            <a href="<?= e(url('/notifications')) ?>">
-              Notifications<?php if ($unread > 0): ?>
-                <span class="chip chip--count"><?= $unread ?></span>
-              <?php endif; ?>
-            </a>
-            <?php
-            // One entry, not two. "Your libraries" and "Library access" listed the same
-            // shelves from two angles - what you own and what you can reach - and the
-            // second already covered both, including the ones you have been invited to.
-            ?>
-            <a href="<?= e(url('/profile/access')) ?>">Library access</a>
-            <a href="<?= e(url('/profile/notifications')) ?>">Notification settings</a>
-            <a href="<?= e(url('/profile/tokens')) ?>">App access</a>
-            <?php
-            // Maintenance is here for everybody, not only administrators: half
-            // the jobs are about one library and belong to whoever holds it.
-            // Administrators get it again under Server, where the instance-wide
-            // ones are.
-            ?>
-            <?php // Maintenance is an administrator's page now. The jobs about one
-                  // library moved into that library's editor, which is where
-                  // somebody holding one already goes. ?>
-
-            <?php
-            // Administrators only, and this one really is.
-            //
-            // Instance settings, user management, the logs, every library on the
-            // instance: none of it belongs to a library, and none of it is a
-            // curator's business. I widened this to can_manage_library() while
-            // fixing the *Manage* menu - which is library work and was correctly
-            // widened - and took this block with it by mistake, so anybody who
-            // owned a private library was shown a Server section they would be
-            // refused at every link.
-            ?>
-            <?php if (is_admin()): ?>
-              <?php // Everything that configures the instance is one page with
-                    // tabs. User management keeps its own, because it is a list
-                    // of people rather than a set of switches. ?>
-              <span class="usermenu__label">Server</span>
-              <a href="<?= e(url('/admin/settings')) ?>">Instance settings</a>
-              <a href="<?= e(url('/manage/users')) ?>">User management</a>
-              <?php // Every library on the instance, with the switches an administrator
-                    // has over them. It existed and was reachable only by typing the
-                    // address. ?>
-              <a href="<?= e(url('/manage/libraries')) ?>">Library management</a>
-              <a href="<?= e(url('/admin/logs')) ?>">Instance Logs</a>
-              <a href="<?= e(url('/manage/maintenance')) ?>">Instance Status</a>
-            <?php endif; ?>
-            <form method="post" action="<?= e(url('/logout')) ?>">
-              <?= csrf_field() ?>
-              <button type="submit" class="linkish">Sign out</button>
-            </form>
-          </div>
-        </details>
-      <?php else: ?>
-        <a class="btn" href="<?= e(url('/login')) ?>">Sign in</a>
-      <?php endif; ?>
-    </div>
-  </div>
-</header>
-<?php endif; ?>
+<?php
+// No navigation.
+//
+// This application serves two pages now - first-run setup and a 404 - and both
+// are bare. The bar that used to be here linked to the entry browser, the manage
+// hub and the profile screens, none of which exist any more; drawing it would be
+// a menu of dead ends.
+//
+// The layout is kept rather than folded into the two pages: they share a head, a
+// stylesheet and a page frame, and two copies of that is two things to keep in
+// step.
+?>
 
 <?php
 // Notices float above the page rather than pushing it down.
@@ -267,31 +60,9 @@ if (!empty($noindex) || !search_indexing_allowed()):
 // interrupting. Errors are aria-live="assertive" via their own region below.
 ?>
 <?php
-// Anything unread, raised once as a notice you can click.
-//
-// The count in the profile menu is easy to miss - it is behind a click, in a corner,
-// and unchanged whether one thing arrived or twenty. This says so where notices go, and
-// takes you to the page when clicked rather than telling you to go there.
-//
-// Once per visit, not once per page: a notice that reappears on every navigation is an
-// interruption rather than a message. The session flag is cleared when the notifications
-// page is opened, so a later arrival announces itself again.
-//
-// Never on the notifications page itself: you are already looking at them, and
-// announcing them there re-set the flag on the very request that had just cleared it -
-// so a later arrival was never announced again.
-$onNotifications = str_starts_with((string) ($_SERVER['REQUEST_URI'] ?? ''), BASE_PATH . '/notifications');
-$unreadNow = (current_user() === null || $onNotifications) ? 0 : unread_notification_count();
-if ($unreadNow > 0 && empty($_SESSION['unread_announced'])) {
-    $_SESSION['unread_announced'] = true;
-    $flashes[] = [
-        'type'    => 'ok',
-        'message' => $unreadNow === 1
-            ? 'You have an unread notification.'
-            : sprintf('You have %d unread notifications.', $unreadNow),
-        'link'    => url('/notifications'),
-    ];
-}
+// The unread-notification announcement is gone with the notifications page it
+// pointed at. Nothing this application still serves has a signed-in reader:
+// setup runs before there is an account, and a 404 is a dead end.
 ?>
 <div class="toasts" data-toasts role="status" aria-live="polite">
   <?php foreach ($flashes as $f): ?>

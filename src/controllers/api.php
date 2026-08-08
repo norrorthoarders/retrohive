@@ -9,6 +9,17 @@ declare(strict_types=1);
  *   - Failure returns {"error": {"code": "...", "message": "...", "details": {}}}
  *   - Writes require write access to the library in question, and a
  *     write-scoped token. The instance role does not enter into it.
+ *
+ * A note on "the real form", "the real screen" and "the engine's own screen".
+ *
+ * Those phrases appear throughout this file and mean one thing: the web
+ * interface this application used to serve itself, which the API was extracted
+ * from and which has since been deleted. They are worth reading as history - a
+ * rule described as matching "what the real form does" was checked against that
+ * form when it was written, and the form is no longer there to check against.
+ *
+ * Left rather than rewritten because each one still says something true about
+ * why the rule is what it is. Renamed in place, they would have said less.
  */
 
 // --- Meta and authentication -----------------------------------------------
@@ -5504,6 +5515,67 @@ function api_library_invitable(int $libraryId): void
         'name'  => (string) ($u['display_name'] ?: $u['username']),
         'username' => (string) $u['username'],
     ], $rows));
+}
+
+/**
+ * Offer a library to one of its members.
+ *
+ * The API had accept, decline and withdraw and no way to *make* an offer, so
+ * handing a library over was possible only from the engine's own screen -
+ * three quarters of a feature.
+ *
+ * Only a member who has accepted. Somebody who has not joined has not agreed to
+ * be in the library at all, and offering them the whole thing skips a step. A
+ * personal shelf is refused outright: it belongs to the account it was made
+ * with.
+ *
+ * Nothing changes hands here. The library stays the owner's until the offer is
+ * accepted, which is what makes this an offer rather than a transfer.
+ */
+function api_library_offer_ownership(int $libraryId): void
+{
+    [$me] = api_require_write();
+    $library = one('SELECT * FROM libraries WHERE id = ?', [$libraryId]);
+    if ($library === null) {
+        api_error('not_found', 'No library with that id.', 404);
+    }
+    if (!can_own_library($libraryId)) {
+        api_error('forbidden', 'Only the owner can hand a library over.', 403);
+    }
+    if ((int) $library['is_personal'] === 1) {
+        api_error('validation_failed',
+                  'A personal shelf belongs to its account and cannot be handed over.', 422);
+    }
+
+    $to = (int) (api_body()['user_id'] ?? 0);
+    if ($to <= 0 || $to === (int) $me['id']) {
+        api_error('validation_failed', 'Choose somebody to hand it to.', 422,
+                   ['user_id' => 'Required, and not yourself.']);
+    }
+    $member = one("SELECT 1 FROM library_members
+                    WHERE library_id = ? AND user_id = ? AND status = 'accepted' AND access <> 'owner'",
+                  [$libraryId, $to]);
+    if ($member === null) {
+        api_error('validation_failed', 'That account has not joined this library.', 422,
+                   ['user_id' => 'Not an accepted member.']);
+    }
+
+    update_row('libraries', $libraryId, [
+        'pending_owner_id' => $to,
+        'pending_owner_at' => date('Y-m-d H:i:s'),
+    ]);
+    notify($to, 'library.ownership_offered', [
+        'subject'   => sprintf('You have been offered ownership of "%s"', (string) $library['name']),
+        'body'      => sprintf('%s would like to hand the library over to you. It stays theirs '
+                             . 'until you accept.', (string) ($me['display_name'] ?: $me['username'])),
+        'link_path' => '/profile/access?tab=invites',
+    ]);
+    log_security('library.ownership.offered',
+        sprintf('Ownership of "%s" offered', (string) $library['name']), LOG_WARNING,
+        ['library' => (string) $library['slug'], 'to' => $to]);
+
+    api_ok(['library_id' => $libraryId, 'pending_owner_id' => $to],
+           ['message' => 'Offered. It stays yours until they accept.']);
 }
 
 function api_library_members_invite(int $libraryId): void

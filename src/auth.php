@@ -506,7 +506,21 @@ function send_verification_email(int $userId): array
     q('UPDATE users SET verify_token = ?, verify_sent_at = NOW() WHERE id = ?',
       [hash('sha256', $token), $userId]);
 
-    $base = rtrim((string) setting('site_url', ''), '/');
+    // Where the link points.
+    //
+    // `site_url` is the engine's own address, and the link has always been built
+    // from it - which is right while the engine serves the screens. It is not
+    // right once the web client is what people use: the address in the mail
+    // would land on a page that is being retired, and a confirmation link that
+    // 404s is an account nobody can finish making.
+    //
+    // `client_url` names where people actually go, and falls back to `site_url`
+    // when it is not set - so an instance that has never heard of this setting
+    // behaves exactly as before.
+    $base = rtrim((string) setting('client_url', ''), '/');
+    if ($base === '') {
+        $base = rtrim((string) setting('site_url', ''), '/');
+    }
     $link = $base === ''
         ? '(this instance has no address configured, so there is no link to give you)'
         : $base . '/verify?token=' . $token;

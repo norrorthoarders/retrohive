@@ -4,6 +4,17 @@ declare(strict_types=1);
 /**
  * REST API plumbing: authentication, JSON envelopes, CORS, and the serialisers
  * that decide exactly what a native client receives.
+ *
+ * A note on "the real form", "the real screen" and "the engine's own screen".
+ *
+ * Those phrases appear throughout this file and mean one thing: the web
+ * interface this application used to serve itself, which the API was extracted
+ * from and which has since been deleted. They are worth reading as history - a
+ * rule described as matching "what the real form does" was checked against that
+ * form when it was written, and the form is no longer there to check against.
+ *
+ * Left rather than rewritten because each one still says something true about
+ * why the rule is what it is. Renamed in place, they would have said less.
  */
 
 const API_VERSION = '1.0.0';
@@ -804,6 +815,11 @@ function library_to_api(array $r): array
         // are waiting now. The count only for somebody who could act on it -
         // for anybody else it is a number about pictures they cannot see.
         'photo_approval' => (bool) (int) ($r['photo_approval'] ?? 0),
+        // An outstanding offer of ownership. Reported so a client can say the
+        // offer is standing and let it be withdrawn - without it, the only sign
+        // is the person at the other end being asked something.
+        'pending_owner_id' => ($r['pending_owner_id'] ?? null) === null
+            ? null : (int) $r['pending_owner_id'],
         // The levels an invitation here may grant, so a client offers what is
         // allowed rather than a full list the server then refuses. A personal
         // shelf caps at viewer; every other library goes to admin.

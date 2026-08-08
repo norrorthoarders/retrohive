@@ -44,16 +44,14 @@ require APP_ROOT . '/src/models.php';   // which pulls in src/rules.php
 require APP_ROOT . '/src/maintenance.php';
 require APP_ROOT . '/src/settings_schema.php';
 require APP_ROOT . '/src/api.php';
-require APP_ROOT . '/src/controllers/dashboard.php';
+// Six controllers are gone with the screens they drew - dashboard, browse,
+// taxonomy, titles, locations and notifications. What remains of the other four
+// is what the API and the surviving endpoints call: first-run setup, the status
+// and robots handlers, CSV export, and the import parser the API shares.
 require APP_ROOT . '/src/controllers/items.php';
-require APP_ROOT . '/src/controllers/browse.php';
-require APP_ROOT . '/src/controllers/taxonomy.php';
 require APP_ROOT . '/src/controllers/account.php';
 require APP_ROOT . '/src/controllers/registration.php';
-require APP_ROOT . '/src/controllers/titles.php';
 require APP_ROOT . '/src/controllers/import.php';
-require APP_ROOT . '/src/controllers/locations.php';
-require APP_ROOT . '/src/controllers/notifications.php';
 require APP_ROOT . '/src/controllers/api.php';
 require APP_ROOT . '/src/controllers/api_admin.php';
 
@@ -232,6 +230,7 @@ if (str_starts_with($path, '/api/')) {
     $apiRoutes = [
         ['GET',    '#^/api/v1/meta$#',                    fn() => api_meta()],
         ['POST',   '#^/api/v1/auth/login$#',              fn() => api_login()],
+        ['POST',   '#^/api/v1/auth/verify$#',             fn() => api_auth_verify()],
         ['POST',   '#^/api/v1/auth/verify/resend$#',      fn() => api_auth_verify_resend()],
         ['GET',    '#^/api/v1/auth/register/status$#',    fn() => api_auth_register_status()],
         ['POST',   '#^/api/v1/auth/register$#',           fn() => api_auth_register()],
@@ -300,6 +299,8 @@ if (str_starts_with($path, '/api/')) {
         ['POST',   '#^/api/v1/libraries/(\d+)/leave$#',   fn($id) => api_libraries_leave((int) $id)],
         ['POST',   '#^/api/v1/libraries/(\d+)/invite/(accept|decline)$#',
                                                             fn($id, $a) => api_library_invite_respond((int) $id, $a)],
+        ['POST',   '#^/api/v1/libraries/(\d+)/ownership/offer$#',
+                                                          fn($id) => api_library_offer_ownership((int) $id)],
         ['POST',   '#^/api/v1/libraries/(\d+)/ownership/(accept|decline|withdraw)$#',
                                                             fn($id, $a) => api_library_ownership_respond((int) $id, $a)],
         ['PATCH',  '#^/api/v1/libraries/(\d+)$#',          fn($id) => api_libraries_update((int) $id)],
@@ -508,7 +509,9 @@ if (str_starts_with($path, '/api/')) {
 // Two of them carry a token, so this is a prefix test rather than a list of
 // exact paths. The token decides nothing here: it is checked properly by the
 // route, against the mode, and a wrong one answers 404 like everything else.
-$open = ['/login', '/setup', '/register', '/robots.txt', '/healthz', '/status', '/status.json', '/status/debug'];
+// Paths reachable without a session. /login and /register went with the screens
+// they were - what is left is first-run setup and the things other services ask.
+$open = ['/setup', '/robots.txt', '/healthz', '/status', '/status.json', '/status/debug'];
 $openPrefixes = ['/join/', '/invite/'];
 $isOpenPath = in_array($path, $open, true);
 foreach ($openPrefixes as $prefix) {
@@ -539,28 +542,8 @@ if (is_logged_in()) {
 }
 
 $routes = [
-    ['GET',  '#^/$#',                        fn() => dashboard_index()],
 
-    ['GET',  '#^/items$#',                   fn() => items_index()],
-    ['GET',  '#^/items/new$#',               function () { require_edit(); items_form(null); }],
-    ['POST', '#^/items$#',                   fn() => items_store()],
     ['GET',  '#^/items/export\.csv$#',       fn() => items_export_csv()],
-    ['GET',  '#^/import$#',                   fn() => import_index()],
-    ['POST', '#^/import$#',                   fn() => import_run()],
-    ['GET',  '#^/titles$#',                   fn() => titles_index()],
-    ['GET',  '#^/titles/new$#',               function () { require_edit(); titles_form(null); }],
-    ['POST', '#^/titles$#',                   fn() => titles_store()],
-    ['GET',  '#^/titles/(\d+)$#',             fn($id) => titles_show((int) $id)],
-    ['GET',  '#^/titles/(\d+)/edit$#',        function ($id) { require_edit(); titles_form((int) $id); }],
-    ['POST', '#^/titles/(\d+)$#',             fn($id) => titles_update((int) $id)],
-    ['GET',  '#^/titles/search$#',            fn() => titles_search()],
-    ['GET',  '#^/items/(\d+)$#',             fn($id) => items_show((int) $id)],
-    ['GET',  '#^/items/(\d+)/edit$#',        function ($id) { require_edit(); items_form((int) $id); }],
-    ['POST', '#^/items/(\d+)$#',             fn($id) => items_update((int) $id)],
-    ['POST', '#^/items/(\d+)/links$#',        fn($id) => item_link_save((int) $id)],
-    ['POST', '#^/items/(\d+)/fitted$#',       fn($id) => items_fitted_save((int) $id)],
-    ['POST', '#^/items/(\d+)/delete$#',      fn($id) => items_destroy((int) $id)],
-    ['POST', '#^/images/(\d+)$#',            fn($id) => images_update((int) $id)],
 
     // Collection is the overview, not a page of links.
     //
@@ -568,93 +551,30 @@ $routes = [
     // decade - which is a menu about the catalogue rather than a view of it. The
     // dashboard already answers "what have I got", so that is what the Collection tab
     // shows; the ways in are the filters on the browser itself.
-    ['GET',  '#^/collection$#',              fn() => dashboard_index()],
     // The old name still answers, so a bookmark does not break.
     // /browse pointed at browse_index(), which was removed with its template - a live
     // route calling a function that does not exist, so the address answered with a
     // fatal rather than a 404. Collection is the overview now.
-    ['GET',  '#^/browse$#',                  fn() => redirect('/collection')],
-    ['GET',  '#^/software$#',                fn() => software_index()],
-    ['GET',  '#^/hardware$#',                fn() => hardware_index()],
     // Creating and editing a library are two separate pages, registered before the
     // browse view so the more specific paths win - routes are matched in order.
     // Joining and leaving a published shelf. Its own route rather than an action on the
     // edit form: you are not editing the library, you are deciding whether it is yours.
     // Handing a library over: an offer, an answer, and a way to take it back.
-    ['POST', '#^/libraries/(\d+)/offer$#',   fn($id) => library_offer_ownership((int) $id)],
-    ['POST', '#^/libraries/(\d+)/ownership/(accept|decline|withdraw)$#',
-             fn($id, $what) => library_ownership_respond((int) $id, (string) $what)],
-    ['POST', '#^/libraries/(\d+)/join$#',    fn($id) => library_join((int) $id)],
-    ['POST', '#^/libraries/(\d+)/leave$#',   fn($id) => library_leave((int) $id)],
-    ['GET',  '#^/libraries/new$#',           fn() => library_new_form()],
-    ['POST', '#^/libraries/new$#',           fn() => library_create()],
-    ['GET',  '#^/libraries/(\d+)/edit$#',    fn($id) => library_edit_form((int) $id)],
-    ['POST', '#^/libraries/(\d+)$#',         fn($id) => library_edit_save((int) $id)],
-    ['GET',  '#^/libraries$#',               fn() => redirect('/profile/access')],
-    ['GET',  '#^/platforms$#',               fn() => platforms_index()],
-    ['GET',  '#^/developers$#',              fn() => companies_index()],
-    ['GET',  '#^/developers/([a-z0-9-]+)$#', fn($slug) => companies_show((string) $slug)],
 
-    ['GET',  '#^/manage/users$#',            fn() => users_index()],
-    ['GET',  '#^/admin/users$#',             fn() => users_index()],
-    ['POST', '#^/admin/users$#',             fn() => users_save()],
-    ['POST', '#^/manage/users$#',            fn() => users_save()],
-    ['GET',  '#^/profile$#',                 fn() => profile_index()],
-    ['POST', '#^/profile$#',                 fn() => profile_save()],
     // App access lists the signed-in user's own tokens, so it belongs with the
     // profile. The old path still works so existing links do not break.
-    ['GET',  '#^/profile/tokens$#',          fn() => tokens_index()],
-    ['POST', '#^/profile/tokens$#',          fn() => tokens_save()],
-    ['GET',  '#^/manage/tokens$#',           fn() => tokens_index()],
-    ['POST', '#^/manage/tokens$#',           fn() => tokens_save()],
-    ['GET',  '#^/manage/access$#',           fn() => access_index()],
-    ['GET',  '#^/admin/access$#',            fn() => access_index()],
-    ['POST', '#^/admin/access$#',            fn() => access_save()],
-    ['POST', '#^/manage/access$#',           fn() => access_save()],
-    ['GET',  '#^/manage/auth$#',             fn() => auth_methods_index()],
-    ['GET',  '#^/admin/auth$#',              fn() => auth_methods_index()],
-    ['POST', '#^/admin/auth$#',              fn() => auth_methods_save()],
-    ['POST', '#^/manage/auth$#',             fn() => auth_methods_save()],
-    ['GET',  '#^/verify$#',                  fn() => auth_verify_email()],
-    ['POST', '#^/verify/resend$#',           fn() => auth_verify_resend()],
-    ['GET',  '#^/notifications$#',           fn() => notifications_index()],
-    ['POST', '#^/notifications$#',           fn() => notifications_action()],
-    ['GET',  '#^/profile/notifications$#',   fn() => notification_prefs_index()],
-    ['POST', '#^/profile/notifications$#',   fn() => notification_prefs_save()],
     // One library page, at the address people were sent to.
     //
     // There were three: /libraries (a summary), /profile/access (a flat list of
     // everything reachable) and the tabbed access page - and the tabs landed on the one
     // nobody linked to. They are the same question asked three ways, so this is now the
     // tabbed page and /libraries redirects here.
-    ['GET',  '#^/profile/access$#',          fn() => library_admin_index()],
-    ['POST', '#^/profile/access$#',          fn() => library_admin_save()],
-    ['GET',  '#^/admin/logs$#',              fn() => logs_index()],
-    ['POST', '#^/admin/logs$#',              fn() => logs_action()],
-    ['GET',  '#^/admin/settings$#',          fn() => admin_settings_index()],
-    ['POST', '#^/admin/settings$#',          fn() => admin_settings_save()],
     // What each machine runs. Structure like platforms and categories, so it lives
     // with them rather than with the software being catalogued.
-    ['GET',  '#^/manage/environments$#',     fn() => environments_index()],
-    ['POST', '#^/manage/environments$#',     fn() => environments_save()],
-    ['GET',  '#^/manage/locations$#',        fn() => locations_index()],
-    ['POST', '#^/manage/locations$#',        fn() => locations_save()],
-    ['GET',  '#^/manage/platforms$#',        fn() => platforms_manage_index()],
-    ['POST', '#^/manage/platforms$#',        fn() => platforms_manage_save()],
     // Manufacturers and Developers were one table shown twice, filtered by the `makes`
     // column - so a firm that built machines and published games appeared on whichever
     // screen you were on, and one whose tag was wrong appeared on neither. One screen
     // now, with the tags visible and editable on the row.
-    ['GET',  '#^/manage/vendors$#',          fn() => redirect('/manage/companies')],
-    ['POST', '#^/manage/vendors$#',          fn() => redirect('/manage/companies')],
-    ['GET',  '#^/manage/models$#',           fn() => models_index()],
-    ['GET',  '#^/manage/parts$#',            fn() => parts_index()],
-    ['POST', '#^/manage/parts$#',            fn() => models_save()],
-    ['POST', '#^/manage/models$#',           fn() => models_save()],
-    ['GET',  '#^/manage/software-models$#',  fn() => software_models_index()],
-    ['POST', '#^/manage/software-models$#',  fn() => software_models_save()],
-    ['GET',  '#^/manage/tree$#',             fn() => tree_index()],
-    ['POST', '#^/manage/tree$#',             fn() => tree_save()],
     // Manage on its own lands on libraries, which is where most trips here go.
     // Manage is the catalogue. Libraries are not part of it: who may read a
     // shelf is account administration, and landing on it made Manage look like
@@ -667,58 +587,25 @@ $routes = [
     // on a screen about firms. Locations is the first thing in the menu and the
     // first thing somebody setting up a library actually needs - where their
     // things are.
-    ['GET',  '#^/manage$#',                  fn() => redirect('/manage/locations')],
-    ['POST', '#^/libraries$#',               fn() => library_admin_save()],
     // Old path, kept so a bookmark still answers.
     // Library management is its own page now, not the tail of the access page.
     // Checks anybody with a library can run, and repairs for the instance that
     // only an administrator can. One page, because "what is wrong with this" is
     // one question whoever is asking it.
-    ['GET',  '#^/maintenance$#',             fn() => maintenance_index()],
-    ['POST', '#^/maintenance$#',             fn() => maintenance_run()],
-    ['GET',  '#^/manage/libraries$#',        fn() => library_manage_index()],
     // The administrator's own two screens. Separate routes rather than modes of the
     // owner's editor, because they are a different job with a different audience.
-    ['GET',  '#^/manage/libraries/(\d+)$#',  fn($id) => library_admin_edit_form((int) $id)],
-    ['GET',  '#^/manage/libraries/(\d+)/contents$#',
-                                             fn($id) => library_contents_index((int) $id)],
-    ['POST', '#^/manage/libraries$#',        fn() => library_admin_save()],
-    ['GET',  '#^/manage/maintenance$#',      fn() => maintenance_index()],
-    ['POST', '#^/manage/maintenance$#',      fn() => maintenance_run()],
-    ['GET',  '#^/manage/metadata$#',         fn() => metadata_index()],
     // One source in full, because a card cannot carry fifty-six platform chips.
-    ['GET',  '#^/manage/metadata/source/([a-z0-9_-]+)$#',
-                                             fn($t) => metadata_source_show((string) $t)],
-    ['GET',  '#^/admin/metadata$#',          fn() => metadata_index()],
-    ['POST', '#^/admin/metadata$#',          fn() => metadata_save()],
-    ['POST', '#^/manage/metadata$#',         fn() => metadata_save()],
-    ['GET',  '#^/metadata/lookup$#',         fn() => metadata_lookup()],
-    ['POST', '#^/metadata/apply$#',          fn() => metadata_apply()],
     // Candidate artwork, proxied so the content policy can stay as it is.
-    ['GET',  '#^/metadata/preview$#',        fn() => metadata_preview()],
     // One source's own page. Before the generic /manage/<type> route, or that
     // would answer for it first.
-    ['GET',  '#^/manage/metadata/([a-z0-9_]+)$#', fn($t) => metadata_agent_show((string) $t)],
-    ['GET',  '#^/manage/([a-z]+)$#',         fn($t) => taxonomy_index((string) $t)],
-    ['POST', '#^/manage/([a-z]+)$#',         fn($t) => taxonomy_save((string) $t)],
 
-    ['GET',  '#^/login$#',                   fn() => auth_login_form()],
-    ['POST', '#^/login$#',                   fn() => auth_login()],
-    ['POST', '#^/logout$#',                  fn() => auth_logout()],
     // The three ways in. Which doors open is decided in one place, so a mode
     // cannot be shut on one route and ajar on another - and the token routes
     // answer 404 rather than "wrong token", because telling those apart tells
     // somebody probing which instance they are looking at.
-    ['GET',  '#^/register$#',                fn() => registration_form('register')],
-    ['POST', '#^/register$#',                fn() => registration_submit('register')],
-    ['GET',  '#^/join/([A-Za-z0-9]{8,64})$#', fn($t) => registration_form('join', $t)],
-    ['POST', '#^/join/([A-Za-z0-9]{8,64})$#', fn($t) => registration_submit('join', $t)],
-    ['GET',  '#^/invite/([A-Za-z0-9]{8,96})$#', fn($t) => registration_form('invite', $t)],
-    ['POST', '#^/invite/([A-Za-z0-9]{8,96})$#', fn($t) => registration_submit('invite', $t)],
 
     // Generated, so it can answer for the settings as they are now rather than
     // as they were when somebody last edited a file.
-    ['GET',  '#^/robots\.txt$#',             fn() => robots_serve()],
 
     // Public and unauthenticated, on purpose - see status_data()'s own
     // comment for what that does and does not mean it discloses.
@@ -727,6 +614,11 @@ $routes = [
     ['GET',  '#^/status/debug$#',            fn() => status_serve_debug()],
 
 
+    ['GET',  '#^/robots\.txt$#',              fn() => robots_serve()],
+
+    // First run only. auth_setup() refuses once an administrator exists, so this
+    // is not a door left open - it is the one screen that has to work before
+    // there is anybody to authenticate.
     ['GET',  '#^/setup$#',                   fn() => auth_setup_form()],
     ['POST', '#^/setup$#',                   fn() => auth_setup()],
 ];

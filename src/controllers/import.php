@@ -2,87 +2,89 @@
 declare(strict_types=1);
 
 /**
- * CSV import.
+ * Reading a CSV of entries and committing it.
  *
- * There has been an export since the beginning and no way back in, which makes
- * the round trip - export, fix a hundred rows in a spreadsheet, put them back -
- * impossible, and makes getting an existing collection *into* the catalogue a
- * typing job. That was the thing standing between this and being usable with a
- * real collection in it.
- *
- * Two rules shape the whole file:
- *
- *   1. Nothing is written until the whole file has been read and understood.
- *      An import that fails on row 400 having already written 399 is worse than
- *      one that fails on row 1, because now you do not know what state you are
- *      in. Everything runs inside a transaction and a dry run is the default.
- *
- *   2. A row carrying an ID updates that entry; a row without one creates.
- *      That is what makes an exported file editable and re-importable rather
- *      than a way to duplicate your collection.
+ * The screen that drove this is gone; the parser is not, because the API calls
+ * it. What remains is the file-reading half - no forms, no previews, no flash
+ * messages.
  */
 
-const IMPORT_MAX_ROWS = 20000;
-
-function import_index(): void
+/**
+ * Apply a parsed report. One transaction: either the whole file lands or none
+ * of it does, so a failure halfway leaves nothing to reconcile by hand.
+ */
+function import_commit(array $report): void
 {
-    require_edit();
-    render('items/import', [
-        'pageTitle' => 'Import CSV',
-        'libraries' => readable_libraries(ACCESS_CONTRIBUTOR),
-        'report'    => $_SESSION['import_report'] ?? null,
-        'columns'   => csv_columns(),
-    ]);
-    unset($_SESSION['import_report']);
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        foreach ($report['rows'] as $row) {
+            if ($row['mode'] === 'update') {
+                record_value_change((int) $row['id'], $row['existing'], $row['data']);
+                update_row('items', (int) $row['id'], $row['data']);
+            } else {
+                // acting_user(), not current_user(): this same function is
+                // about to be called from a token-authenticated API request
+                // as well as the session-based web form, and current_user()
+                // only ever checks the session - every imported item would
+                // have silently recorded no creator at all from an API
+                // caller, the same class of bug is_admin() vs
+                // is_admin_user(acting_user()) already turned out to be
+                // earlier this session.
+                $user = acting_user();
+                $data = $row['data'] + ['currency' => config('currency')];
+                $data['created_by'] = $user === null ? null : (int) $user['id'];
+                $newId = insert_row('items', $data);
+                record_acquisition_event((int) $newId, $data);
+            }
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        error_log('[retrohive] import failed, rolled back: ' . $e->getMessage());
+        throw $e;
+    }
 }
 
-function import_run(): void
+/**
+ * Dates, as a spreadsheet is likely to have mangled them.
+ *
+ * Excel writes whatever the machine's locale says, so an export edited on a
+ * Swedish desktop comes back as 2019-04-03 and one edited elsewhere as
+ * 03/04/2019. Guessing between the last two is impossible, so the ambiguous
+ * form is refused rather than silently filed six months out.
+ */
+function import_date(string $value): ?string
 {
-    require_edit();
-    csrf_verify();
-
-    $libraryId = (int) input_int('library_id', 0);
-    // Default library for rows that do not name one. Checked up front, because
-    // discovering it on row 900 is not a useful place to find out.
-    if ($libraryId <= 0 || !can_add_to_library($libraryId)) {
-        flash('error', 'Choose a library you can write to.');
-        redirect('/import');
+    $value = trim($value);
+    if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $value, $m)) {
+        return checkdate((int) $m[2], (int) $m[3], (int) $m[1]) ? $value : null;
     }
-
-    $file = $_FILES['csv'] ?? null;
-    if ($file === null || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-        flash('error', 'Choose a CSV file to upload.');
-        redirect('/import');
+    // 2019/04/03 and 2019.04.03 are unambiguous too.
+    if (preg_match('#^(\d{4})[./](\d{1,2})[./](\d{1,2})$#', $value, $m)) {
+        return checkdate((int) $m[2], (int) $m[3], (int) $m[1])
+            ? sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]) : null;
     }
-    if (!is_uploaded_file($file['tmp_name'])) {
-        flash('error', 'That was not an upload.');
-        redirect('/import');
+    // A bare year is a reasonable thing to have typed.
+    if (preg_match('/^\d{4}$/', $value)) {
+        return $value . '-01-01';
     }
+    return null;
+}
 
-    $dryRun       = input('commit') !== '1';
-    $createTitles = input_bool('create_titles') === 1;
-
-    $report = import_parse((string) $file['tmp_name'], $libraryId, $createTitles);
-
-    if ($report['fatal'] !== null) {
-        flash('error', $report['fatal']);
-        redirect('/import');
+/** Accept the label shown in the export, or the value stored in the column. */
+function import_enum(string $value, array $options, string $labeller): ?string
+{
+    $needle = mb_strtolower(trim($value));
+    foreach ($options as $option) {
+        if (mb_strtolower($option) === $needle) {
+            return $option;
+        }
+        if (mb_strtolower($labeller($option)) === $needle) {
+            return $option;
+        }
     }
-
-    if (!$dryRun && $report['errors'] === []) {
-        import_commit($report);
-        flash('ok', sprintf(
-            'Imported %d new %s and updated %d.',
-            $report['create_count'],
-            $report['create_count'] === 1 ? 'entry' : 'entries',
-            $report['update_count']
-        ));
-    } elseif (!$dryRun) {
-        flash('error', 'Nothing was written: fix the rows listed below and try again.');
-    }
-
-    $_SESSION['import_report'] = $report;
-    redirect('/import');
+    return null;
 }
 
 /**
@@ -212,15 +214,12 @@ function import_parse(string $path, int $defaultLibraryId, bool $createTitles): 
     return $report;
 }
 
-/** name-or-slug => id, for resolving a text column to a foreign key. */
-function import_slug_map(string $table): array
+function import_resolve(array $map, ?string $value): ?int
 {
-    $map = [];
-    foreach (all("SELECT id, name, slug FROM `$table`") as $row) {
-        $map[mb_strtolower((string) $row['name'])] = (int) $row['id'];
-        $map[mb_strtolower((string) $row['slug'])] = (int) $row['id'];
+    if ($value === null) {
+        return null;
     }
-    return $map;
+    return $map[mb_strtolower($value)] ?? null;
 }
 
 /** Turn one CSV line into item columns. Returns [parsed, errors]. */
@@ -431,88 +430,13 @@ function import_row(callable $get, int $line, array $cache, int $defaultLibraryI
     ], []];
 }
 
-function import_resolve(array $map, ?string $value): ?int
+/** name-or-slug => id, for resolving a text column to a foreign key. */
+function import_slug_map(string $table): array
 {
-    if ($value === null) {
-        return null;
+    $map = [];
+    foreach (all("SELECT id, name, slug FROM `$table`") as $row) {
+        $map[mb_strtolower((string) $row['name'])] = (int) $row['id'];
+        $map[mb_strtolower((string) $row['slug'])] = (int) $row['id'];
     }
-    return $map[mb_strtolower($value)] ?? null;
-}
-
-/** Accept the label shown in the export, or the value stored in the column. */
-function import_enum(string $value, array $options, string $labeller): ?string
-{
-    $needle = mb_strtolower(trim($value));
-    foreach ($options as $option) {
-        if (mb_strtolower($option) === $needle) {
-            return $option;
-        }
-        if (mb_strtolower($labeller($option)) === $needle) {
-            return $option;
-        }
-    }
-    return null;
-}
-
-/**
- * Dates, as a spreadsheet is likely to have mangled them.
- *
- * Excel writes whatever the machine's locale says, so an export edited on a
- * Swedish desktop comes back as 2019-04-03 and one edited elsewhere as
- * 03/04/2019. Guessing between the last two is impossible, so the ambiguous
- * form is refused rather than silently filed six months out.
- */
-function import_date(string $value): ?string
-{
-    $value = trim($value);
-    if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $value, $m)) {
-        return checkdate((int) $m[2], (int) $m[3], (int) $m[1]) ? $value : null;
-    }
-    // 2019/04/03 and 2019.04.03 are unambiguous too.
-    if (preg_match('#^(\d{4})[./](\d{1,2})[./](\d{1,2})$#', $value, $m)) {
-        return checkdate((int) $m[2], (int) $m[3], (int) $m[1])
-            ? sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]) : null;
-    }
-    // A bare year is a reasonable thing to have typed.
-    if (preg_match('/^\d{4}$/', $value)) {
-        return $value . '-01-01';
-    }
-    return null;
-}
-
-/**
- * Apply a parsed report. One transaction: either the whole file lands or none
- * of it does, so a failure halfway leaves nothing to reconcile by hand.
- */
-function import_commit(array $report): void
-{
-    $pdo = db();
-    $pdo->beginTransaction();
-    try {
-        foreach ($report['rows'] as $row) {
-            if ($row['mode'] === 'update') {
-                record_value_change((int) $row['id'], $row['existing'], $row['data']);
-                update_row('items', (int) $row['id'], $row['data']);
-            } else {
-                // acting_user(), not current_user(): this same function is
-                // about to be called from a token-authenticated API request
-                // as well as the session-based web form, and current_user()
-                // only ever checks the session - every imported item would
-                // have silently recorded no creator at all from an API
-                // caller, the same class of bug is_admin() vs
-                // is_admin_user(acting_user()) already turned out to be
-                // earlier this session.
-                $user = acting_user();
-                $data = $row['data'] + ['currency' => config('currency')];
-                $data['created_by'] = $user === null ? null : (int) $user['id'];
-                $newId = insert_row('items', $data);
-                record_acquisition_event((int) $newId, $data);
-            }
-        }
-        $pdo->commit();
-    } catch (Throwable $e) {
-        $pdo->rollBack();
-        error_log('[retrohive] import failed, rolled back: ' . $e->getMessage());
-        throw $e;
-    }
+    return $map;
 }

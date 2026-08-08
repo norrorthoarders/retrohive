@@ -5,7 +5,13 @@ info:
   version: "1.0.0"
   description: |
     JSON REST API for a retro software collection. Every endpoint except
-    `/meta` requires a bearer token.
+    `/meta` and `/auth/verify` requires a bearer token.
+
+    Notes here and in the source refer to "the real form" or "the engine's own
+    screen". That was the web interface this application used to serve itself,
+    which this API was extracted from and which no longer exists. The reference
+    is historical - it explains why a rule is what it is, rather than pointing at
+    somewhere to go and look.
 
     Feed this file to openapi-generator or swift-openapi-generator to get a
     typed client instead of hand-writing one.
@@ -2687,6 +2693,64 @@ paths:
       responses:
         "200": { description: id, name, username }
         "403": { description: Administering this library is required - the same gate the invitation has }
+
+  /auth/verify:
+    post:
+      tags: [Auth]
+      summary: Redeem an email confirmation link
+      description: >-
+        Unauthenticated on purpose: the situation this exists for is somebody who
+        cannot sign in *because* their address is unconfirmed, and requiring a
+        token to fix the thing stopping you getting one is a closed loop.
+        `verify/resend` beside it gave a way to ask for another link and no way
+        to use one.
+
+
+        The same answer whether the token is wrong, already used, or never
+        existed - telling them apart tells somebody holding a guessed token which
+        guesses are close.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200": { description: Confirmed }
+        "422": { description: Not a usable link }
+
+  /libraries/{id}/ownership/offer:
+    post:
+      tags: [Libraries]
+      summary: Offer a library to one of its members
+      description: >-
+        Owner only, and never for a personal shelf - that one belongs to the
+        account it was made with. The recipient must be a member who has
+        *accepted*: somebody who has not joined has not agreed to be in the
+        library at all, and offering them the whole thing skips a step.
+
+
+        Nothing changes hands. The library stays the owner's until the offer is
+        accepted, which is what makes this an offer rather than a transfer, and
+        `ownership/withdraw` takes it back until then.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: integer }
+      responses:
+        "200": { description: Offered }
+        "403": { description: Only the owner may hand a library over }
+        "422": { description: A personal shelf, or somebody who has not joined }
 
   /admin/logs/prune:
     post:

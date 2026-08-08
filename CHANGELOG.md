@@ -1,5 +1,100 @@
 # Changelog
 
+**The engine's own web interface is removed. What is left is an API, a first-run
+screen, and the endpoints other services call.**
+
+## Gone
+
+113 routes, and with them six controllers - `browse`, `dashboard`, `locations`,
+`notifications`, `taxonomy`, `titles` - and the template trees for taxonomy,
+titles, companies and items. Controllers and templates together: **1272 KB to
+393 KB**.
+
+Four controllers were trimmed rather than deleted, because the API calls into
+them. `account.php` keeps 5 functions of 45, `items.php` 3 of 30, `import.php` 7
+of 9, `registration.php` 6 of 8. Each now says at the top what it is and why it
+outlived the rest.
+
+`library_grantable_levels()` was the one function the API genuinely needed from
+an own-UI file, and it has moved to `acl.php` - beside the other rules about who
+may be granted what, which is where a rule about who may be granted what belongs.
+
+## Still served
+
+`/setup`, `/status`, `/status.json`, `/status/debug`, `/robots.txt`,
+`/items/export.csv`, and the API. Every pattern was tested against paths that
+should and should not match; `/items`, `/manage` and `/login` are 404s now.
+
+The list of paths reachable without a session was updated with them: it still
+named `/login` and `/register`, which is a door held open onto a room that is not
+there.
+
+## Two things the removal exposed
+
+**The 404 page drew the full navigation** - a menu of links to screens that no
+longer exist. It is bare now, like setup, and the layout's navigation branch went
+with it, along with an unread-notification announcement pointing at a deleted
+page. Both surviving pages were rendered to prove they still work rather than
+assumed.
+
+**27 comments describe a form that is gone.** Phrases like "the same rule the
+real form applies" were true when written and now point at nothing. Each is left
+in place - it still says something true about *why* a rule is what it is - and
+each file now opens by saying what those phrases mean and that the screens have
+been deleted. A reader who takes them literally would go looking for a page that
+is not there.
+
+## Verification
+
+No surviving code calls any of the 115 removed functions - checked against the
+previous package with comments stripped, in the source and in the templates
+separately. 174 route handlers resolve, 114 API routes documented as 114, and
+every suite passes.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 136**.
+
+**The two things that were only possible from the engine's own screens.**
+
+## Confirming an email address
+
+`verify_email_token()` has existed throughout and was reachable only from
+`GET /verify`. The API had `verify/resend` - a way to ask for another link and no
+way to use one - so an instance running on the API alone could send confirmation
+mail nobody could act on. With "require a confirmed email address to sign in"
+switched on, that locks out every account including whoever ticked it.
+
+`POST /auth/verify`, unauthenticated on purpose: the situation it exists for is
+somebody who cannot sign in *because* their address is unconfirmed, and requiring
+a token to fix the thing stopping you getting one is a closed loop. The same
+answer for a wrong, used or invented token - telling them apart tells somebody
+holding a guess which guesses are close.
+
+**Where the link points is now a setting.** It was built from `site_url`, the
+engine's own address, which is right while the engine serves the screens and
+wrong once it does not - a confirmation link that 404s is an account nobody can
+finish making. `client_url` names where people actually go and falls back to
+`site_url`, so an instance that has never heard of it behaves as before.
+
+## Handing a library over
+
+The API had accept, decline and withdraw and no way to *make* an offer - three
+quarters of a feature, and the quarter missing was the one that starts it.
+
+`POST /libraries/{id}/ownership/offer`. Owner only, never a personal shelf, and
+only to a member who has accepted: somebody who has not joined has not agreed to
+be in the library at all. Nothing changes hands - the library stays the owner's
+until the offer is taken, which is what makes it an offer.
+
+`pending_owner_id` is reported on a library now, so a client can say an offer is
+standing rather than leaving the only sign to be the person at the other end
+being asked something.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 135**.
+
 **A metadata source reports which kinds it answers about.**
 
 `default_for_kinds` has been known per provider throughout - it is what decides

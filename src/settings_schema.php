@@ -45,6 +45,14 @@ function settings_schema(): array
                     'default' => 'RetroHive',
                     'max'     => 120,
                 ],
+                'client_url' => [
+                    'kind'  => 'url',
+                    'label' => 'Where people go',
+                    'help'  => 'The address of the interface people actually use, if it is not the '
+                             . 'one above - a confirmation or invitation link is built from this. '
+                             . 'Blank uses the public address.',
+                    'max'   => 255,
+                ],
                 'site_url' => [
                     'kind'  => 'url',
                     'label' => 'Public address',

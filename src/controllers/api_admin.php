@@ -11,6 +11,17 @@ declare(strict_types=1);
  * User management, library management, the logs and maintenance are still web
  * only. They are listed here so the next person reading this file knows the gap
  * is deliberate and not an oversight.
+ *
+ * A note on "the real form", "the real screen" and "the engine's own screen".
+ *
+ * Those phrases appear throughout this file and mean one thing: the web
+ * interface this application used to serve itself, which the API was extracted
+ * from and which has since been deleted. They are worth reading as history - a
+ * rule described as matching "what the real form does" was checked against that
+ * form when it was written, and the form is no longer there to check against.
+ *
+ * Left rather than rewritten because each one still says something true about
+ * why the rule is what it is. Renamed in place, they would have said less.
  */
 
 // ---------------------------------------------------------------------------
@@ -654,6 +665,32 @@ function api_instance_logo(string $which): void
     }
     log_server('instance.logo', ucfirst($which) . ' logo replaced', LOG_INFO);
     api_ok(instance_logos());
+}
+
+/**
+ * Redeem an email confirmation link.
+ *
+ * Unauthenticated on purpose: the whole point is that somebody who cannot yet
+ * sign in - because their address is unconfirmed and the instance requires one -
+ * can put that right. Requiring a token to fix the thing that is stopping you
+ * getting a token is a closed loop.
+ *
+ * `verify_email_token()` has existed throughout and was reachable only from the
+ * engine's own `GET /verify`, so an API client had `verify/resend` - a way to
+ * ask for another link and no way to use one.
+ *
+ * The same answer whether the token is wrong, used, or never existed: telling
+ * them apart tells somebody holding a guessed token which guesses are close.
+ */
+function api_auth_verify(): void
+{
+    $token = trim((string) (api_body()['token'] ?? $_GET['token'] ?? ''));
+    [$ok, $message] = verify_email_token($token);
+    if (!$ok) {
+        api_error('validation_failed', $message, 422, ['token' => $message]);
+    }
+    log_security('account.verified', 'Email address confirmed', LOG_INFO);
+    api_ok(['verified' => true], ['message' => $message]);
 }
 
 /**

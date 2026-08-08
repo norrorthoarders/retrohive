@@ -540,7 +540,10 @@ function send_security_headers(): void
 function not_found(string $message = 'Nothing here.'): never
 {
     http_response_code(404);
-    render('404', ['pageTitle' => 'Not found', 'message' => $message]);
+    // Bare, like setup. The layout's navigation points at screens this
+    // application no longer serves - a 404 that offers a menu of further 404s is
+    // worse than one that says only what happened.
+    render('404', ['pageTitle' => 'Not found', 'message' => $message, 'bare' => true]);
     exit;
 }
 
