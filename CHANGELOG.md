@@ -1,5 +1,39 @@
 # Changelog
 
+**`GET /items?library_id=` was silently ignored, so both phone clients showed
+every library at once.**
+
+The filter read `?library=slug` and nothing else. A client holding the id from
+`GET /libraries` - which is what both mobile clients hold, because that is what
+the endpoint returns - sent `library_id`, and an unrecognised parameter narrows
+nothing. Selecting "My Private Library" returned the example library's entries
+too, which reads as a switcher that does not work rather than a filter that was
+never applied.
+
+**Silently is the problem.** A filter that matched everything and a filter that
+was never read look identical from the outside. The comment sitting above this
+code warned about exactly that failure for the slug - "the filter has to exist or
+that link quietly shows everything instead of one shelf" - and the same thing
+then happened one parameter along.
+
+Both are accepted now. The id wins when both arrive: it is the exact thing, and a
+slug that disagrees with it is a caller confused about which shelf it wants
+rather than a request to be guessed at.
+
+No access check on the id. The ACL clause above already limits the query to
+libraries the account may read, so naming one it may not simply matches nothing -
+the right answer, and not a disclosure.
+
+Checked every parameter the two clients send against what the filter reads:
+`domain`, `library_id` and `q` are filtered, `page` and `per_page` are read by
+the endpoint. Nothing else is being dropped on the floor.
+
+The web client sends the slug and was never affected.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 139**.
+
 **A sweep for what the interface removal left behind.**
 
 ## The stylesheet and the script

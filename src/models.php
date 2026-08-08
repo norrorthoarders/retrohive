@@ -750,14 +750,40 @@ function build_item_filters(array $qs): array
         $active['domain'] = (string) $qs['domain'];
     }
 
-    // The libraries page links here with ?library=slug, so the filter has to
-    // exist or that link quietly shows everything instead of one shelf.
-    if (!empty($qs['library'])) {
+    // One shelf, named either way.
+    //
+    // `?library=slug` is what the web client's own links carry. `?library_id=7`
+    // is what a client holding the id from GET /libraries would naturally send -
+    // and it was silently ignored, so both phone clients asked for one library
+    // and were given every library the account can read. A private shelf showed
+    // the example library's entries and looked like a switcher that did not
+    // work.
+    //
+    // Silently is the problem. An unknown filter that narrows nothing looks
+    // exactly like a filter that matched everything, which is why this sat
+    // behind a comment warning about the same failure for the slug.
+    //
+    // The id wins when both arrive: it is the exact thing, and a slug that
+    // disagrees with it is a caller confused about which shelf it wants rather
+    // than a request to be guessed at.
+    $libraryId = null;
+    if (array_key_exists('library_id', $qs) && is_numeric($qs['library_id'])) {
+        $libraryId = (int) $qs['library_id'];
+    } elseif (!empty($qs['library'])) {
         $lib = one('SELECT id, name FROM libraries WHERE slug = ?', [trim((string) $qs['library'])]);
         if ($lib !== null) {
-            $where[]  = 'library_id = ?';
-            $params[] = (int) $lib['id'];
-            $active['library'] = (string) $lib['name'];
+            $libraryId = (int) $lib['id'];
+        }
+    }
+    if ($libraryId !== null) {
+        // No access check here: the ACL clause above already limits this to
+        // libraries the account may read, so naming one it may not simply
+        // matches nothing - which is the right answer and not a disclosure.
+        $where[]  = 'library_id = ?';
+        $params[] = $libraryId;
+        $name = scalar('SELECT name FROM libraries WHERE id = ?', [$libraryId]);
+        if ($name !== null) {
+            $active['library'] = (string) $name;
         }
     }
 
