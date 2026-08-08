@@ -22,8 +22,10 @@ declare(strict_types=1);
 function auth_setup(): void
 {
     csrf_verify();
+    // Already set up. /login was here once and is not any more, so this goes
+    // where people actually sign in.
     if (user_count() > 0) {
-        redirect('/login');
+        to_client();
     }
     $username = (string) input('username', '');
     $password = (string) ($_POST['password'] ?? '');
@@ -63,14 +65,15 @@ function auth_setup(): void
     }
     session_regenerate_id(true);
     $_SESSION['user_id'] = $id;
-    flash('ok', 'Administrator account created. Start by adding a library, then your first title.');
-    redirect('/');
+    // Straight to the client, where the next thing they do is. The flash is not
+    // carried across - it is this application's session, not the client's.
+    to_client();
 }
 
 function auth_setup_form(): void
 {
     if (user_count() > 0) {
-        redirect('/login');
+        to_client();
     }
     render('auth/setup', ['pageTitle' => 'First run', 'bare' => true]);
 }

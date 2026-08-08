@@ -86,8 +86,11 @@ function is_admin(): bool
 function require_edit(): void
 {
     if (current_user() === null) {
+        // /login was a screen here and is not any more. The `next` parameter
+        // went with it: this application cannot hand somebody back to a page it
+        // no longer draws.
         flash('error', 'Sign in to change the collection.');
-        redirect('/login', ['next' => $_SERVER['REQUEST_URI'] ?? '']);
+        to_client();
     }
     if (!can_edit()) {
         flash('error', is_admin()
@@ -101,7 +104,7 @@ function require_admin(): void
 {
     if (!is_admin()) {
         flash('error', 'That area is for administrators.');
-        redirect('/');
+        to_client();
     }
 }
 

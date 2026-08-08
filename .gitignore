@@ -1,6 +1,10 @@
 # Secrets
 .env
 src/config.local.php
+# A backup of the local config is the local config, and this pattern did not
+# cover it - src/config.local.php.bak would have been committed.
+src/config.local.php.*
+*.bak
 
 # Uploaded photos - back these up, do not commit them
 public/uploads/*

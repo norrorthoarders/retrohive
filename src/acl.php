@@ -648,11 +648,11 @@ function require_manage(): void
 {
     if (current_user() === null) {
         flash('error', 'Sign in to change the collection.');
-        redirect('/login', ['next' => $_SERVER['REQUEST_URI'] ?? '']);
+        to_client();
     }
     if (!can_manage_library()) {
         flash('error', 'You can arrange a library you curate. This is not one of them.');
-        redirect('/');
+        to_client();
     }
 }
 

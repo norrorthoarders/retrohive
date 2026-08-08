@@ -537,6 +537,40 @@ function send_security_headers(): void
     );
 }
 
+/**
+ * Where people actually go, if this instance knows.
+ *
+ * This application serves an API, a first-run screen and a 404. Everything a
+ * person does is somewhere else, and every redirect that used to land on one of
+ * its own pages has to land there instead - `/login` and `/` were both real
+ * addresses here and are not any more.
+ *
+ * `client_url` when set, `site_url` otherwise, and an empty string when neither
+ * is - which callers read as "there is nowhere to send them", because guessing a
+ * path is how somebody ends up on a second 404.
+ */
+function client_base(): string
+{
+    $base = rtrim((string) setting('client_url', ''), '/');
+    if ($base === '') {
+        $base = rtrim((string) setting('site_url', ''), '/');
+    }
+    return $base;
+}
+
+/** Send them to the client, or show why we cannot. */
+function to_client(): never
+{
+    $base = client_base();
+    if ($base !== '') {
+        header('Location: ' . $base, true, 302);
+        exit;
+    }
+    http_response_code(503);
+    render('no_client', ['pageTitle' => 'Not configured', 'bare' => true]);
+    exit;
+}
+
 function not_found(string $message = 'Nothing here.'): never
 {
     http_response_code(404);

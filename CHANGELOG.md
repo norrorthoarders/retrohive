@@ -1,5 +1,96 @@
 # Changelog
 
+**A sweep for what the interface removal left behind.**
+
+## The stylesheet and the script
+
+`app.js` carried 43 modules for the interface this application used to serve -
+table filters, tree editors, drop zones, a cropper, a barcode reader. **40 of
+them attached to markup that no longer exists**: they found nothing and returned,
+which is harmless and was 83 KB of harmless. What is left is the notices module,
+which the two remaining pages actually use. **101 KB to 3.7 KB.**
+
+`app.css` was the same story: **299 of 384 rules** styled markup that is gone.
+**56 KB to 14 KB.**
+
+The colour variables are kept whole rather than trimmed to what is read today -
+they are the palette, not decoration for one screen, and cutting them by current
+usage is how the next thing added here comes out the wrong colour.
+
+Verified by rule rather than by eye: every class the surviving templates put on
+an element still has a rule, and every variable a kept rule reads is still
+declared. The first pass of that check failed - it matched class names as
+substrings, so `.on` was kept because the word "on" appears in prose, and two
+rules came with it referencing variables that do not exist. The check reads class
+attributes now.
+
+## Files
+
+`src/config.local.php.bak` removed, and `.gitignore` widened to cover it. The
+pattern named `src/config.local.php` exactly, so a backup of the local config -
+which is the local config, credentials included - would have been committed. The
+one here was empty. The next one might not have been.
+
+The uploads directory is cleared of the test images sitting in it. Already
+ignored by git, so they were never committed; they were in the working tree and
+would have gone out in a package.
+
+## What was checked and kept
+
+Every `bin/` script - they are command-line tools that never depended on the
+interface. `public/router.php`, which is for PHP's built-in server in
+development. `/setup`, which creates the first administrator on an instance that
+has none and is the only screen that cannot sit behind a sign-in.
+
+`docs/REDESIGN.md` describes a browsing design in terms of screens that no longer
+exist here. Left alone: the argument is about the shape of the category tree,
+which the web client now has to answer, so it is a design note rather than
+documentation of something removed.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 138**.
+
+**The root sends people to the interface, and every redirect that pointed at a
+deleted screen has somewhere to go.**
+
+Removing the web interface left the root serving a 404 - on a running instance
+that reads as "this is broken", not "you are one hop away". `GET /` now
+redirects to the client.
+
+First run wins over it: an instance with no administrator has one thing worth
+doing, and sending somebody to a client they cannot sign in to helps nobody.
+
+## Seven redirects were pointing at nothing
+
+`auth_setup()` and `auth_setup_form()` sent an already-configured instance to
+`/login`, `require_edit()` and `require_manage()` sent a signed-out caller there
+too, and `require_admin()` and the manage guard sent people to `/` - which was
+itself a 404 until this build. Somebody hitting `/setup` on a working instance
+was bounced to a page that no longer existed.
+
+All of them go through `to_client()` now. The `next` parameter went with
+`/login`: this application cannot hand somebody back to a page it no longer
+draws.
+
+**Both 404 buttons were dead too** - "Back to the overview" and "Browse the
+collection" pointed at the two screens most recently deleted, so a 404 offered
+two more of itself. One link now, to the interface, and only when the instance
+knows where that is.
+
+## When it does not know
+
+`client_base()` reads `client_url`, falls back to `site_url`, and returns nothing
+when neither is set. Nothing means a short page saying the address has not been
+configured and where to set it - **not a guess at `/web`**. Redirecting to a path
+that might be right is how somebody lands on a second error page wondering which
+one is the real problem, and the same setting builds confirmation links, so
+getting it wrong here would be wrong twice.
+
+Full suite: still 1 of 25, unchanged.
+
+This package is **build 137**.
+
 **The engine's own web interface is removed. What is left is an API, a first-run
 screen, and the endpoints other services call.**
 

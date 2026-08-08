@@ -614,6 +614,18 @@ $routes = [
     ['GET',  '#^/status/debug$#',            fn() => status_serve_debug()],
 
 
+    // The root sends people to the interface.
+    //
+    // This application serves an API and two pages, neither of which is a
+    // destination - somebody typing the bare address wants the catalogue, and
+    // before the interface was removed they got it here. A 404 at the root of a
+    // running instance reads as "this is broken", not "you are one hop away".
+    //
+    // First run wins: an instance with no administrator has one thing worth
+    // doing, and sending somebody to a client they cannot sign in to helps
+    // nobody.
+    ['GET',  '#^/$#',                        fn() => user_count() === 0 ? redirect('/setup') : to_client()],
+
     ['GET',  '#^/robots\.txt$#',              fn() => robots_serve()],
 
     // First run only. auth_setup() refuses once an administrator exists, so this
